@@ -2,7 +2,7 @@ import os
 from app import create_app
 
 # Create Flask app using factory
-app = create_app("development")
+app = create_app()
 
 
 if __name__ == "__main__":
