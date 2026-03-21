@@ -56,6 +56,8 @@ def create_app(config_object=None):
     from app.auth import auth_bp
     app.register_blueprint(auth_bp, url_prefix="/auth")
 
+    from app.admin import admin_bp
+    app.register_blueprint(admin_bp, url_prefix="/admin")
     # =====================================================================
     # Health Check
     # =====================================================================
