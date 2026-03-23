@@ -6,38 +6,45 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required
 from sqlalchemy.exc import IntegrityError
 
-from app.models import Admin, Company, Student, User, db
+from app.models import Company, Student, User, db
 
 from .utils import role_required
+from .validators import validate_email, validate_password, validate_required_fields
 
 auth_bp = Blueprint("auth", __name__)
 
 
 def _json_error(message, status_code=400):
 	"""Return a consistent JSON error payload."""
-	return jsonify({"error": message}), status_code
+	return jsonify({"success": False, "error": message}), status_code
 
 
-def _require_json_fields(payload, required_fields):
-	"""Validate required JSON fields and return missing field names."""
-	missing = [
-		field
-		for field in required_fields
-		if payload.get(field) is None
-		or (isinstance(payload.get(field), str) and not payload.get(field).strip())
-	]
-	return missing
+def _normalized_json_payload():
+	"""Return request JSON with surrounding whitespace trimmed from string values."""
+	data = request.get_json(silent=True) or {}
+	return {
+		key: value.strip() if isinstance(value, str) else value
+		for key, value in data.items()
+	}
 
 @auth_bp.post("/register/student")
 def register_student():
-	data = request.get_json(silent=True) or {}
+	data = _normalized_json_payload()
 	required = ["username", "email", "password"]
-	missing = _require_json_fields(data, required)
-	if missing:
-		return _json_error(f"Missing required fields: {', '.join(missing)}", 400)
+	missing_message = validate_required_fields(data, required)
+	if missing_message:
+		return _json_error(missing_message, 400)
 
-	email = data["email"].strip().lower()
-	username = data["username"].strip()
+	email_error = validate_email(data.get("email", ""))
+	if email_error:
+		return _json_error(email_error, 400)
+
+	password_error = validate_password(data.get("password", ""))
+	if password_error:
+		return _json_error(password_error, 400)
+
+	email = data["email"].lower()
+	username = data["username"]
 	password = data["password"]
 
 	duplicate_user = User.query.filter(
@@ -55,15 +62,7 @@ def register_student():
 		db.session.add(user)
 		db.session.flush()
 
-		# Student requires several non-null profile fields in the current schema.
-		student = Student(
-			user_id=user.user_id,
-			roll_number=f"STU-{user.user_id}",
-			college_name="Not Provided",
-			branch="OTHER",
-			year=1,
-			cgpa=0.0,
-		)
+		student = Student(user_id=user.user_id)
 		db.session.add(student)
 		db.session.commit()
 	except IntegrityError:
@@ -73,12 +72,25 @@ def register_student():
 		db.session.rollback()
 		return _json_error("Unable to register student", 500)
 
-	return jsonify({"message": "Student registered successfully"}), 201
+	return (
+		jsonify(
+			{
+				"success": True,
+				"data": {
+					"message": "Student registered successfully",
+					"user_id": user.user_id,
+					"role": user.role,
+					"profile_completed": False,
+				},
+			}
+		),
+		201,
+	)
 
 
 @auth_bp.post("/register/company")
 def register_company():
-	data = request.get_json(silent=True) or {}
+	data = _normalized_json_payload()
 	required = [
 		"username",
 		"email",
@@ -88,12 +100,24 @@ def register_company():
 		"hr_contact_email",
 		"hr_contact_phone",
 	]
-	missing = _require_json_fields(data, required)
-	if missing:
-		return _json_error(f"Missing required fields: {', '.join(missing)}", 400)
+	missing_message = validate_required_fields(data, required)
+	if missing_message:
+		return _json_error(missing_message, 400)
 
-	email = data["email"].strip().lower()
-	username = data["username"].strip()
+	email_error = validate_email(data.get("email", ""))
+	if email_error:
+		return _json_error(email_error, 400)
+
+	hr_email_error = validate_email(data.get("hr_contact_email", ""))
+	if hr_email_error:
+		return _json_error("Invalid HR contact email format", 400)
+
+	password_error = validate_password(data.get("password", ""))
+	if password_error:
+		return _json_error(password_error, 400)
+
+	email = data["email"].lower()
+	username = data["username"]
 
 	duplicate_user = User.query.filter(
 		(User.email == email) | (User.username == username)
@@ -104,8 +128,8 @@ def register_company():
 		return _json_error("Username is already taken", 409)
 
 	duplicate_company = Company.query.filter(
-		(Company.company_name == data["company_name"].strip())
-		| (Company.hr_contact_email == data["hr_contact_email"].strip().lower())
+		(Company.company_name == data["company_name"])
+		| (Company.hr_contact_email == data["hr_contact_email"].lower())
 	).first()
 	if duplicate_company:
 		return _json_error("Company name or HR contact email already exists", 409)
@@ -119,10 +143,10 @@ def register_company():
 
 		company = Company(
 			user_id=user.user_id,
-			company_name=data["company_name"].strip(),
-			hr_contact_name=data["hr_contact_name"].strip(),
-			hr_contact_email=data["hr_contact_email"].strip().lower(),
-			hr_contact_phone=data["hr_contact_phone"].strip(),
+			company_name=data["company_name"],
+			hr_contact_name=data["hr_contact_name"],
+			hr_contact_email=data["hr_contact_email"].lower(),
+			hr_contact_phone=data["hr_contact_phone"],
 			approval_status="pending",
 		)
 		db.session.add(company)
@@ -134,18 +158,34 @@ def register_company():
 		db.session.rollback()
 		return _json_error("Unable to register company", 500)
 
-	return jsonify({"message": "Waiting for admin approval"}), 201
+	return (
+		jsonify(
+			{
+				"message": "Waiting for admin approval",
+				"data": {"user_id": user.user_id, "role": user.role},
+			}
+		),
+		201,
+	)
 
 
 @auth_bp.post("/login")
 def login():
-	data = request.get_json(silent=True) or {}
+	data = _normalized_json_payload()
 	required = ["email", "password"]
-	missing = _require_json_fields(data, required)
-	if missing:
-		return _json_error(f"Missing required fields: {', '.join(missing)}", 400)
+	missing_message = validate_required_fields(data, required)
+	if missing_message:
+		return _json_error(missing_message, 400)
 
-	email = data["email"].strip().lower()
+	email_error = validate_email(data.get("email", ""))
+	if email_error:
+		return _json_error(email_error, 400)
+
+	password_error = validate_password(data.get("password", ""))
+	if password_error:
+		return _json_error(password_error, 400)
+
+	email = data["email"].lower()
 	password = data["password"]
 
 	user = User.query.filter_by(email=email).first()
@@ -174,9 +214,12 @@ def login():
 	return (
 		jsonify(
 			{
-				"token": token,
-				"role": user.role,
-				"user_id": user.user_id,
+				"message": "Login successful",
+				"data": {
+					"token": token,
+					"role": user.role,
+					"user_id": user.user_id,
+				},
 			}
 		),
 		200,
@@ -186,7 +229,12 @@ def login():
 @auth_bp.get("/me")
 @jwt_required()
 def me():
-	user_id = int(get_jwt_identity())
+	identity = get_jwt_identity()
+	try:
+		user_id = int(identity)
+	except (TypeError, ValueError):
+		return _json_error("Invalid token identity", 401)
+
 	if not user_id:
 		return _json_error("Invalid token identity", 401)
 
@@ -201,28 +249,38 @@ def me():
 		"role": user.role,
 		"is_active": user.is_active,
 	}
-	return jsonify(payload), 200
+	return jsonify({"message": "User profile fetched successfully", "data": payload}), 200
 
 
 @auth_bp.get("/admin/dashboard")
 @role_required("admin")
 def admin_dashboard():
-	admins_count = Admin.query.count()
-	return jsonify({"message": "Welcome Admin", "total_admins": admins_count}), 200
+	identity = get_jwt_identity()
+	user = identity if isinstance(identity, dict) else {"user_id": identity}
+	return jsonify({"message": "Welcome Admin", "data": {"user": user}}), 200
 
 
 @auth_bp.get("/student/dashboard")
 @role_required("student")
 def student_dashboard():
-	identity = get_jwt_identity() or {}
-	return jsonify({"message": "Welcome Student", "identity": identity}), 200
+	identity = get_jwt_identity()
+	user_id = identity if not isinstance(identity, dict) else identity.get("user_id")
+	student = Student.query.filter_by(user_id=user_id).first()
+	if not student:
+		return _json_error("Student profile not found", 404)
+	if not student.profile_completed:
+		return _json_error("Complete your profile first", 403)
+
+	user = identity if isinstance(identity, dict) else {"user_id": identity}
+	return jsonify({"success": True, "data": {"message": "Welcome Student", "user": user}}), 200
 
 
 @auth_bp.get("/company/dashboard")
 @role_required("company")
 def company_dashboard():
-	identity = get_jwt_identity() or {}
-	return jsonify({"message": "Welcome Company", "identity": identity}), 200
+	identity = get_jwt_identity()
+	user = identity if isinstance(identity, dict) else {"user_id": identity}
+	return jsonify({"message": "Welcome Company", "data": {"user": user}}), 200
 
 
 __all__ = ["auth_bp"]

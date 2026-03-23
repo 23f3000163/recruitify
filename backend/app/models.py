@@ -182,14 +182,15 @@ class Student(db.Model):
         unique=True,
         nullable=False,
     )
-    roll_number = db.Column(db.String(30), unique=True, nullable=False)
-    college_name = db.Column(db.String(200), nullable=False)
+    roll_number = db.Column(db.String(30), unique=True, nullable=True)
+    college_name = db.Column(db.String(200), nullable=True)
     branch = db.Column(
         db.Enum("CSE", "ECE", "MECH", "EE", "OTHER", name="branch_enum"),
-        nullable=False,
+        nullable=True,
     )
-    year = db.Column(db.Integer, nullable=False)  # 1-4
-    cgpa = db.Column(db.Float, nullable=False)
+    year = db.Column(db.Integer, nullable=True)  # 1-4
+    cgpa = db.Column(db.Float, nullable=True)
+    profile_completed = db.Column(db.Boolean, default=False, nullable=False)
     resume_url = db.Column(db.String(500), nullable=True)
     resume_uploaded_at = db.Column(db.DateTime, nullable=True)
     phone = db.Column(db.String(20), nullable=True)
@@ -218,6 +219,7 @@ class Student(db.Model):
             "branch": self.branch,
             "year": self.year,
             "cgpa": self.cgpa,
+            "profile_completed": self.profile_completed,
             "resume_url": self.resume_url,
             "resume_uploaded_at": (
                 self.resume_uploaded_at.isoformat()
@@ -232,7 +234,7 @@ class Student(db.Model):
         }
 
     def __repr__(self) -> str:
-        return f"<Student {self.roll_number}>"
+        return f"<Student user_id={self.user_id}>"
 
 
 # =========================================================================

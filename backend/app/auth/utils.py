@@ -20,15 +20,18 @@ def role_required(role):
         @wraps(fn)
         @jwt_required()
         def wrapper(*args, **kwargs):
-            # ✅ Get full JWT payload (claims)
             claims = get_jwt()
-
-            # ✅ Extract role from claims
             current_role = claims.get("role")
-
-            # ❌ If role mismatch → block access
             if current_role != role:
-                return jsonify({"error": "Forbidden: insufficient permissions"}), 403
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": "Forbidden: insufficient permissions",
+                        }
+                    ),
+                    403,
+                )
 
             return fn(*args, **kwargs)
 

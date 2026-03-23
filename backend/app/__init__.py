@@ -1,5 +1,5 @@
 import os
-from flask import Flask
+from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 
@@ -45,6 +45,18 @@ def create_app(config_object=None):
     CORS(app)
     jwt = JWTManager(app)
 
+    @jwt.expired_token_loader
+    def handle_expired_token(jwt_header, jwt_payload):
+        return jsonify({"success": False, "error": "Token has expired"}), 401
+
+    @jwt.invalid_token_loader
+    def handle_invalid_token(reason):
+        return jsonify({"success": False, "error": "Invalid token"}), 401
+
+    @jwt.unauthorized_loader
+    def handle_missing_token(reason):
+        return jsonify({"success": False, "error": "Missing authorization token"}), 401
+
     # =====================================================================
     # Register Models (important for SQLAlchemy)
     # =====================================================================
@@ -58,6 +70,10 @@ def create_app(config_object=None):
 
     from app.admin import admin_bp
     app.register_blueprint(admin_bp, url_prefix="/admin")
+
+    from app.student import student_bp
+    app.register_blueprint(student_bp, url_prefix="/student")
+
     # =====================================================================
     # Health Check
     # =====================================================================
