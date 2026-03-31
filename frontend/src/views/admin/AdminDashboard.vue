@@ -6,6 +6,7 @@
       :active-view="activeView"
       @toggle-sidebar="sidebarCollapsed = !sidebarCollapsed"
       @select-view="activeView = $event"
+      @request-logout="handleLogout"
     />
 
     <div class="rq-main">
@@ -25,6 +26,7 @@
         @commit-search="commitSearch"
         @go-to-result="goToResult"
         @toggle-notifications="showNotifications = !showNotifications"
+        @request-logout="handleLogout"
       />
 
       <main class="rq-page" role="main" @click="searchDropdownOpen = false">
@@ -1185,6 +1187,12 @@ export default {
       link.click()
       URL.revokeObjectURL(link.href)
       this.toast_show(`${scope} data downloaded as CSV`, 'success')
+    },
+    handleLogout() {
+      localStorage.removeItem('token')
+      localStorage.removeItem('role')
+      localStorage.removeItem('user_id')
+      this.$router.push('/login')
     },
     toast_show(message, type = 'success') {
       const icons = { success: 'OK', danger: 'X', warning: '!', info: 'i' }

@@ -9,6 +9,8 @@ const api = axios.create({
   }
 })
 
+let isRedirectingToLogin = false
+
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token')
 
@@ -18,6 +20,30 @@ api.interceptors.request.use((config) => {
 
   return config
 })
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const statusCode = error.response?.status
+    const requestUrl = String(error.config?.url || '')
+    const hasToken = Boolean(localStorage.getItem('token'))
+    const isLoginRequest = requestUrl.includes('/auth/login')
+
+    if (statusCode === 401 && hasToken && !isLoginRequest && !isRedirectingToLogin) {
+      isRedirectingToLogin = true
+
+      localStorage.removeItem('token')
+      localStorage.removeItem('role')
+      localStorage.removeItem('user_id')
+
+      if (window.location.pathname !== '/login') {
+        window.location.assign('/login')
+      }
+    }
+
+    return Promise.reject(error)
+  }
+)
 
 export const authApi = {
   login(payload) {

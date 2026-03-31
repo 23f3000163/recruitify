@@ -36,8 +36,8 @@
       </div>
     </div>
 
-    <div class="rq-row-2">
-      <div class="rq-card rq-col-2">
+    <div class="rq-dashboard-grid">
+      <div class="rq-card rq-grid-pending">
         <div class="rq-card-hd">
           <div class="rq-card-hd-l">
             <span class="rq-card-title">Pending Approvals</span>
@@ -81,14 +81,14 @@
                 </td>
               </tr>
               <tr v-if="!pendingApprovals.length"><td colspan="4">
-                <div class="rq-empty"><div class="rq-empty-ico">🎉</div><b>All caught up!</b><span>No pending approvals.</span></div>
+                <div class="rq-empty"><div class="rq-empty-ico"></div><b>All caught up!</b><span>No pending approvals.</span></div>
               </td></tr>
             </tbody>
           </table>
         </div>
       </div>
 
-      <div class="rq-card">
+      <div class="rq-card rq-grid-branch">
         <div class="rq-card-hd">
           <span class="rq-card-title">Placement by Branch</span>
           <span class="rq-pill rq-pill-blue">AY 2024–25</span>
@@ -106,10 +106,8 @@
           </div>
         </div>
       </div>
-    </div>
 
-    <div class="rq-row-2">
-      <div class="rq-card rq-col-2">
+      <div class="rq-card rq-grid-audit">
         <div class="rq-card-hd">
           <span class="rq-card-title">Activity Audit Trail</span>
           <button class="rq-ghost" @click="$emit('export', 'audit')">
@@ -145,7 +143,7 @@
         </div>
       </div>
 
-      <div class="rq-card">
+      <div class="rq-card rq-grid-recent">
         <div class="rq-card-hd">
           <span class="rq-card-title">Recent Applications</span>
           <button class="rq-ghost" @click="$emit('switch-view', 'students')">View all →</button>

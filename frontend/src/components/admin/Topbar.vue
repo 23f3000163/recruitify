@@ -75,13 +75,30 @@
         </svg>
       </button>
 
-      <div class="rq-topbar-user">
-        <div class="rq-topbar-av">AD</div>
-        <div class="rq-topbar-uinfo">
-          <div class="rq-topbar-uname">Admin</div>
-          <div class="rq-topbar-urole">TPO</div>
-        </div>
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3 4.5l3 3 3-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div class="rq-user-menu-wrap" ref="userMenuWrap" @click.stop>
+        <button
+          type="button"
+          class="rq-topbar-user"
+          @click="toggleUserMenu"
+          :aria-expanded="userMenuOpen"
+          aria-haspopup="menu"
+        >
+          <div class="rq-topbar-av">AD</div>
+          <div class="rq-topbar-uinfo">
+            <div class="rq-topbar-uname">Admin</div>
+            <div class="rq-topbar-urole">TPO</div>
+          </div>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3 4.5l3 3 3-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+
+        <Transition name="rq-user-menu-fade">
+          <div v-if="userMenuOpen" class="rq-user-menu rq-user-menu-right" role="menu">
+            <button type="button" class="rq-user-menu-item rq-user-menu-item-danger" @click="requestLogout" role="menuitem">
+              <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true"><path d="M8.5 2.5h2a1 1 0 011 1v6a1 1 0 01-1 1h-2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M5.5 9.5l3-3-3-3M8.5 6.5h-7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Logout
+            </button>
+          </div>
+        </Transition>
       </div>
     </div>
   </header>
@@ -99,6 +116,17 @@ export default {
     pendingCount: { type: Number, required: true },
     showNotifications: { type: Boolean, required: true }
   },
+  data() {
+    return {
+      userMenuOpen: false
+    }
+  },
+  mounted() {
+    document.addEventListener('click', this.handleClickOutside)
+  },
+  beforeUnmount() {
+    document.removeEventListener('click', this.handleClickOutside)
+  },
   emits: [
     'set-search-focused',
     'set-search-dropdown-open',
@@ -107,9 +135,23 @@ export default {
     'clear-search',
     'commit-search',
     'go-to-result',
-    'toggle-notifications'
+    'toggle-notifications',
+    'request-logout'
   ],
   methods: {
+    toggleUserMenu() {
+      this.userMenuOpen = !this.userMenuOpen
+    },
+    handleClickOutside(event) {
+      if (!this.userMenuOpen) return
+      if (this.$refs.userMenuWrap && !this.$refs.userMenuWrap.contains(event.target)) {
+        this.userMenuOpen = false
+      }
+    },
+    requestLogout() {
+      this.userMenuOpen = false
+      this.$emit('request-logout')
+    },
     onBlur() {
       this.$emit('set-search-focused', false)
       this.$emit('set-search-dropdown-open', this.searchQuery.length > 0)
