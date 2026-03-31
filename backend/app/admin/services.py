@@ -5,10 +5,19 @@ from math import ceil
 from sqlalchemy import func, or_
 from sqlalchemy.orm import selectinload
 
-from app.models import Application, Company, PlacementDrive, Student, User, db
+from app.models import ActivityLog, Application, Company, PlacementDrive, Student, User, db
 
 
 ALLOWED_ORDER_VALUES = {"asc", "desc"}
+ALLOWED_APPLICATION_STATUSES = {
+    "applied",
+    "shortlisted",
+    "selected",
+    "interviewed",
+    "rejected",
+    "waitlisted",
+}
+ALLOWED_ACTIVITY_STATUSES = {"success", "danger", "warning", "info"}
 
 
 def _ok(data, status_code=200):
@@ -48,13 +57,30 @@ def _paginated_result(items, total, page, pages):
     }
 
 
+def _append_activity_log(actor_user_id, action, target=None, status="info"):
+    try:
+        user_id = int(actor_user_id)
+    except (TypeError, ValueError):
+        return
+
+    normalized_status = status if status in ALLOWED_ACTIVITY_STATUSES else "info"
+    db.session.add(
+        ActivityLog(
+            user_id=user_id,
+            action=(action or "Action").strip(),
+            target=(target or "").strip() or None,
+            status=normalized_status,
+        )
+    )
+
+
 def _company_to_dict(company):
     payload = company.to_dict()
     payload.update(
         {
             "id": company.company_id,
             "name": company.company_name,
-            "industry": None,
+            "industry": company.industry,
             "status": company.approval_status,
             "is_active": bool(company.user and company.user.is_active),
         }
@@ -101,6 +127,24 @@ def _application_to_dict(application):
     return payload
 
 
+def _activity_log_to_dict(log):
+    status = (log.status or "info").strip().lower()
+    if status not in ALLOWED_ACTIVITY_STATUSES:
+        status = "info"
+
+    return {
+        "id": log.log_id,
+        "log_id": log.log_id,
+        "user_id": log.user_id,
+        "action": log.action,
+        "actor": log.user.username if log.user else f"User #{log.user_id}",
+        "target": log.target or "-",
+        "status": status,
+        "time": log.timestamp.isoformat() if log.timestamp else None,
+        "timestamp": log.timestamp.isoformat() if log.timestamp else None,
+    }
+
+
 def get_dashboard_stats():
     total_students = db.session.query(func.count(Student.student_id)).scalar() or 0
     total_companies = db.session.query(func.count(Company.company_id)).scalar() or 0
@@ -115,6 +159,30 @@ def get_dashboard_stats():
             "total_companies": total_companies,
             "total_jobs": total_jobs,
             "total_applications": total_applications,
+        }
+    )
+
+
+def list_activity_logs(limit=20):
+    try:
+        parsed_limit = int(limit)
+    except (TypeError, ValueError):
+        parsed_limit = 20
+
+    parsed_limit = max(1, min(parsed_limit, 200))
+
+    query = ActivityLog.query.options(selectinload(ActivityLog.user)).order_by(
+        ActivityLog.timestamp.desc(),
+        ActivityLog.log_id.desc(),
+    )
+    logs = query.limit(parsed_limit).all()
+    total = db.session.query(func.count(ActivityLog.log_id)).scalar() or 0
+
+    return _ok(
+        {
+            "items": [_activity_log_to_dict(log) for log in logs],
+            "total": total,
+            "limit": parsed_limit,
         }
     )
 
@@ -136,13 +204,14 @@ def list_companies(page, limit, sort_by, order):
     return _ok(_paginated_result(items, total, page, pages))
 
 
-def approve_company(company_id):
+def approve_company(company_id, actor_user_id=None):
     company = db.session.get(Company, company_id)
     if not company:
         return _error("Company not found", 404)
 
     try:
         company.approval_status = "approved"
+        _append_activity_log(actor_user_id, "Company Approved", company.company_name, "success")
         db.session.commit()
         return _ok(_company_to_dict(company))
     except Exception:
@@ -150,13 +219,14 @@ def approve_company(company_id):
         return _error("Failed to approve company", 500)
 
 
-def reject_company(company_id):
+def reject_company(company_id, actor_user_id=None):
     company = db.session.get(Company, company_id)
     if not company:
         return _error("Company not found", 404)
 
     try:
         company.approval_status = "rejected"
+        _append_activity_log(actor_user_id, "Company Rejected", company.company_name, "danger")
         db.session.commit()
         return _ok(_company_to_dict(company))
     except Exception:
@@ -164,7 +234,14 @@ def reject_company(company_id):
         return _error("Failed to reject company", 500)
 
 
-def _set_company_inactive(company_id, action_error_message, success_payload):
+def _set_company_inactive(
+    company_id,
+    action_error_message,
+    success_payload,
+    actor_user_id=None,
+    audit_action="Company Deactivated",
+    audit_status="warning",
+):
     company = db.session.get(Company, company_id)
     if not company:
         return _error("Company not found", 404)
@@ -174,6 +251,7 @@ def _set_company_inactive(company_id, action_error_message, success_payload):
 
     try:
         company.user.is_active = False
+        _append_activity_log(actor_user_id, audit_action, company.company_name, audit_status)
         db.session.commit()
         return _ok(success_payload(company))
     except Exception:
@@ -181,19 +259,44 @@ def _set_company_inactive(company_id, action_error_message, success_payload):
         return _error(action_error_message, 500)
 
 
-def deactivate_company(company_id):
+def deactivate_company(company_id, actor_user_id=None):
     return _set_company_inactive(
         company_id=company_id,
         action_error_message="Failed to deactivate company",
         success_payload=_company_to_dict,
+        actor_user_id=actor_user_id,
+        audit_action="Company Deactivated",
+        audit_status="warning",
     )
 
 
-def soft_delete_company(company_id):
+def activate_company(company_id, actor_user_id=None):
+    company = db.session.get(Company, company_id)
+    if not company:
+        return _error("Company not found", 404)
+
+    if not company.user:
+        return _error("Company user not found", 404)
+
+    try:
+        company.user.is_active = True
+        company.approval_status = "approved"
+        _append_activity_log(actor_user_id, "Company Activated", company.company_name, "success")
+        db.session.commit()
+        return _ok(_company_to_dict(company))
+    except Exception:
+        db.session.rollback()
+        return _error("Failed to activate company", 500)
+
+
+def soft_delete_company(company_id, actor_user_id=None):
     return _set_company_inactive(
         company_id=company_id,
         action_error_message="Failed to delete company",
         success_payload=lambda _company: {"message": "Company deactivated successfully"},
+        actor_user_id=actor_user_id,
+        audit_action="Company Removed",
+        audit_status="warning",
     )
 
 
@@ -214,7 +317,7 @@ def list_students(page, limit, sort_by, order):
     return _ok(_paginated_result(items, total, page, pages))
 
 
-def deactivate_student(student_id):
+def deactivate_student(student_id, actor_user_id=None):
     student = db.session.get(Student, student_id)
     if not student:
         return _error("Student not found", 404)
@@ -224,11 +327,32 @@ def deactivate_student(student_id):
 
     try:
         student.user.is_active = False
+        student_name = student.user.username if student.user else f"Student #{student.student_id}"
+        _append_activity_log(actor_user_id, "Student Deactivated", student_name, "warning")
         db.session.commit()
         return _ok(_student_to_dict(student))
     except Exception:
         db.session.rollback()
         return _error("Failed to deactivate student", 500)
+
+
+def activate_student(student_id, actor_user_id=None):
+    student = db.session.get(Student, student_id)
+    if not student:
+        return _error("Student not found", 404)
+
+    if not student.user:
+        return _error("Student user not found", 404)
+
+    try:
+        student.user.is_active = True
+        student_name = student.user.username if student.user else f"Student #{student.student_id}"
+        _append_activity_log(actor_user_id, "Student Activated", student_name, "success")
+        db.session.commit()
+        return _ok(_student_to_dict(student))
+    except Exception:
+        db.session.rollback()
+        return _error("Failed to activate student", 500)
 
 
 def list_jobs(page, limit, sort_by, order, company_id=None):
@@ -251,13 +375,14 @@ def list_jobs(page, limit, sort_by, order, company_id=None):
     return _ok(_paginated_result(items, total, page, pages))
 
 
-def approve_job(job_id):
+def approve_job(job_id, actor_user_id=None):
     job = db.session.get(PlacementDrive, job_id)
     if not job:
         return _error("Job not found", 404)
 
     try:
         job.status = "approved"
+        _append_activity_log(actor_user_id, "Drive Approved", job.job_title, "success")
         db.session.commit()
         return _ok(_job_to_dict(job))
     except Exception:
@@ -265,13 +390,14 @@ def approve_job(job_id):
         return _error("Failed to approve job", 500)
 
 
-def reject_job(job_id):
+def reject_job(job_id, actor_user_id=None):
     job = db.session.get(PlacementDrive, job_id)
     if not job:
         return _error("Job not found", 404)
 
     try:
         job.status = "closed"
+        _append_activity_log(actor_user_id, "Drive Rejected", job.job_title, "danger")
         db.session.commit()
         return _ok(_job_to_dict(job))
     except Exception:
@@ -279,13 +405,14 @@ def reject_job(job_id):
         return _error("Failed to reject job", 500)
 
 
-def soft_delete_job(job_id):
+def soft_delete_job(job_id, actor_user_id=None):
     job = db.session.get(PlacementDrive, job_id)
     if not job:
         return _error("Job not found", 404)
 
     try:
         job.status = "closed"
+        _append_activity_log(actor_user_id, "Drive Removed", job.job_title, "warning")
         db.session.commit()
         return _ok({"message": "Job deleted successfully"})
     except Exception:
@@ -298,6 +425,7 @@ def search_companies(query_text, page, limit, sort_by, order):
     query = Company.query.join(User, Company.user_id == User.user_id).filter(
         or_(
             Company.company_name.ilike(f"%{query_text}%"),
+            Company.industry.ilike(f"%{query_text}%"),
             Company.company_description.ilike(f"%{query_text}%"),
         )
     )
@@ -367,3 +495,49 @@ def list_applications(page, limit, sort_by, order):
     applications, total, pages = _paginate_query(query, page, limit)
     items = [_application_to_dict(application) for application in applications]
     return _ok(_paginated_result(items, total, page, pages))
+
+
+def update_application_status(
+    application_id,
+    status,
+    rejection_reason=None,
+    notes=None,
+    actor_user_id=None,
+):
+    application = db.session.get(Application, application_id)
+    if not application:
+        return _error("Application not found", 404)
+
+    target_status = (status or "").strip().lower()
+    if target_status not in ALLOWED_APPLICATION_STATUSES:
+        return _error("Invalid application status", 400)
+
+    try:
+        application.status = target_status
+
+        if target_status == "rejected":
+            cleaned_reason = (
+                rejection_reason.strip()
+                if isinstance(rejection_reason, str)
+                else rejection_reason
+            )
+            application.rejection_reason = cleaned_reason or application.rejection_reason
+        else:
+            application.rejection_reason = None
+
+        if notes is not None:
+            cleaned_notes = notes.strip() if isinstance(notes, str) else notes
+            application.notes = cleaned_notes or None
+
+        _append_activity_log(
+            actor_user_id,
+            "Application Updated",
+            f"#{application.application_id} -> {target_status}",
+            "success",
+        )
+
+        db.session.commit()
+        return _ok(_application_to_dict(application))
+    except Exception:
+        db.session.rollback()
+        return _error("Failed to update application status", 500)

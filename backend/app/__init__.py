@@ -38,6 +38,49 @@ def create_app(config_object=None):
     # Ensure instance folder exists
     os.makedirs(app.instance_path, exist_ok=True)
 
+    def _ensure_schema_updates():
+        """Apply lightweight non-destructive schema updates for local SQLite."""
+        database_uri = app.config.get("SQLALCHEMY_DATABASE_URI", "")
+        if not database_uri.startswith("sqlite"):
+            return
+
+        try:
+            with db.engine.begin() as conn:
+                table_exists = conn.exec_driver_sql(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='company'"
+                ).fetchone()
+                if not table_exists:
+                    return
+
+                columns = {
+                    row[1]
+                    for row in conn.exec_driver_sql("PRAGMA table_info(company)").fetchall()
+                }
+                if "industry" not in columns:
+                    conn.exec_driver_sql("ALTER TABLE company ADD COLUMN industry VARCHAR(120)")
+
+                activity_table_exists = conn.exec_driver_sql(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='activity_log'"
+                ).fetchone()
+                if activity_table_exists:
+                    activity_columns = {
+                        row[1]
+                        for row in conn.exec_driver_sql("PRAGMA table_info(activity_log)").fetchall()
+                    }
+                    if "target" not in activity_columns:
+                        conn.exec_driver_sql(
+                            "ALTER TABLE activity_log ADD COLUMN target VARCHAR(255)"
+                        )
+                    if "status" not in activity_columns:
+                        conn.exec_driver_sql(
+                            "ALTER TABLE activity_log ADD COLUMN status VARCHAR(20) DEFAULT 'info'"
+                        )
+                    conn.exec_driver_sql(
+                        "UPDATE activity_log SET status='info' WHERE status IS NULL OR TRIM(status) = ''"
+                    )
+        except Exception as exc:
+            app.logger.warning("Schema update check failed: %s", exc)
+
     # =====================================================================
     # Initialize Extensions
     # =====================================================================
@@ -61,6 +104,9 @@ def create_app(config_object=None):
     # Register Models (important for SQLAlchemy)
     # =====================================================================
     from . import models  # noqa: F401
+
+    with app.app_context():
+        _ensure_schema_updates()
 
     # =====================================================================
     # Register Blueprints

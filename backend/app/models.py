@@ -251,6 +251,7 @@ class Company(db.Model):
         nullable=False,
     )
     company_name = db.Column(db.String(200), unique=True, nullable=False)
+    industry = db.Column(db.String(120), nullable=True)
     website = db.Column(db.String(300), nullable=True)
     hr_contact_name = db.Column(db.String(120), nullable=False)
     hr_contact_email = db.Column(db.String(120), unique=True, nullable=False)
@@ -289,6 +290,7 @@ class Company(db.Model):
             "company_id": self.company_id,
             "user_id": self.user_id,
             "company_name": self.company_name,
+            "industry": self.industry,
             "website": self.website,
             "hr_contact_name": self.hr_contact_name,
             "hr_contact_email": self.hr_contact_email,
@@ -701,6 +703,17 @@ class ActivityLog(db.Model):
     )  
     # Example: "Applied for drive", "Approved company", "Rejected application"
 
+    target = db.Column(
+        db.String(255),
+        nullable=True
+    )
+
+    status = db.Column(
+        db.String(20),
+        default="info",
+        nullable=False
+    )
+
     timestamp = db.Column(
         db.DateTime,
         default=_utcnow,
@@ -714,7 +727,10 @@ class ActivityLog(db.Model):
         return {
             "log_id": self.log_id,
             "user_id": self.user_id,
+            "actor": self.user.username if self.user else None,
             "action": self.action,
+            "target": self.target,
+            "status": self.status,
             "timestamp": self.timestamp.isoformat() if self.timestamp else None,
         }
 

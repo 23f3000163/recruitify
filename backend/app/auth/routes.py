@@ -96,6 +96,7 @@ def register_company():
 		"email",
 		"password",
 		"company_name",
+		"industry",
 		"hr_contact_name",
 		"hr_contact_email",
 		"hr_contact_phone",
@@ -144,6 +145,7 @@ def register_company():
 		company = Company(
 			user_id=user.user_id,
 			company_name=data["company_name"],
+			industry=data["industry"],
 			hr_contact_name=data["hr_contact_name"],
 			hr_contact_email=data["hr_contact_email"].lower(),
 			hr_contact_phone=data["hr_contact_phone"],
