@@ -32,7 +32,9 @@ describe('DriveManagement phase 3 flow', () => {
               job_location: 'Remote',
               salary_lpa: 18,
               applications_count: 4,
-              required_skills: 'Python, SQL'
+              required_skills: 'Python, SQL',
+              experience_required: '1-3 years',
+              benefits: 'Insurance, hybrid work'
             }
           ],
           total: 1,
@@ -77,8 +79,11 @@ describe('DriveManagement phase 3 flow', () => {
 
     await wrapper.get('.cq-drives-head .cq-btn').trigger('click')
 
-    await wrapper.get('.cq-drive-form input[type="text"]').setValue('Backend Engineer')
+    const textInputs = wrapper.findAll('.cq-drive-form input[type="text"]')
+    await textInputs[0].setValue('Backend Engineer')
     await wrapper.get('.cq-drive-form textarea').setValue('Build APIs and services')
+    await textInputs[2].setValue('0-2 years')
+    await textInputs[3].setValue('Insurance and flexible hours')
     await wrapper.get('.cq-drive-form input[type="number"]').setValue('7.2')
     await wrapper.get('.cq-drive-form input[type="date"]').setValue('2030-12-20')
 
@@ -86,6 +91,12 @@ describe('DriveManagement phase 3 flow', () => {
     await flushPromises()
 
     expect(companyApi.createDrive).toHaveBeenCalledTimes(1)
+    expect(companyApi.createDrive).toHaveBeenCalledWith(
+      expect.objectContaining({
+        experience_required: '0-2 years',
+        benefits: 'Insurance and flexible hours'
+      })
+    )
     expect(wrapper.emitted('drive-updated')).toBeTruthy()
   })
 
@@ -102,7 +113,9 @@ describe('DriveManagement phase 3 flow', () => {
               job_location: 'Noida',
               salary_lpa: 12,
               applications_count: 2,
-              required_skills: 'Selenium'
+              required_skills: 'Selenium',
+              experience_required: '1+ years',
+              benefits: 'Health insurance'
             }
           ],
           total: 1,
@@ -124,7 +137,9 @@ describe('DriveManagement phase 3 flow', () => {
               job_location: 'Noida',
               salary_lpa: 12,
               applications_count: 2,
-              required_skills: 'Selenium'
+              required_skills: 'Selenium',
+              experience_required: '1+ years',
+              benefits: 'Health insurance'
             }
           ],
           total: 1,

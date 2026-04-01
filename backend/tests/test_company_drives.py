@@ -39,6 +39,8 @@ def _make_drive(company_id, title="Backend Engineer", status="approved"):
         job_title=title,
         job_description="Core job responsibilities",
         required_skills="Python,SQL",
+        experience_required="0-2 years",
+        benefits="Health insurance, flexible hours",
         min_cgpa=6.0,
         eligible_branches=["CSE", "ECE"],
         eligible_years=[3, 4],
@@ -78,6 +80,8 @@ def test_company_can_create_and_list_own_drives(app, client):
         "job_title": "Platform Engineer",
         "job_description": "Build backend systems",
         "required_skills": "Python,Flask,SQL",
+        "experience_required": "1-3 years",
+        "benefits": "Medical insurance, relocation support",
         "min_cgpa": 7.0,
         "eligible_branches": ["CSE", "ECE"],
         "eligible_years": [3, 4],
@@ -92,6 +96,8 @@ def test_company_can_create_and_list_own_drives(app, client):
     assert create_response.status_code == 201
     create_data = create_response.get_json()["data"]
     assert create_data["job_title"] == "Platform Engineer"
+    assert create_data["experience_required"] == "1-3 years"
+    assert create_data["benefits"] == "Medical insurance, relocation support"
     assert create_data["status"] == "pending"
 
     list_response = client.get("/company/drives?status=pending", headers=headers)
@@ -167,6 +173,9 @@ def test_company_create_drive_rejects_invalid_branch(app, client):
     payload = {
         "job_title": "QA Engineer",
         "job_description": "Manual and automation testing",
+        "required_skills": "Testing,Automation",
+        "experience_required": "0-1 years",
+        "benefits": "Health plan",
         "min_cgpa": 6.5,
         "eligible_branches": ["BIO"],
         "eligible_years": [4],
@@ -180,3 +189,32 @@ def test_company_create_drive_rejects_invalid_branch(app, client):
     payload = response.get_json()
     assert payload["success"] is False
     assert "Unsupported branch" in payload["error"]
+
+
+def test_company_create_drive_requires_experience_and_benefits(app, client):
+    with app.app_context():
+        company_user = _make_user("company.required", "company.required@example.com", "company")
+        _make_company_profile(company_user.user_id, "Required Fields Inc", "hr.required@example.com")
+        db.session.commit()
+        headers = _auth_headers(company_user.user_id, "company")
+
+    payload = {
+        "job_title": "Cloud Engineer",
+        "job_description": "Own cloud reliability",
+        "required_skills": "AWS,Terraform",
+        "min_cgpa": 7.2,
+        "eligible_branches": ["CSE", "ECE"],
+        "eligible_years": [4],
+        "application_deadline": (datetime.now(timezone.utc) + timedelta(days=20)).isoformat(),
+        "interview_mode": "online",
+    }
+
+    missing_experience_response = client.post("/company/drives", json=payload, headers=headers)
+    assert missing_experience_response.status_code == 400
+    assert missing_experience_response.get_json()["error"] == "experience_required is required"
+
+    payload["experience_required"] = "1-2 years"
+
+    missing_benefits_response = client.post("/company/drives", json=payload, headers=headers)
+    assert missing_benefits_response.status_code == 400
+    assert missing_benefits_response.get_json()["error"] == "benefits is required"

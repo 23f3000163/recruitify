@@ -7,7 +7,14 @@
           <p>Create, filter, and close placement drives from one workspace.</p>
         </div>
 
-        <button class="cq-btn" type="button" @click="openCreateModal">
+        <button
+          class="cq-btn"
+          type="button"
+          aria-haspopup="dialog"
+          :aria-expanded="showCreateModal ? 'true' : 'false'"
+          aria-controls="company-drive-modal"
+          @click="openCreateModal($event)"
+        >
           + New Drive
         </button>
       </header>
@@ -40,7 +47,7 @@
 
       <p v-if="errorMessage" class="cq-inline-error">{{ errorMessage }}</p>
 
-      <div class="cq-table-wrap">
+      <div class="cq-table-wrap is-mobile-cards">
         <table class="cq-table cq-drive-table">
           <thead>
             <tr>
@@ -65,20 +72,26 @@
             </tr>
 
             <tr v-for="row in drives" :key="row.id">
-              <td>
+              <td data-label="Role">
                 <p class="cq-drive-title">{{ row.title || row.job_title || 'Untitled Drive' }}</p>
                 <p class="cq-drive-sub">{{ row.required_skills || 'Skills not specified' }}</p>
+                <p class="cq-drive-sub">{{ formatExperience(row.experience_required) }}</p>
+                <p class="cq-drive-sub">{{ formatBenefits(row.benefits) }}</p>
               </td>
-              <td>
-                <span class="cq-status-pill" :class="statusClass(row.status)">
+              <td data-label="Status">
+                <span
+                  class="cq-status-pill"
+                  :class="statusClass(row.status)"
+                  :aria-label="`Drive status ${normalizeStatus(row.status)}`"
+                >
                   {{ normalizeStatus(row.status) }}
                 </span>
               </td>
-              <td>{{ formatDate(row.deadline || row.application_deadline) }}</td>
-              <td>{{ row.job_location || '-' }}</td>
-              <td>{{ Number(row.applications_count || 0).toLocaleString() }}</td>
-              <td>{{ formatSalary(row.salary_lpa) }}</td>
-              <td class="cq-row-actions">
+              <td data-label="Deadline">{{ formatDate(row.deadline || row.application_deadline) }}</td>
+              <td data-label="Location">{{ row.job_location || '-' }}</td>
+              <td data-label="Applications">{{ Number(row.applications_count || 0).toLocaleString() }}</td>
+              <td data-label="Salary">{{ formatSalary(row.salary_lpa) }}</td>
+              <td class="cq-row-actions" data-label="Action">
                 <button
                   class="cq-ghost-btn"
                   type="button"
@@ -120,10 +133,16 @@
 
     <Transition name="cq-fade">
       <div v-if="showCreateModal" class="cq-modal-backdrop" @click.self="closeCreateModal">
-        <article class="cq-modal cq-drive-modal">
+        <article
+          id="company-drive-modal"
+          class="cq-modal cq-drive-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="company-drive-modal-title"
+        >
           <header class="cq-modal-head">
-            <h2>Create Placement Drive</h2>
-            <button class="cq-modal-close" type="button" @click="closeCreateModal">x</button>
+            <h2 id="company-drive-modal-title">Create Placement Drive</h2>
+            <button class="cq-modal-close" type="button" aria-label="Close" @click="closeCreateModal">x</button>
           </header>
 
           <form class="cq-drive-form" @submit.prevent="submitCreateDrive">
@@ -141,6 +160,28 @@
               <span>Required Skills</span>
               <input v-model.trim="form.required_skills" type="text" placeholder="Python, SQL, DSA" />
             </label>
+
+            <div class="cq-form-grid">
+              <label class="cq-field">
+                <span>Experience</span>
+                <input
+                  v-model.trim="form.experience_required"
+                  type="text"
+                  placeholder="0-2 years / Fresher"
+                  required
+                />
+              </label>
+
+              <label class="cq-field">
+                <span>Benefits</span>
+                <input
+                  v-model.trim="form.benefits"
+                  type="text"
+                  placeholder="Insurance, hybrid work, bonus"
+                  required
+                />
+              </label>
+            </div>
 
             <div class="cq-form-grid">
               <label class="cq-field">
@@ -223,12 +264,15 @@
 </template>
 
 <script>
+import { nextTick } from 'vue'
 import { companyApi } from '../../api/api'
 
 const DEFAULT_FORM = () => ({
   job_title: '',
   job_description: '',
   required_skills: '',
+  experience_required: '',
+  benefits: '',
   min_cgpa: 6,
   salary_lpa: '',
   application_deadline: '',
@@ -258,7 +302,8 @@ export default {
       showCreateModal: false,
       isSubmitting: false,
       formError: '',
-      form: DEFAULT_FORM()
+      form: DEFAULT_FORM(),
+      lastModalFocusTarget: null
     }
   },
   computed: {
@@ -271,6 +316,12 @@ export default {
   },
   created() {
     this.loadDrives(1)
+  },
+  mounted() {
+    document.addEventListener('keydown', this.handleGlobalKeydown)
+  },
+  beforeUnmount() {
+    document.removeEventListener('keydown', this.handleGlobalKeydown)
   },
   methods: {
     async loadDrives(page = 1) {
@@ -305,7 +356,8 @@ export default {
     applyFilters() {
       this.loadDrives(1)
     },
-    openCreateModal() {
+    openCreateModal(event) {
+      this.lastModalFocusTarget = event?.currentTarget || document.activeElement || null
       this.formError = ''
       this.form = DEFAULT_FORM()
       this.showCreateModal = true
@@ -313,6 +365,17 @@ export default {
     closeCreateModal() {
       if (this.isSubmitting) return
       this.showCreateModal = false
+      const target = this.lastModalFocusTarget
+      this.lastModalFocusTarget = null
+      if (target && typeof target.focus === 'function') {
+        nextTick(() => target.focus())
+      }
+    },
+    handleGlobalKeydown(event) {
+      if (event.key === 'Escape' && this.showCreateModal && !this.isSubmitting) {
+        event.preventDefault()
+        this.closeCreateModal()
+      }
     },
     toggleBranch(branch) {
       const next = [...this.form.eligible_branches]
@@ -336,6 +399,16 @@ export default {
     },
     async submitCreateDrive() {
       this.formError = ''
+
+      if (!this.form.experience_required.trim()) {
+        this.formError = 'Please provide required experience.'
+        return
+      }
+
+      if (!this.form.benefits.trim()) {
+        this.formError = 'Please provide benefits for the drive.'
+        return
+      }
 
       if (!this.form.eligible_branches.length) {
         this.formError = 'Select at least one eligible branch.'
@@ -409,6 +482,22 @@ export default {
       const parsed = Number(value)
       if (Number.isNaN(parsed)) return '-'
       return parsed.toLocaleString()
+    },
+    formatExperience(value) {
+      const source = String(value || '').trim()
+      if (!source) return 'Experience not specified'
+      return `Experience: ${source}`
+    },
+    formatBenefits(value) {
+      const source = String(value || '').trim()
+      if (!source) return 'Benefits not specified'
+
+      const compact = source.replace(/\s+/g, ' ')
+      if (compact.length <= 72) {
+        return `Benefits: ${compact}`
+      }
+
+      return `Benefits: ${compact.slice(0, 69)}...`
     },
     normalizeStatus(status) {
       const source = String(status || 'pending')

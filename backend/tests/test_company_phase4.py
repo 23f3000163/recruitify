@@ -57,6 +57,8 @@ def _make_drive(company_id, title="Backend Engineer", status="approved"):
         job_title=title,
         job_description="Core job responsibilities",
         required_skills="Python,SQL",
+        experience_required="0-2 years",
+        benefits="Learning stipend, insurance",
         min_cgpa=6.0,
         eligible_branches=["CSE", "ECE"],
         eligible_years=[3, 4],
@@ -110,17 +112,86 @@ def test_company_can_list_and_update_application_status(app, client):
 
     update_response = client.put(
         f"/company/applications/{application_id}/status",
-        json={"status": "shortlisted"},
+        json={
+            "status": "shortlisted",
+            "notes": "Profile aligns with role requirements.",
+        },
         headers=headers,
     )
     assert update_response.status_code == 200
     assert update_response.get_json()["data"]["status"] == "shortlisted"
+    assert (
+        update_response.get_json()["data"]["notes"]
+        == "Profile aligns with role requirements."
+    )
 
     filtered_response = client.get("/company/applications?status=shortlisted", headers=headers)
     assert filtered_response.status_code == 200
     filtered_payload = filtered_response.get_json()["data"]
     assert filtered_payload["total"] == 1
     assert filtered_payload["items"][0]["application_id"] == application_id
+
+
+def test_company_rejection_requires_reason_and_saves_feedback(app, client):
+    with app.app_context():
+        company_user = _make_user(
+            "company.feedback",
+            "company.feedback@example.com",
+            "company",
+        )
+        company = _make_company_profile(
+            company_user.user_id,
+            "Feedback Labs",
+            "hr.feedback@example.com",
+        )
+        drive = _make_drive(company.company_id, title="Data Analyst", status="approved")
+
+        student_user = _make_user("student.feedback", "student.feedback@example.com", "student")
+        student = _make_student_profile(student_user.user_id, "CS21B9101")
+
+        application = Application(
+            student_id=student.student_id,
+            drive_id=drive.drive_id,
+            status="applied",
+        )
+        db.session.add(application)
+        db.session.commit()
+
+        headers = _auth_headers(company_user.user_id, "company")
+        application_id = application.application_id
+
+    missing_reason_response = client.put(
+        f"/company/applications/{application_id}/status",
+        json={"status": "rejected", "notes": "Interview rubric mismatch."},
+        headers=headers,
+    )
+    assert missing_reason_response.status_code == 400
+    assert (
+        missing_reason_response.get_json()["error"]
+        == "rejection_reason is required when status is rejected"
+    )
+
+    reject_response = client.put(
+        f"/company/applications/{application_id}/status",
+        json={
+            "status": "rejected",
+            "rejection_reason": "Did not meet technical cutoff.",
+            "notes": "Interview rubric mismatch.",
+        },
+        headers=headers,
+    )
+    assert reject_response.status_code == 200
+    reject_payload = reject_response.get_json()["data"]
+    assert reject_payload["status"] == "rejected"
+    assert reject_payload["rejection_reason"] == "Did not meet technical cutoff."
+    assert reject_payload["notes"] == "Interview rubric mismatch."
+
+    with app.app_context():
+        refreshed = db.session.get(Application, application_id)
+        assert refreshed is not None
+        assert refreshed.status == "rejected"
+        assert refreshed.rejection_reason == "Did not meet technical cutoff."
+        assert refreshed.notes == "Interview rubric mismatch."
 
 
 def test_company_can_schedule_interview_and_update_result(app, client):

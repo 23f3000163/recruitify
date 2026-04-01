@@ -7,9 +7,15 @@
 
     <div class="cq-topbar-right">
       <p class="cq-access-chip" v-if="dashboardMessage">{{ dashboardMessage }}</p>
-      <p class="cq-sync-chip" :class="`is-${syncTone}`" v-if="syncNote">{{ syncNote }}</p>
+      <p class="cq-sync-chip" :class="`is-${syncTone}`" role="status" aria-live="polite" v-if="syncNote">{{ syncNote }}</p>
 
-      <button class="cq-top-user" type="button" @click.stop="toggleUserMenu">
+      <button
+        class="cq-top-user"
+        type="button"
+        :aria-expanded="showUserMenu ? 'true' : 'false'"
+        :aria-controls="userMenuId"
+        @click.stop="toggleUserMenu"
+      >
         <div class="cq-user-avatar">{{ initials }}</div>
         <div class="cq-user-meta">
           <p class="cq-user-name">{{ companyName || 'Company User' }}</p>
@@ -21,7 +27,7 @@
       </button>
 
       <Transition name="cq-fade">
-        <div v-if="showUserMenu" class="cq-user-menu topbar" @click.stop>
+        <div v-if="showUserMenu" :id="userMenuId" class="cq-user-menu topbar" @click.stop>
           <button type="button" class="cq-user-menu-btn danger" @click="requestLogout">
             Log out
           </button>
@@ -63,7 +69,8 @@ export default {
   emits: ['request-logout'],
   data() {
     return {
-      showUserMenu: false
+      showUserMenu: false,
+      userMenuId: 'company-topbar-user-menu'
     }
   },
   computed: {
@@ -80,13 +87,20 @@ export default {
   },
   mounted() {
     document.addEventListener('click', this.closeUserMenu)
+    document.addEventListener('keydown', this.handleKeydown)
   },
   beforeUnmount() {
     document.removeEventListener('click', this.closeUserMenu)
+    document.removeEventListener('keydown', this.handleKeydown)
   },
   methods: {
     toggleUserMenu() {
       this.showUserMenu = !this.showUserMenu
+    },
+    handleKeydown(event) {
+      if (event.key === 'Escape' && this.showUserMenu) {
+        this.showUserMenu = false
+      }
     },
     closeUserMenu() {
       this.showUserMenu = false

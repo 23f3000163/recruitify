@@ -156,4 +156,22 @@ export const adminApi = {
   }
 }
 
+export const studentApi = {
+  getDashboard() {
+    return api.get('/student/dashboard')
+  },
+  getApplications(params = {}) {
+    return api.get('/student/applications', { params })
+  },
+  getNotifications(params = {}) {
+    return api.get('/student/notifications', { params })
+  },
+  markNotificationRead(notificationId) {
+    return api.put(`/student/notifications/${notificationId}/read`)
+  },
+  updateProfile(payload) {
+    return api.put('/student/profile', payload)
+  }
+}
+
 export default api

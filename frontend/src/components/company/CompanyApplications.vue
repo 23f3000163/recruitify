@@ -46,7 +46,7 @@
 
       <p v-if="errorMessage" class="cq-inline-error">{{ errorMessage }}</p>
 
-      <div class="cq-table-wrap">
+      <div class="cq-table-wrap is-mobile-cards">
         <table class="cq-table cq-application-table">
           <thead>
             <tr>
@@ -55,34 +55,50 @@
               <th>Status</th>
               <th>Applied</th>
               <th>Updated</th>
+              <th>Feedback</th>
               <th>Action</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="isLoading">
-              <td colspan="6" class="cq-empty-cell">Loading applications...</td>
+              <td colspan="7" class="cq-empty-cell">Loading applications...</td>
             </tr>
 
             <tr v-else-if="!applications.length">
-              <td colspan="6" class="cq-empty-cell">
+              <td colspan="7" class="cq-empty-cell">
                 No applications found for this filter.
               </td>
             </tr>
 
             <tr v-for="row in applications" :key="row.application_id">
-              <td>
+              <td data-label="Candidate">
                 <p class="cq-drive-title">{{ row.student_name || 'Candidate' }}</p>
                 <p class="cq-drive-sub">{{ row.student_email || '-' }}</p>
               </td>
-              <td>{{ row.drive_title || '-' }}</td>
-              <td>
-                <span class="cq-status-pill" :class="statusClass(row.status)">
+              <td data-label="Drive">{{ row.drive_title || '-' }}</td>
+              <td data-label="Status">
+                <span
+                  class="cq-status-pill"
+                  :class="statusClass(row.status)"
+                  :aria-label="`Application status ${statusLabel(row.status)}`"
+                >
                   {{ statusLabel(row.status) }}
                 </span>
               </td>
-              <td>{{ formatDate(row.application_date) }}</td>
-              <td>{{ formatDate(row.updated_at) }}</td>
-              <td class="cq-row-actions">
+              <td data-label="Applied">{{ formatDate(row.application_date) }}</td>
+              <td data-label="Updated">{{ formatDate(row.updated_at) }}</td>
+              <td data-label="Feedback">
+                <div v-if="row.notes || row.rejection_reason" class="cq-feedback-stack">
+                  <p v-if="row.notes" class="cq-feedback-line">
+                    <span class="cq-feedback-label">Note:</span> {{ row.notes }}
+                  </p>
+                  <p v-if="row.rejection_reason" class="cq-feedback-line">
+                    <span class="cq-feedback-label">Reason:</span> {{ row.rejection_reason }}
+                  </p>
+                </div>
+                <span v-else class="cq-muted">-</span>
+              </td>
+              <td class="cq-row-actions" data-label="Action">
                 <div class="cq-inline-controls">
                   <select
                     :value="statusDraft[row.application_id] || row.status"
@@ -96,7 +112,7 @@
                     class="cq-ghost-btn"
                     type="button"
                     :disabled="isUpdating[row.application_id]"
-                    @click="updateStatus(row)"
+                    @click="updateStatus(row, $event)"
                   >
                     {{ isUpdating[row.application_id] ? 'Saving...' : 'Update' }}
                   </button>
@@ -131,11 +147,82 @@
         </div>
       </footer>
     </article>
+
+    <Transition name="cq-fade">
+      <div v-if="showFeedbackModal" class="cq-modal-backdrop" @click.self="closeFeedbackModal">
+        <article
+          id="company-application-feedback-modal"
+          class="cq-modal cq-modal-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="company-application-feedback-modal-title"
+        >
+          <header class="cq-modal-head">
+            <h2 id="company-application-feedback-modal-title">
+              {{ feedbackForm.target_status === 'rejected' ? 'Reject Application' : 'Add Shortlist Feedback' }}
+            </h2>
+            <button class="cq-modal-close" type="button" aria-label="Close" @click="closeFeedbackModal">x</button>
+          </header>
+
+          <form class="cq-drive-form" @submit.prevent="submitFeedbackUpdate">
+            <p class="cq-muted">
+              {{ feedbackSummaryText }}
+            </p>
+
+            <label class="cq-field" v-if="feedbackForm.target_status === 'rejected'">
+              <span>Rejection Reason</span>
+              <textarea
+                v-model="feedbackForm.rejection_reason"
+                rows="3"
+                maxlength="300"
+                placeholder="Share a clear reason for rejection"
+                required
+              ></textarea>
+            </label>
+
+            <label class="cq-field">
+              <span>Feedback Note (Optional)</span>
+              <textarea
+                v-model="feedbackForm.notes"
+                rows="3"
+                maxlength="500"
+                placeholder="Helpful context for this status update"
+              ></textarea>
+            </label>
+
+            <p v-if="feedbackError" class="cq-inline-error">{{ feedbackError }}</p>
+
+            <div class="cq-form-actions">
+              <button class="cq-ghost-btn" type="button" :disabled="isSubmittingFeedback" @click="closeFeedbackModal">
+                Cancel
+              </button>
+              <button class="cq-btn" type="submit" :disabled="isSubmittingFeedback">
+                {{ isSubmittingFeedback ? 'Saving...' : 'Save Update' }}
+              </button>
+            </div>
+          </form>
+        </article>
+      </div>
+    </Transition>
   </section>
 </template>
 
 <script>
+import { nextTick } from 'vue'
 import { companyApi } from '../../api/api'
+
+const FEEDBACK_MODAL_STATUSES = new Set(['shortlisted', 'rejected'])
+const MAX_NOTES_LENGTH = 500
+const MAX_REJECTION_REASON_LENGTH = 300
+
+const DEFAULT_FEEDBACK_FORM = () => ({
+  application_id: null,
+  target_status: '',
+  student_name: '',
+  drive_title: '',
+  notes: '',
+  rejection_reason: ''
+})
 
 export default {
   name: 'CompanyApplications',
@@ -151,6 +238,11 @@ export default {
       driveOptions: [],
       statusDraft: {},
       isUpdating: {},
+      showFeedbackModal: false,
+      feedbackForm: DEFAULT_FEEDBACK_FORM(),
+      feedbackError: '',
+      isSubmittingFeedback: false,
+      lastModalFocusTarget: null,
       pagination: {
         page: 1,
         pages: 0,
@@ -162,10 +254,23 @@ export default {
   computed: {
     statusOptions() {
       return ['applied', 'shortlisted', 'interviewed', 'selected', 'waitlisted', 'rejected']
+    },
+    feedbackSummaryText() {
+      const studentName = this.feedbackForm.student_name || 'candidate'
+      const driveTitle = this.feedbackForm.drive_title || 'this drive'
+      const statusText = this.statusLabel(this.feedbackForm.target_status).toLowerCase()
+
+      return `Updating ${studentName} for ${driveTitle} to ${statusText}.`
     }
   },
   created() {
     this.loadApplications(1)
+  },
+  mounted() {
+    document.addEventListener('keydown', this.handleGlobalKeydown)
+  },
+  beforeUnmount() {
+    document.removeEventListener('keydown', this.handleGlobalKeydown)
   },
   methods: {
     async loadApplications(page = 1) {
@@ -219,34 +324,128 @@ export default {
         [applicationId]: status
       }
     },
-    async updateStatus(row) {
-      const targetStatus = this.statusDraft[row.application_id] || row.status
-      if (targetStatus === row.status || this.isUpdating[row.application_id]) {
+    requiresFeedbackModal(status) {
+      return FEEDBACK_MODAL_STATUSES.has(String(status || '').toLowerCase())
+    },
+    openFeedbackModal(row, targetStatus, event) {
+      this.lastModalFocusTarget = event?.currentTarget || document.activeElement || null
+      this.feedbackError = ''
+      this.feedbackForm = {
+        application_id: row.application_id,
+        target_status: targetStatus,
+        student_name: row.student_name || 'Candidate',
+        drive_title: row.drive_title || 'Drive',
+        notes: row.notes || '',
+        rejection_reason: targetStatus === 'rejected' ? row.rejection_reason || '' : ''
+      }
+      this.showFeedbackModal = true
+    },
+    closeFeedbackModal(force = false) {
+      if (this.isSubmittingFeedback && !force) {
         return
       }
 
+      this.showFeedbackModal = false
+      this.feedbackError = ''
+      this.feedbackForm = DEFAULT_FEEDBACK_FORM()
+
+      const target = this.lastModalFocusTarget
+      this.lastModalFocusTarget = null
+      if (target && typeof target.focus === 'function') {
+        nextTick(() => target.focus())
+      }
+    },
+    handleGlobalKeydown(event) {
+      if (event.key === 'Escape' && this.showFeedbackModal && !this.isSubmittingFeedback) {
+        event.preventDefault()
+        this.closeFeedbackModal()
+      }
+    },
+    async persistStatusUpdate(applicationId, targetStatus, extraPayload = {}) {
       this.isUpdating = {
         ...this.isUpdating,
-        [row.application_id]: true
+        [applicationId]: true
       }
 
       try {
-        await companyApi.updateApplicationStatus(row.application_id, {
+        await companyApi.updateApplicationStatus(applicationId, {
           status: targetStatus,
-          rejection_reason: targetStatus === 'rejected' ? 'Rejected by company review.' : null
+          ...extraPayload
         })
         await this.loadApplications(this.pagination.page || 1)
         this.$emit('applications-updated')
+        return true
       } catch (error) {
         this.errorMessage =
           error.response?.data?.error ||
           error.response?.data?.message ||
           'Unable to update application status.'
+        return false
       } finally {
         this.isUpdating = {
           ...this.isUpdating,
-          [row.application_id]: false
+          [applicationId]: false
         }
+      }
+    },
+    async updateStatus(row, event) {
+      const targetStatus = this.statusDraft[row.application_id] || row.status
+      if (targetStatus === row.status || this.isUpdating[row.application_id]) {
+        return
+      }
+
+      this.errorMessage = ''
+
+      if (this.requiresFeedbackModal(targetStatus)) {
+        this.openFeedbackModal(row, targetStatus, event)
+        return
+      }
+
+      await this.persistStatusUpdate(row.application_id, targetStatus)
+    },
+    async submitFeedbackUpdate() {
+      const targetStatus = this.feedbackForm.target_status
+      const applicationId = Number(this.feedbackForm.application_id)
+
+      if (!applicationId || !this.requiresFeedbackModal(targetStatus)) {
+        this.feedbackError = 'Unable to submit this update. Please retry.'
+        return
+      }
+
+      const notes = String(this.feedbackForm.notes || '').trim()
+      const rejectionReason = String(this.feedbackForm.rejection_reason || '').trim()
+
+      if (notes.length > MAX_NOTES_LENGTH) {
+        this.feedbackError = `Feedback note cannot exceed ${MAX_NOTES_LENGTH} characters.`
+        return
+      }
+
+      if (targetStatus === 'rejected') {
+        if (!rejectionReason) {
+          this.feedbackError = 'Rejection reason is required for rejected status.'
+          return
+        }
+
+        if (rejectionReason.length > MAX_REJECTION_REASON_LENGTH) {
+          this.feedbackError = `Rejection reason cannot exceed ${MAX_REJECTION_REASON_LENGTH} characters.`
+          return
+        }
+      }
+
+      this.feedbackError = ''
+      this.isSubmittingFeedback = true
+
+      try {
+        const wasSaved = await this.persistStatusUpdate(applicationId, targetStatus, {
+          notes: notes || null,
+          rejection_reason: targetStatus === 'rejected' ? rejectionReason : null
+        })
+
+        if (wasSaved) {
+          this.closeFeedbackModal(true)
+        }
+      } finally {
+        this.isSubmittingFeedback = false
       }
     },
     formatDate(value) {

@@ -13,6 +13,7 @@ from app.models import (
     Application,
     Company,
     Interview,
+    Notification,
     PlacementDrive,
     PlacementOffer,
     Student,
@@ -37,6 +38,8 @@ ALLOWED_INTERVIEW_RECORD_MODES = {"online", "offline"}
 ALLOWED_INTERVIEW_RESULTS = {"pending", "pass", "fail"}
 ALLOWED_OFFER_STATUSES = {"offered", "accepted", "rejected"}
 ALLOWED_BRANCHES = {"CSE", "ECE", "MECH", "EE", "OTHER"}
+MAX_APPLICATION_NOTES_LENGTH = 500
+MAX_REJECTION_REASON_LENGTH = 300
 
 
 def _json_error(message, status_code=400):
@@ -136,6 +139,55 @@ def _append_company_activity(user_id, action, target=None, status="info"):
     )
 
 
+def _status_label(status):
+    status_map = {
+        "applied": "Applied",
+        "shortlisted": "Shortlisted",
+        "interviewed": "Interviewed",
+        "selected": "Selected",
+        "waitlisted": "Waitlisted",
+        "rejected": "Rejected",
+        "pending": "Pending",
+        "pass": "Passed",
+        "fail": "Not Selected",
+        "offered": "Offer Released",
+        "accepted": "Offer Accepted",
+    }
+    normalized = str(status or "").strip().lower()
+    if not normalized:
+        return "Updated"
+    return status_map.get(normalized, normalized.capitalize())
+
+
+def _create_student_notification(
+    application,
+    title,
+    message,
+    sender_id=None,
+    resource_type="application",
+    resource_id=None,
+):
+    if not application:
+        return
+
+    student = db.session.get(Student, application.student_id)
+    if not student or not student.user_id:
+        return
+
+    db.session.add(
+        Notification(
+            recipient_id=student.user_id,
+            sender_id=sender_id,
+            notification_type="in_app",
+            title=(title or "Update").strip()[:200],
+            message=(message or "").strip() or "You have a new recruitment update.",
+            related_resource_type=(resource_type or "application").strip()[:100],
+            related_resource_id=resource_id,
+            delivery_status="sent",
+        )
+    )
+
+
 def _parse_pagination():
     page_raw = request.args.get("page", "1")
     limit_raw = request.args.get("limit", "10")
@@ -191,6 +243,20 @@ def _parse_date_value(raw_value, field_name):
         return date.fromisoformat(raw_value.strip()), None
     except ValueError:
         return None, f"{field_name} must be a valid date"
+
+
+def _parse_optional_text(raw_value, field_name, max_length):
+    if raw_value is None:
+        return None, None
+
+    if not isinstance(raw_value, str):
+        return None, f"{field_name} must be a string"
+
+    cleaned = raw_value.strip()
+    if len(cleaned) > max_length:
+        return None, f"{field_name} must be at most {max_length} characters"
+
+    return cleaned or None, None
 
 
 def _drive_to_dict(drive, applications_count=0):
@@ -402,6 +468,16 @@ def create_drive():
     if not job_description:
         return _json_error("job_description is required", 400)
 
+    experience_required = (payload.get("experience_required") or "").strip()
+    if not experience_required:
+        return _json_error("experience_required is required", 400)
+    if len(experience_required) > 120:
+        return _json_error("experience_required cannot exceed 120 characters", 400)
+
+    benefits = (payload.get("benefits") or "").strip()
+    if not benefits:
+        return _json_error("benefits is required", 400)
+
     try:
         min_cgpa = float(payload.get("min_cgpa"))
     except (TypeError, ValueError):
@@ -442,6 +518,8 @@ def create_drive():
         job_title=job_title,
         job_description=job_description,
         required_skills=(payload.get("required_skills") or "").strip() or None,
+        experience_required=experience_required,
+        benefits=benefits,
         min_cgpa=min_cgpa,
         eligible_branches=eligible_branches,
         eligible_years=eligible_years,
@@ -610,24 +688,62 @@ def update_application_status(application_id):
     if target_status not in ALLOWED_APPLICATION_STATUSES:
         return _json_error("Invalid application status", 400)
 
+    notes, notes_error = _parse_optional_text(
+        payload.get("notes"),
+        "notes",
+        MAX_APPLICATION_NOTES_LENGTH,
+    )
+    if notes_error:
+        return _json_error(notes_error, 400)
+
+    rejection_reason, rejection_reason_error = _parse_optional_text(
+        payload.get("rejection_reason"),
+        "rejection_reason",
+        MAX_REJECTION_REASON_LENGTH,
+    )
+    if rejection_reason_error:
+        return _json_error(rejection_reason_error, 400)
+
+    if target_status == "rejected" and not rejection_reason:
+        return _json_error("rejection_reason is required when status is rejected", 400)
+
     try:
+        previous_status = application.status
         application.status = target_status
 
-        notes = payload.get("notes")
-        if notes is not None:
-            cleaned_notes = notes.strip() if isinstance(notes, str) else notes
-            application.notes = cleaned_notes or None
+        if "notes" in payload:
+            application.notes = notes
 
-        rejection_reason = payload.get("rejection_reason")
         if target_status == "rejected":
-            cleaned_reason = (
-                rejection_reason.strip()
-                if isinstance(rejection_reason, str)
-                else rejection_reason
-            )
-            application.rejection_reason = cleaned_reason or application.rejection_reason
+            application.rejection_reason = rejection_reason
         else:
             application.rejection_reason = None
+
+        drive = db.session.get(PlacementDrive, application.drive_id)
+        drive_title = drive.job_title if drive else "the selected drive"
+        should_notify = (
+            previous_status != target_status
+            or ("notes" in payload and bool(notes))
+            or (target_status == "rejected" and bool(rejection_reason))
+        )
+        if should_notify:
+            update_message = (
+                f"Your application for {drive_title} is now "
+                f"{_status_label(target_status).lower()}."
+            )
+            if target_status == "rejected" and rejection_reason:
+                update_message = f"{update_message} Reason: {rejection_reason}"
+            elif notes:
+                update_message = f"{update_message} Note: {notes}"
+
+            _create_student_notification(
+                application,
+                "Application Update",
+                update_message,
+                sender_id=user_id,
+                resource_type="application",
+                resource_id=application.application_id,
+            )
 
         _append_company_activity(
             user_id,
@@ -773,6 +889,23 @@ def schedule_interview():
     try:
         db.session.add(interview)
         application.status = "interviewed"
+        db.session.flush()
+
+        drive = db.session.get(PlacementDrive, application.drive_id)
+        drive_title = drive.job_title if drive else "the selected drive"
+        scheduled_time_text = interview_date.strftime("%d %b %Y, %I:%M %p UTC")
+        _create_student_notification(
+            application,
+            "Interview Scheduled",
+            (
+                f"Interview scheduled for {drive_title} on {scheduled_time_text} "
+                f"({_status_label(interview_mode)} mode)."
+            ),
+            sender_id=user_id,
+            resource_type="interview",
+            resource_id=interview.interview_id,
+        )
+
         _append_company_activity(
             user_id,
             "Interview Scheduled",
@@ -812,6 +945,7 @@ def update_interview_result(interview_id):
 
     try:
         interview.result = target_result
+        cleaned_feedback = None
 
         feedback = payload.get("feedback")
         if feedback is not None:
@@ -836,6 +970,23 @@ def update_interview_result(interview_id):
                 )
             else:
                 application.status = "interviewed"
+
+            drive = db.session.get(PlacementDrive, application.drive_id)
+            drive_title = drive.job_title if drive else "the selected drive"
+            interview_message = (
+                f"Interview result for {drive_title}: {_status_label(target_result)}."
+            )
+            if cleaned_feedback:
+                interview_message = f"{interview_message} Feedback: {cleaned_feedback}"
+
+            _create_student_notification(
+                application,
+                "Interview Result Update",
+                interview_message,
+                sender_id=user_id,
+                resource_type="interview",
+                resource_id=interview.interview_id,
+            )
 
         _append_company_activity(
             user_id,
@@ -1002,6 +1153,23 @@ def create_offer():
     try:
         db.session.add(offer)
         application.status = "selected"
+        db.session.flush()
+
+        drive = db.session.get(PlacementDrive, application.drive_id)
+        drive_title = drive.job_title if drive else position
+        salary_text = f"INR {salary:,.0f}"
+        _create_student_notification(
+            application,
+            "Offer Released",
+            (
+                f"You received an offer for {position} at {company.company_name} "
+                f"({drive_title}). Package: {salary_text}."
+            ),
+            sender_id=user_id,
+            resource_type="offer",
+            resource_id=offer.offer_id,
+        )
+
         _append_company_activity(
             user_id,
             "Offer Released",

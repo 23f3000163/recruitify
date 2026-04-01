@@ -133,11 +133,11 @@ export default {
   computed: {
     navItems() {
       return [
-        { id: 'overview', label: 'Overview', icon: 'OV' },
-        { id: 'drives', label: 'Drives', icon: 'DR' },
-        { id: 'applications', label: 'Applications', icon: 'AP' },
-        { id: 'interviews', label: 'Interviews', icon: 'IN' },
-        { id: 'offers', label: 'Offers', icon: 'OF' }
+        { id: 'overview', label: 'Overview' },
+        { id: 'drives', label: 'Drives' },
+        { id: 'applications', label: 'Applications' },
+        { id: 'interviews', label: 'Interviews' },
+        { id: 'offers', label: 'Offers' }
       ]
     },
     currentPageTitle() {

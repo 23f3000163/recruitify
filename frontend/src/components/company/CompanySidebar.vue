@@ -23,15 +23,27 @@
         class="cq-nav-btn"
         :class="{ 'is-active': item.id === activeView }"
         type="button"
+        :aria-label="item.label"
+        :aria-current="item.id === activeView ? 'page' : null"
         @click="$emit('select-view', item.id)"
       >
-        <span class="cq-nav-ico" aria-hidden="true">{{ item.icon }}</span>
+        <span class="cq-nav-ico" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path :d="iconPath(item.id)" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
         <span class="cq-nav-label" v-if="!sidebarCollapsed">{{ item.label }}</span>
       </button>
     </nav>
 
     <div class="cq-side-user-wrap">
-      <button class="cq-side-user" type="button" @click.stop="toggleUserMenu">
+      <button
+        class="cq-side-user"
+        type="button"
+        :aria-expanded="showUserMenu ? 'true' : 'false'"
+        :aria-controls="userMenuId"
+        @click.stop="toggleUserMenu"
+      >
         <div class="cq-user-avatar">{{ initials }}</div>
         <div class="cq-user-meta" v-if="!sidebarCollapsed">
           <p class="cq-user-name">{{ companyName || 'Company' }}</p>
@@ -43,7 +55,7 @@
       </button>
 
       <Transition name="cq-fade">
-        <div v-if="showUserMenu" class="cq-user-menu" @click.stop>
+        <div v-if="showUserMenu" :id="userMenuId" class="cq-user-menu" @click.stop>
           <button type="button" class="cq-user-menu-btn danger" @click="requestLogout">
             Log out
           </button>
@@ -77,7 +89,8 @@ export default {
   emits: ['toggle-sidebar', 'select-view', 'request-logout'],
   data() {
     return {
-      showUserMenu: false
+      showUserMenu: false,
+      userMenuId: 'company-sidebar-user-menu'
     }
   },
   computed: {
@@ -93,13 +106,31 @@ export default {
   },
   mounted() {
     document.addEventListener('click', this.closeUserMenu)
+    document.addEventListener('keydown', this.handleKeydown)
   },
   beforeUnmount() {
     document.removeEventListener('click', this.closeUserMenu)
+    document.removeEventListener('keydown', this.handleKeydown)
   },
   methods: {
+    iconPath(viewId) {
+      const icons = {
+        overview: 'M3 11.5L12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z',
+        drives: 'M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M4 9h16v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z',
+        applications: 'M7 4h8l4 4v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z M15 4v4h4',
+        interviews: 'M8 3v3M16 3v3M4 9h16M6 6h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2',
+        offers: 'M7 12l3 3 7-7M4 12a8 8 0 1 0 16 0a8 8 0 1 0-16 0'
+      }
+
+      return icons[viewId] || icons.overview
+    },
     toggleUserMenu() {
       this.showUserMenu = !this.showUserMenu
+    },
+    handleKeydown(event) {
+      if (event.key === 'Escape' && this.showUserMenu) {
+        this.showUserMenu = false
+      }
     },
     closeUserMenu() {
       this.showUserMenu = false

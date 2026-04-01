@@ -7,7 +7,14 @@
           <p>Release offers and monitor acceptance outcomes from one table.</p>
         </div>
 
-        <button class="cq-btn" type="button" @click="openCreateModal">
+        <button
+          class="cq-btn"
+          type="button"
+          aria-haspopup="dialog"
+          :aria-expanded="showCreateModal ? 'true' : 'false'"
+          aria-controls="company-offer-modal"
+          @click="openCreateModal($event)"
+        >
           + Release Offer
         </button>
       </header>
@@ -50,7 +57,7 @@
 
       <p v-if="errorMessage" class="cq-inline-error">{{ errorMessage }}</p>
 
-      <div class="cq-table-wrap">
+      <div class="cq-table-wrap is-mobile-cards">
         <table class="cq-table cq-offer-table">
           <thead>
             <tr>
@@ -75,20 +82,24 @@
             </tr>
 
             <tr v-for="row in offers" :key="row.offer_id">
-              <td>
+              <td data-label="Candidate">
                 <p class="cq-drive-title">{{ row.student_name || 'Candidate' }}</p>
                 <p class="cq-drive-sub">{{ row.student_email || '-' }}</p>
               </td>
-              <td>{{ row.drive_title || '-' }}</td>
-              <td>{{ row.position || '-' }}</td>
-              <td>{{ formatCurrency(row.salary) }}</td>
-              <td>{{ formatDate(row.joining_date) }}</td>
-              <td>
-                <span class="cq-status-pill" :class="offerStatusClass(row.status)">
+              <td data-label="Drive">{{ row.drive_title || '-' }}</td>
+              <td data-label="Position">{{ row.position || '-' }}</td>
+              <td data-label="Salary">{{ formatCurrency(row.salary) }}</td>
+              <td data-label="Joining Date">{{ formatDate(row.joining_date) }}</td>
+              <td data-label="Status">
+                <span
+                  class="cq-status-pill"
+                  :class="offerStatusClass(row.status)"
+                  :aria-label="`Offer status ${statusLabel(row.status)}`"
+                >
                   {{ statusLabel(row.status) }}
                 </span>
               </td>
-              <td>{{ formatDate(row.created_at) }}</td>
+              <td data-label="Created">{{ formatDate(row.created_at) }}</td>
             </tr>
           </tbody>
         </table>
@@ -121,10 +132,16 @@
 
     <Transition name="cq-fade">
       <div v-if="showCreateModal" class="cq-modal-backdrop" @click.self="closeCreateModal">
-        <article class="cq-modal cq-modal-sm">
+        <article
+          id="company-offer-modal"
+          class="cq-modal cq-modal-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="company-offer-modal-title"
+        >
           <header class="cq-modal-head">
-            <h2>Release Offer</h2>
-            <button class="cq-modal-close" type="button" @click="closeCreateModal">x</button>
+            <h2 id="company-offer-modal-title">Release Offer</h2>
+            <button class="cq-modal-close" type="button" aria-label="Close" @click="closeCreateModal">x</button>
           </header>
 
           <form class="cq-drive-form" @submit.prevent="submitCreateOffer">
@@ -173,6 +190,7 @@
 </template>
 
 <script>
+import { nextTick } from 'vue'
 import { companyApi } from '../../api/api'
 
 const DEFAULT_OFFER_FORM = () => ({
@@ -204,11 +222,18 @@ export default {
       offerCandidates: [],
       offerForm: DEFAULT_OFFER_FORM(),
       formError: '',
-      isCreating: false
+      isCreating: false,
+      lastModalFocusTarget: null
     }
   },
   created() {
     this.loadOffers(1)
+  },
+  mounted() {
+    document.addEventListener('keydown', this.handleGlobalKeydown)
+  },
+  beforeUnmount() {
+    document.removeEventListener('keydown', this.handleGlobalKeydown)
   },
   methods: {
     async loadOffers(page = 1) {
@@ -250,7 +275,8 @@ export default {
     applyFilters() {
       this.loadOffers(1)
     },
-    async openCreateModal() {
+    async openCreateModal(event) {
+      this.lastModalFocusTarget = event?.currentTarget || document.activeElement || null
       this.offerForm = DEFAULT_OFFER_FORM()
       this.formError = ''
       this.showCreateModal = true
@@ -279,6 +305,17 @@ export default {
     closeCreateModal() {
       if (this.isCreating) return
       this.showCreateModal = false
+      const target = this.lastModalFocusTarget
+      this.lastModalFocusTarget = null
+      if (target && typeof target.focus === 'function') {
+        nextTick(() => target.focus())
+      }
+    },
+    handleGlobalKeydown(event) {
+      if (event.key === 'Escape' && this.showCreateModal && !this.isCreating) {
+        event.preventDefault()
+        this.closeCreateModal()
+      }
     },
     async submitCreateOffer() {
       this.formError = ''

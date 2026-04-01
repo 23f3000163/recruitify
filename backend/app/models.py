@@ -328,6 +328,8 @@ class PlacementDrive(db.Model):
     job_title = db.Column(db.String(200), nullable=False)
     job_description = db.Column(db.Text, nullable=False)
     required_skills = db.Column(db.Text, nullable=True)
+    experience_required = db.Column(db.String(120), nullable=True)
+    benefits = db.Column(db.Text, nullable=True)
     min_cgpa = db.Column(db.Float, nullable=False)
     eligible_branches = db.Column(db.JSON, nullable=False)   # e.g. ["CSE","ECE"]
     eligible_years = db.Column(db.JSON, nullable=False)       # e.g. [3, 4]
@@ -374,6 +376,8 @@ class PlacementDrive(db.Model):
             "job_title": self.job_title,
             "job_description": self.job_description,
             "required_skills": self.required_skills,
+            "experience_required": self.experience_required,
+            "benefits": self.benefits,
             "min_cgpa": self.min_cgpa,
             "eligible_branches": self.eligible_branches,
             "eligible_years": self.eligible_years,

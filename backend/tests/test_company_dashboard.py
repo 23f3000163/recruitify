@@ -47,6 +47,8 @@ def _make_drive(company_id, title, status, deadline):
         job_title=title,
         job_description="Core job responsibilities",
         required_skills="Python,SQL",
+        experience_required="0-2 years",
+        benefits="Health insurance, annual bonus",
         min_cgpa=6.0,
         eligible_branches=["CSE", "ECE"],
         eligible_years=[3, 4],

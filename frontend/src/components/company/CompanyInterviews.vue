@@ -7,7 +7,14 @@
           <p>Schedule interview rounds and record outcomes quickly.</p>
         </div>
 
-        <button class="cq-btn" type="button" @click="openScheduleModal">
+        <button
+          class="cq-btn"
+          type="button"
+          aria-haspopup="dialog"
+          :aria-expanded="showScheduleModal ? 'true' : 'false'"
+          aria-controls="company-interview-modal"
+          @click="openScheduleModal($event)"
+        >
           + Schedule Interview
         </button>
       </header>
@@ -40,7 +47,7 @@
 
       <p v-if="errorMessage" class="cq-inline-error">{{ errorMessage }}</p>
 
-      <div class="cq-table-wrap">
+      <div class="cq-table-wrap is-mobile-cards">
         <table class="cq-table cq-interview-table">
           <thead>
             <tr>
@@ -65,20 +72,24 @@
             </tr>
 
             <tr v-for="row in interviews" :key="row.interview_id">
-              <td>
+              <td data-label="Candidate">
                 <p class="cq-drive-title">{{ row.student_name || 'Candidate' }}</p>
                 <p class="cq-drive-sub">{{ row.student_email || '-' }}</p>
               </td>
-              <td>{{ row.drive_title || '-' }}</td>
-              <td>{{ formatDateTime(row.interview_date) }}</td>
-              <td>{{ statusLabel(row.interview_mode) }}</td>
-              <td>{{ row.interviewer_name || '-' }}</td>
-              <td>
-                <span class="cq-status-pill" :class="resultClass(row.result)">
+              <td data-label="Drive">{{ row.drive_title || '-' }}</td>
+              <td data-label="Date">{{ formatDateTime(row.interview_date) }}</td>
+              <td data-label="Mode">{{ statusLabel(row.interview_mode) }}</td>
+              <td data-label="Interviewer">{{ row.interviewer_name || '-' }}</td>
+              <td data-label="Result">
+                <span
+                  class="cq-status-pill"
+                  :class="resultClass(row.result)"
+                  :aria-label="`Interview result ${statusLabel(row.result)}`"
+                >
                   {{ statusLabel(row.result) }}
                 </span>
               </td>
-              <td class="cq-row-actions">
+              <td class="cq-row-actions" data-label="Action">
                 <div class="cq-inline-controls">
                   <select
                     :value="resultDraft[row.interview_id] || row.result"
@@ -130,10 +141,16 @@
 
     <Transition name="cq-fade">
       <div v-if="showScheduleModal" class="cq-modal-backdrop" @click.self="closeScheduleModal">
-        <article class="cq-modal cq-modal-sm">
+        <article
+          id="company-interview-modal"
+          class="cq-modal cq-modal-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="company-interview-modal-title"
+        >
           <header class="cq-modal-head">
-            <h2>Schedule Interview</h2>
-            <button class="cq-modal-close" type="button" @click="closeScheduleModal">x</button>
+            <h2 id="company-interview-modal-title">Schedule Interview</h2>
+            <button class="cq-modal-close" type="button" aria-label="Close" @click="closeScheduleModal">x</button>
           </header>
 
           <form class="cq-drive-form" @submit.prevent="submitScheduleInterview">
@@ -197,6 +214,7 @@
 </template>
 
 <script>
+import { nextTick } from 'vue'
 import { companyApi } from '../../api/api'
 
 const DEFAULT_SCHEDULE_FORM = () => ({
@@ -231,11 +249,18 @@ export default {
       scheduleCandidates: [],
       scheduleForm: DEFAULT_SCHEDULE_FORM(),
       scheduleError: '',
-      isScheduling: false
+      isScheduling: false,
+      lastModalFocusTarget: null
     }
   },
   created() {
     this.loadInterviews(1)
+  },
+  mounted() {
+    document.addEventListener('keydown', this.handleGlobalKeydown)
+  },
+  beforeUnmount() {
+    document.removeEventListener('keydown', this.handleGlobalKeydown)
   },
   methods: {
     async loadInterviews(page = 1) {
@@ -317,7 +342,8 @@ export default {
         }
       }
     },
-    async openScheduleModal() {
+    async openScheduleModal(event) {
+      this.lastModalFocusTarget = event?.currentTarget || document.activeElement || null
       this.scheduleForm = DEFAULT_SCHEDULE_FORM()
       this.scheduleError = ''
       this.showScheduleModal = true
@@ -346,6 +372,17 @@ export default {
     closeScheduleModal() {
       if (this.isScheduling) return
       this.showScheduleModal = false
+      const target = this.lastModalFocusTarget
+      this.lastModalFocusTarget = null
+      if (target && typeof target.focus === 'function') {
+        nextTick(() => target.focus())
+      }
+    },
+    handleGlobalKeydown(event) {
+      if (event.key === 'Escape' && this.showScheduleModal && !this.isScheduling) {
+        event.preventDefault()
+        this.closeScheduleModal()
+      }
     },
     async submitScheduleInterview() {
       this.scheduleError = ''

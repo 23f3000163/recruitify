@@ -100,6 +100,8 @@ def test_update_application_status_creates_activity_log_and_list_limit(app, clie
             job_title="SDE Intern",
             job_description="Build features",
             required_skills="Python,SQL",
+            experience_required="0-1 years",
+            benefits="Insurance and mentoring",
             min_cgpa=6.5,
             eligible_branches=["CSE", "ECE"],
             eligible_years=[3, 4],
