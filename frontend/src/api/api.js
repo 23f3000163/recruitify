@@ -49,11 +49,20 @@ export const authApi = {
   login(payload) {
     return api.post('/auth/login', payload)
   },
+  getMe() {
+    return api.get('/auth/me')
+  },
   registerStudent(payload) {
     return api.post('/auth/register/student', payload)
   },
   registerCompany(payload) {
     return api.post('/auth/register/company', payload)
+  }
+}
+
+export const companyApi = {
+  getDashboard() {
+    return api.get('/auth/company/dashboard')
   }
 }
 

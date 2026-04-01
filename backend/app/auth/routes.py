@@ -6,7 +6,16 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required
 from sqlalchemy.exc import IntegrityError
 
-from app.models import Company, Student, User, db
+from app.models import (
+	Application,
+	Company,
+	Interview,
+	PlacementDrive,
+	PlacementOffer,
+	Student,
+	User,
+	db,
+)
 
 from .utils import role_required
 from .validators import validate_email, validate_password, validate_required_fields
@@ -26,6 +35,16 @@ def _normalized_json_payload():
 		key: value.strip() if isinstance(value, str) else value
 		for key, value in data.items()
 	}
+
+
+def _current_user_id():
+	"""Extract the authenticated user id from JWT identity."""
+	identity = get_jwt_identity()
+	raw_user_id = identity.get("user_id") if isinstance(identity, dict) else identity
+	try:
+		return int(raw_user_id)
+	except (TypeError, ValueError):
+		return None
 
 @auth_bp.post("/register/student")
 def register_student():
@@ -240,7 +259,7 @@ def me():
 	if not user_id:
 		return _json_error("Invalid token identity", 401)
 
-	user = User.query.get(user_id)
+	user = db.session.get(User, user_id)
 	if not user:
 		return _json_error("User not found", 404)
 
@@ -280,9 +299,97 @@ def student_dashboard():
 @auth_bp.get("/company/dashboard")
 @role_required("company")
 def company_dashboard():
-	identity = get_jwt_identity()
-	user = identity if isinstance(identity, dict) else {"user_id": identity}
-	return jsonify({"message": "Welcome Company", "data": {"user": user}}), 200
+	user_id = _current_user_id()
+	if not user_id:
+		return _json_error("Invalid token identity", 401)
+
+	user = db.session.get(User, user_id)
+	if not user:
+		return _json_error("User not found", 404)
+
+	company = Company.query.filter_by(user_id=user_id).first()
+	if not company:
+		return _json_error("Company profile not found", 404)
+
+	active_drives = PlacementDrive.query.filter(
+		PlacementDrive.company_id == company.company_id,
+		PlacementDrive.status.in_(("pending", "approved")),
+	).count()
+
+	applications_base = db.session.query(Application).join(
+		PlacementDrive, Application.drive_id == PlacementDrive.drive_id
+	).filter(PlacementDrive.company_id == company.company_id)
+
+	applications_received = applications_base.count()
+	screening_count = applications_base.filter(
+		Application.status.in_(("applied", "shortlisted", "waitlisted"))
+	).count()
+	interviews_scheduled = Interview.query.filter_by(company_id=company.company_id).count()
+	offers_released = PlacementOffer.query.filter_by(company_id=company.company_id).count()
+	pending_drives = PlacementDrive.query.filter_by(
+		company_id=company.company_id, status="pending"
+	).count()
+
+	pipeline = [
+		{"id": "pending", "label": "Pending Approval", "count": pending_drives},
+		{"id": "screening", "label": "Application Screening", "count": screening_count},
+		{
+			"id": "interviews",
+			"label": "Interviews",
+			"count": interviews_scheduled,
+		},
+		{"id": "offers", "label": "Offers", "count": offers_released},
+	]
+
+	recent_rows = (
+		db.session.query(Application, Student, User, PlacementDrive)
+		.join(PlacementDrive, Application.drive_id == PlacementDrive.drive_id)
+		.join(Student, Application.student_id == Student.student_id)
+		.join(User, Student.user_id == User.user_id)
+		.filter(PlacementDrive.company_id == company.company_id)
+		.order_by(Application.updated_at.desc(), Application.application_id.desc())
+		.limit(8)
+		.all()
+	)
+
+	recent_applicants = [
+		{
+			"application_id": application.application_id,
+			"student_name": student_user.username,
+			"job_title": drive.job_title,
+			"status": application.status,
+			"updated_at": application.updated_at.isoformat()
+			if application.updated_at
+			else None,
+		}
+		for application, _student, student_user, drive in recent_rows
+	]
+
+	return (
+		jsonify(
+			{
+				"message": "Company dashboard loaded successfully",
+				"data": {
+					"user": {
+						"user_id": user.user_id,
+						"username": user.username,
+						"email": user.email,
+						"company_id": company.company_id,
+						"company_name": company.company_name,
+					},
+					"summary": {
+						"active_drives": active_drives,
+						"applications_received": applications_received,
+						"interviews_scheduled": interviews_scheduled,
+						"offers_released": offers_released,
+					},
+					"pipeline": pipeline,
+					"recent_applicants": recent_applicants,
+				},
+			}
+		),
+		200,
+	)
 
 
 __all__ = ["auth_bp"]
