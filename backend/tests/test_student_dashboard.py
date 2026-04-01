@@ -1,8 +1,18 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from flask_jwt_extended import create_access_token
 
-from app.models import Application, Company, Notification, PlacementDrive, Student, User, db
+from app.models import (
+    Application,
+    Company,
+    Notification,
+    Placement,
+    PlacementDrive,
+    PlacementOffer,
+    Student,
+    User,
+    db,
+)
 
 
 def _make_user(username, email, role):
@@ -175,3 +185,120 @@ def test_student_can_mark_notification_as_read(app, client):
         assert refreshed is not None
         assert refreshed.is_read is True
         assert refreshed.read_at is not None
+
+
+def test_student_can_mark_all_notifications_as_read(app, client):
+    with app.app_context():
+        student_user = _make_user("student.notify.all", "student.notify.all@example.com", "student")
+        _make_student_profile(student_user.user_id, "CS21B9203")
+
+        db.session.add_all(
+            [
+                Notification(
+                    recipient_id=student_user.user_id,
+                    notification_type="in_app",
+                    title="Update 1",
+                    message="First unread update",
+                    delivery_status="sent",
+                    is_read=False,
+                ),
+                Notification(
+                    recipient_id=student_user.user_id,
+                    notification_type="in_app",
+                    title="Update 2",
+                    message="Second unread update",
+                    delivery_status="sent",
+                    is_read=False,
+                ),
+            ]
+        )
+        db.session.commit()
+
+        student_user_id = student_user.user_id
+        headers = _auth_headers(student_user.user_id, "student")
+
+    response = client.put("/student/notifications/read-all", headers=headers)
+    assert response.status_code == 200
+
+    payload = response.get_json()["data"]
+    assert payload["updated_count"] == 2
+    assert payload["unread_count"] == 0
+
+    with app.app_context():
+        unread = Notification.query.filter_by(recipient_id=student_user_id, is_read=False).count()
+        assert unread == 0
+
+
+def test_student_can_respond_to_offer_and_notify_company(app, client):
+    with app.app_context():
+        company_user = _make_user("company.offer.step4", "company.offer.step4@example.com", "company")
+        company = _make_company_profile(
+            company_user.user_id,
+            "Offer Workflow Inc",
+            "hr.offer.step4@example.com",
+        )
+        drive = _make_drive(company.company_id, title="SRE Engineer", status="approved")
+
+        student_user = _make_user("student.offer.step4", "student.offer.step4@example.com", "student")
+        student = _make_student_profile(student_user.user_id, "CS21B9204")
+
+        application = Application(
+            student_id=student.student_id,
+            drive_id=drive.drive_id,
+            status="selected",
+        )
+        db.session.add(application)
+        db.session.flush()
+
+        offer = PlacementOffer(
+            application_id=application.application_id,
+            student_id=student.student_id,
+            company_id=company.company_id,
+            drive_id=drive.drive_id,
+            salary=1850000,
+            position="Site Reliability Engineer",
+            joining_date=date.today() + timedelta(days=45),
+            status="offered",
+        )
+        db.session.add(offer)
+        db.session.commit()
+
+        headers = _auth_headers(student_user.user_id, "student")
+        offer_id = offer.offer_id
+        student_id = student.student_id
+        company_user_id = company_user.user_id
+
+    response = client.put(
+        f"/student/offers/{offer_id}/respond",
+        json={"status": "accepted"},
+        headers=headers,
+    )
+    assert response.status_code == 200
+
+    payload = response.get_json()["data"]
+    assert payload["offer"]["status"] == "accepted"
+    assert payload["placement"] is not None
+
+    second_response = client.put(
+        f"/student/offers/{offer_id}/respond",
+        json={"status": "rejected"},
+        headers=headers,
+    )
+    assert second_response.status_code == 400
+    assert second_response.get_json()["error"] == "Offer response already submitted"
+
+    with app.app_context():
+        refreshed_offer = db.session.get(PlacementOffer, offer_id)
+        assert refreshed_offer is not None
+        assert refreshed_offer.status == "accepted"
+
+        placements = Placement.query.filter_by(student_id=student_id).all()
+        assert len(placements) == 1
+        assert placements[0].position == "Site Reliability Engineer"
+
+        company_notifications = Notification.query.filter_by(
+            recipient_id=company_user_id,
+            notification_type="in_app",
+            title="Offer Response Received",
+        ).count()
+        assert company_notifications == 1

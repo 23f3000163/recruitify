@@ -177,6 +177,9 @@ def test_company_dashboard_bootstrap_returns_summary_pipeline_and_recent_rows(ap
         "applications_received": 4,
         "interviews_scheduled": 1,
         "offers_released": 1,
+        "offers_accepted": 0,
+        "offers_rejected": 0,
+        "unread_notifications": 0,
     }
 
     pipeline = {item["id"]: item["count"] for item in data["pipeline"]}
@@ -220,6 +223,9 @@ def test_company_dashboard_bootstrap_returns_empty_collections_for_new_company(a
         "applications_received": 0,
         "interviews_scheduled": 0,
         "offers_released": 0,
+        "offers_accepted": 0,
+        "offers_rejected": 0,
+        "unread_notifications": 0,
     }
     assert payload["recent_applicants"] == []
     assert all(stage["count"] == 0 for stage in payload["pipeline"])

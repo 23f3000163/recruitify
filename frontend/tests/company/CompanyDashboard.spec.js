@@ -32,7 +32,10 @@ const buildDashboardResponse = () => ({
         active_drives: 3,
         applications_received: 12,
         interviews_scheduled: 5,
-        offers_released: 2
+        offers_released: 2,
+        offers_accepted: 1,
+        offers_rejected: 1,
+        unread_notifications: 4
       },
       pipeline: [
         { id: 'applied', label: 'Applied', count: 12 },
@@ -66,6 +69,7 @@ const makeWrapper = (routerPush = vi.fn()) =>
               <button class="toggle-sidebar" @click="$emit('toggle-sidebar')">Toggle</button>
               <button class="to-drives" @click="$emit('select-view', 'drives')">Drives</button>
               <button class="to-interviews" @click="$emit('select-view', 'interviews')">Interviews</button>
+              <button class="to-notifications" @click="$emit('select-view', 'notifications')">Notifications</button>
               <button class="sidebar-logout" @click="$emit('request-logout')">Logout</button>
             </div>
           `
@@ -102,6 +106,10 @@ const makeWrapper = (routerPush = vi.fn()) =>
         CompanyOffers: {
           name: 'CompanyOffers',
           template: '<button class="offers-updated" @click="$emit(\'offers-updated\')">Emit</button>'
+        },
+        CompanyNotifications: {
+          name: 'CompanyNotifications',
+          template: '<button class="notifications-updated" @click="$emit(\'notifications-updated\')">Emit</button>'
         }
       }
     }
@@ -137,7 +145,10 @@ describe('CompanyDashboard phase 6 integration', () => {
       active_drives: 3,
       applications_received: 12,
       interviews_scheduled: 5,
-      offers_released: 2
+      offers_released: 2,
+      offers_accepted: 1,
+      offers_rejected: 1,
+      unread_notifications: 4
     })
   })
 
@@ -290,6 +301,35 @@ describe('CompanyDashboard phase 6 integration', () => {
     expect(wrapper.vm.loadError).toBe('')
     expect(wrapper.vm.syncTone).toBe('error')
     expect(wrapper.text()).toContain('Background refresh failed')
+  })
+
+  it('switches to notifications view and refreshes on notifications-updated event', async () => {
+    authApi.getMe.mockResolvedValue({
+      data: {
+        data: {
+          user_id: 41,
+          username: 'acme_admin',
+          email: 'admin@acme.example'
+        }
+      }
+    })
+    companyApi.getDashboard.mockResolvedValue(buildDashboardResponse())
+
+    const wrapper = makeWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    await wrapper.get('.to-notifications').trigger('click')
+    expect(wrapper.vm.activeView).toBe('notifications')
+    expect(wrapper.find('.notifications-updated').exists()).toBe(true)
+
+    await wrapper.get('.notifications-updated').trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    expect(authApi.getMe).toHaveBeenCalledTimes(2)
+    expect(companyApi.getDashboard).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('Notifications synced')
   })
 
   it('clears auth storage and routes to login on logout event', async () => {

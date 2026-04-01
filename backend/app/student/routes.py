@@ -10,10 +10,12 @@ from sqlalchemy import or_
 from app.auth.utils import role_required
 from app.auth.validators import validate_required_fields
 from app.models import (
+    ActivityLog,
     Application,
     Company,
     Interview,
     Notification,
+    Placement,
     PlacementDrive,
     PlacementOffer,
     Student,
@@ -45,6 +47,7 @@ ALLOWED_APPLICATION_STATUSES = {
     "rejected",
     "waitlisted",
 }
+ALLOWED_OFFER_RESPONSE_STATUSES = {"accepted", "rejected"}
 
 
 def _json_error(message, status_code=400):
@@ -96,6 +99,48 @@ def _current_user_id():
 
 def _student_for_user(user_id):
     return Student.query.filter_by(user_id=user_id).first()
+
+
+def _append_student_activity(user_id, action, target=None, status="info"):
+    try:
+        actor_id = int(user_id)
+    except (TypeError, ValueError):
+        return
+
+    db.session.add(
+        ActivityLog(
+            user_id=actor_id,
+            action=(action or "Student Action").strip(),
+            target=(target or "").strip() or None,
+            status=(status or "info").strip().lower() or "info",
+        )
+    )
+
+
+def _create_company_notification(
+    company_id,
+    title,
+    message,
+    sender_id=None,
+    resource_type="offer",
+    resource_id=None,
+):
+    company = db.session.get(Company, company_id)
+    if not company or not company.user_id:
+        return
+
+    db.session.add(
+        Notification(
+            recipient_id=company.user_id,
+            sender_id=sender_id,
+            notification_type="in_app",
+            title=(title or "Update").strip()[:200],
+            message=(message or "").strip() or "You have a new update.",
+            related_resource_type=(resource_type or "offer").strip()[:100],
+            related_resource_id=resource_id,
+            delivery_status="sent",
+        )
+    )
 
 
 def _parse_pagination():
@@ -198,13 +243,19 @@ def _build_application_timeline(application, latest_interview=None, offer=None):
         )
 
     if offer:
+        offer_tone = "info"
+        if offer.status == "accepted":
+            offer_tone = "success"
+        elif offer.status == "rejected":
+            offer_tone = "error"
+
         events.append(
             _timeline_event(
                 f"{application.application_id}-offer-{offer.offer_id}",
                 _status_label(offer.status),
                 offer.created_at,
                 f"Offer for {offer.position} with salary INR {offer.salary:,.0f}.",
-                "success",
+                offer_tone,
             )
         )
 
@@ -394,6 +445,14 @@ def student_dashboard():
         "offers_released": PlacementOffer.query.filter(
             PlacementOffer.student_id == student.student_id,
             PlacementOffer.status == "offered",
+        ).count(),
+        "offers_accepted": PlacementOffer.query.filter(
+            PlacementOffer.student_id == student.student_id,
+            PlacementOffer.status == "accepted",
+        ).count(),
+        "offers_rejected": PlacementOffer.query.filter(
+            PlacementOffer.student_id == student.student_id,
+            PlacementOffer.status == "rejected",
         ).count(),
     }
 
@@ -625,6 +684,178 @@ def mark_notification_read(notification_id):
                 "data": {
                     "notification": notification.to_dict(),
                     "unread_count": unread_count,
+                },
+            }
+        ),
+        200,
+    )
+
+
+@student_bp.put("/notifications/read-all")
+@role_required("student")
+def mark_all_notifications_read():
+    user_id = _current_user_id()
+    if user_id is None:
+        return _json_error("Invalid token identity", 401)
+
+    unread_notifications = Notification.query.filter(
+        Notification.recipient_id == user_id,
+        Notification.notification_type == "in_app",
+        Notification.is_read.is_(False),
+    ).all()
+
+    if not unread_notifications:
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "data": {
+                        "updated_count": 0,
+                        "unread_count": 0,
+                    },
+                }
+            ),
+            200,
+        )
+
+    read_time = datetime.now(timezone.utc)
+    for notification in unread_notifications:
+        notification.is_read = True
+        notification.read_at = read_time
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return _json_error("Unable to update notifications", 500)
+
+    return (
+        jsonify(
+            {
+                "success": True,
+                "data": {
+                    "updated_count": len(unread_notifications),
+                    "unread_count": 0,
+                },
+            }
+        ),
+        200,
+    )
+
+
+@student_bp.put("/offers/<int:offer_id>/respond")
+@role_required("student")
+def respond_to_offer(offer_id):
+    user_id = _current_user_id()
+    if user_id is None:
+        return _json_error("Invalid token identity", 401)
+
+    student = _student_for_user(user_id)
+    if not student:
+        return _json_error("Student profile not found", 404)
+
+    offer = PlacementOffer.query.filter(
+        PlacementOffer.offer_id == offer_id,
+        PlacementOffer.student_id == student.student_id,
+    ).first()
+    if not offer:
+        return _json_error("Offer not found", 404)
+
+    payload = request.get_json(silent=True) or {}
+    target_status = (payload.get("status") or "").strip().lower()
+    if target_status not in ALLOWED_OFFER_RESPONSE_STATUSES:
+        return _json_error("status must be accepted or rejected", 400)
+
+    if offer.status == target_status and offer.status in ALLOWED_OFFER_RESPONSE_STATUSES:
+        placement = None
+        if target_status == "accepted":
+            placement = Placement.query.filter_by(
+                student_id=offer.student_id,
+                company_id=offer.company_id,
+                drive_id=offer.drive_id,
+            ).first()
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "data": {
+                        "offer": offer.to_dict(),
+                        "placement": placement.to_dict() if placement else None,
+                    },
+                }
+            ),
+            200,
+        )
+
+    if offer.status != "offered" and offer.status != target_status:
+        return _json_error("Offer response already submitted", 400)
+
+    try:
+        offer.status = target_status
+
+        application = db.session.get(Application, offer.application_id)
+        if application:
+            if target_status == "accepted":
+                application.status = "selected"
+            else:
+                application.status = "rejected"
+                if not application.rejection_reason:
+                    application.rejection_reason = "Offer declined by student."
+            application.updated_at = datetime.now(timezone.utc)
+
+        placement_payload = None
+        if target_status == "accepted":
+            placement = Placement.query.filter_by(
+                student_id=offer.student_id,
+                company_id=offer.company_id,
+                drive_id=offer.drive_id,
+            ).first()
+            if not placement:
+                placement = Placement(
+                    student_id=offer.student_id,
+                    company_id=offer.company_id,
+                    drive_id=offer.drive_id,
+                    position=offer.position,
+                    salary=offer.salary,
+                    joining_date=offer.joining_date,
+                )
+                db.session.add(placement)
+
+            db.session.flush()
+            placement_payload = placement.to_dict()
+
+        student_name = student.user.username if student.user else f"Student {student.student_id}"
+        _create_company_notification(
+            offer.company_id,
+            "Offer Response Received",
+            (
+                f"{student_name} has {_status_label(target_status).lower()} "
+                f"the offer for {offer.position}."
+            ),
+            sender_id=user_id,
+            resource_type="offer",
+            resource_id=offer.offer_id,
+        )
+
+        _append_student_activity(
+            user_id,
+            "Offer Response Submitted",
+            f"Offer #{offer.offer_id} -> {target_status}",
+            "success" if target_status == "accepted" else "info",
+        )
+
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return _json_error("Unable to submit offer response", 500)
+
+    return (
+        jsonify(
+            {
+                "success": True,
+                "data": {
+                    "offer": offer.to_dict(),
+                    "placement": placement_payload,
                 },
             }
         ),

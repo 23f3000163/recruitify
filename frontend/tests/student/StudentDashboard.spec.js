@@ -9,7 +9,9 @@ vi.mock('../../src/api/api', () => ({
     getDashboard: vi.fn(),
     getApplications: vi.fn(),
     getNotifications: vi.fn(),
-    markNotificationRead: vi.fn()
+    markNotificationRead: vi.fn(),
+    markAllNotificationsRead: vi.fn(),
+    respondToOffer: vi.fn()
   }
 }))
 
@@ -175,5 +177,167 @@ describe('StudentDashboard step 3 flow', () => {
     expect(studentApi.markNotificationRead).toHaveBeenCalledWith(701)
     expect(wrapper.vm.unreadCount).toBe(0)
     expect(wrapper.text()).toContain('0 unread')
+  })
+
+  it('marks all notifications as read', async () => {
+    studentApi.getDashboard.mockResolvedValue({
+      data: {
+        data: {
+          summary: {
+            applications_total: 1,
+            shortlisted: 1,
+            interviewed: 0,
+            offers_released: 0,
+            offers_accepted: 0
+          },
+          unread_notifications: 2
+        }
+      }
+    })
+
+    studentApi.getApplications.mockResolvedValue({
+      data: {
+        data: {
+          items: [],
+          total: 0,
+          page: 1,
+          pages: 0,
+          limit: 10
+        }
+      }
+    })
+
+    studentApi.getNotifications.mockResolvedValue({
+      data: {
+        data: {
+          items: [
+            {
+              notification_id: 801,
+              title: 'Application Update',
+              message: 'Shortlisted for platform role.',
+              is_read: false,
+              created_at: '2026-06-12T10:00:00+00:00'
+            },
+            {
+              notification_id: 802,
+              title: 'Offer Released',
+              message: 'Offer letter received.',
+              is_read: false,
+              created_at: '2026-06-12T11:00:00+00:00'
+            }
+          ],
+          unread_count: 2,
+          total: 2,
+          page: 1,
+          pages: 1,
+          limit: 8
+        }
+      }
+    })
+
+    studentApi.markAllNotificationsRead.mockResolvedValue({
+      data: {
+        data: {
+          updated_count: 2,
+          unread_count: 0
+        }
+      }
+    })
+
+    const wrapper = mount(StudentDashboard)
+    await flushPromises()
+
+    await wrapper.get('.std-mark-all-btn').trigger('click')
+    await flushPromises()
+
+    expect(studentApi.markAllNotificationsRead).toHaveBeenCalled()
+    expect(wrapper.vm.unreadCount).toBe(0)
+    expect(wrapper.text()).toContain('0 unread')
+  })
+
+  it('submits offer response and refreshes application data', async () => {
+    studentApi.getDashboard.mockResolvedValue({
+      data: {
+        data: {
+          summary: {
+            applications_total: 1,
+            shortlisted: 0,
+            interviewed: 0,
+            offers_released: 1,
+            offers_accepted: 0
+          },
+          unread_notifications: 0
+        }
+      }
+    })
+
+    studentApi.getApplications.mockResolvedValue({
+      data: {
+        data: {
+          items: [
+            {
+              application_id: 1101,
+              status: 'selected',
+              status_label: 'Selected',
+              updated_at: '2026-06-12T10:00:00+00:00',
+              drive: {
+                title: 'SRE Engineer',
+                location: 'Hyderabad'
+              },
+              company: {
+                name: 'Orbit Systems'
+              },
+              offer: {
+                offer_id: 301,
+                status: 'offered',
+                position: 'SRE Engineer',
+                salary: 1800000
+              },
+              timeline: []
+            }
+          ],
+          total: 1,
+          page: 1,
+          pages: 1,
+          limit: 10
+        }
+      }
+    })
+
+    studentApi.getNotifications.mockResolvedValue({
+      data: {
+        data: {
+          items: [],
+          unread_count: 0,
+          total: 0,
+          page: 1,
+          pages: 0,
+          limit: 8
+        }
+      }
+    })
+
+    studentApi.respondToOffer.mockResolvedValue({
+      data: {
+        data: {
+          offer: {
+            offer_id: 301,
+            status: 'accepted'
+          }
+        }
+      }
+    })
+
+    const wrapper = mount(StudentDashboard)
+    await flushPromises()
+
+    await wrapper.findAll('.std-offer-actions .std-btn')[0].trigger('click')
+    await flushPromises()
+
+    expect(studentApi.respondToOffer).toHaveBeenCalledWith(301, {
+      status: 'accepted'
+    })
+    expect(studentApi.getApplications).toHaveBeenCalledTimes(2)
+    expect(studentApi.getDashboard).toHaveBeenCalledTimes(2)
   })
 })

@@ -38,6 +38,7 @@ ALLOWED_INTERVIEW_RECORD_MODES = {"online", "offline"}
 ALLOWED_INTERVIEW_RESULTS = {"pending", "pass", "fail"}
 ALLOWED_OFFER_STATUSES = {"offered", "accepted", "rejected"}
 ALLOWED_BRANCHES = {"CSE", "ECE", "MECH", "EE", "OTHER"}
+ALLOWED_NOTIFICATION_READ_FILTERS = {"all", "true", "false"}
 MAX_APPLICATION_NOTES_LENGTH = 500
 MAX_REJECTION_REASON_LENGTH = 300
 
@@ -257,6 +258,13 @@ def _parse_optional_text(raw_value, field_name, max_length):
         return None, f"{field_name} must be at most {max_length} characters"
 
     return cleaned or None, None
+
+
+def _notification_query_for_company(company_user_id):
+    return Notification.query.filter(
+        Notification.recipient_id == company_user_id,
+        Notification.notification_type == "in_app",
+    )
 
 
 def _drive_to_dict(drive, applications_count=0):
@@ -1182,6 +1190,161 @@ def create_offer():
         return _json_error("Failed to create offer", 500)
 
     return jsonify({"success": True, "data": _offer_to_dict(offer)}), 201
+
+
+@company_bp.get("/notifications")
+@role_required("company")
+def list_notifications():
+    user_id = _current_user_id()
+    if user_id is None:
+        return _json_error("Invalid token identity", 401)
+
+    company = _company_for_user(user_id)
+    if not company:
+        return _json_error("Company profile not found", 404)
+
+    page, limit, pagination_error = _parse_pagination()
+    if pagination_error:
+        return pagination_error
+
+    read_filter = (request.args.get("is_read") or "all").strip().lower()
+    if read_filter not in ALLOWED_NOTIFICATION_READ_FILTERS:
+        return _json_error("is_read must be one of all, true, or false", 400)
+
+    base_query = _notification_query_for_company(company.user_id)
+    if read_filter == "true":
+        base_query = base_query.filter(Notification.is_read.is_(True))
+    elif read_filter == "false":
+        base_query = base_query.filter(Notification.is_read.is_(False))
+
+    ordered_query = base_query.order_by(
+        Notification.created_at.desc(),
+        Notification.notification_id.desc(),
+    )
+
+    total = ordered_query.count()
+    pages = ceil(total / limit) if total else 0
+    rows = ordered_query.offset((page - 1) * limit).limit(limit).all()
+
+    unread_count = _notification_query_for_company(company.user_id).filter(
+        Notification.is_read.is_(False)
+    ).count()
+
+    return (
+        jsonify(
+            {
+                "success": True,
+                "data": {
+                    "items": [row.to_dict() for row in rows],
+                    "total": total,
+                    "page": page,
+                    "pages": pages,
+                    "limit": limit,
+                    "unread_count": unread_count,
+                },
+            }
+        ),
+        200,
+    )
+
+
+@company_bp.put("/notifications/<int:notification_id>/read")
+@role_required("company")
+def mark_notification_read(notification_id):
+    user_id = _current_user_id()
+    if user_id is None:
+        return _json_error("Invalid token identity", 401)
+
+    company = _company_for_user(user_id)
+    if not company:
+        return _json_error("Company profile not found", 404)
+
+    notification = _notification_query_for_company(company.user_id).filter(
+        Notification.notification_id == notification_id
+    ).first()
+    if not notification:
+        return _json_error("Notification not found", 404)
+
+    if not notification.is_read:
+        notification.is_read = True
+        notification.read_at = datetime.now(timezone.utc)
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return _json_error("Unable to update notification", 500)
+
+    unread_count = _notification_query_for_company(company.user_id).filter(
+        Notification.is_read.is_(False)
+    ).count()
+
+    return (
+        jsonify(
+            {
+                "success": True,
+                "data": {
+                    "notification": notification.to_dict(),
+                    "unread_count": unread_count,
+                },
+            }
+        ),
+        200,
+    )
+
+
+@company_bp.put("/notifications/read-all")
+@role_required("company")
+def mark_all_notifications_read():
+    user_id = _current_user_id()
+    if user_id is None:
+        return _json_error("Invalid token identity", 401)
+
+    company = _company_for_user(user_id)
+    if not company:
+        return _json_error("Company profile not found", 404)
+
+    unread_notifications = _notification_query_for_company(company.user_id).filter(
+        Notification.is_read.is_(False)
+    ).all()
+
+    if not unread_notifications:
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "data": {
+                        "updated_count": 0,
+                        "unread_count": 0,
+                    },
+                }
+            ),
+            200,
+        )
+
+    read_time = datetime.now(timezone.utc)
+    for notification in unread_notifications:
+        notification.is_read = True
+        notification.read_at = read_time
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return _json_error("Unable to update notifications", 500)
+
+    return (
+        jsonify(
+            {
+                "success": True,
+                "data": {
+                    "updated_count": len(unread_notifications),
+                    "unread_count": 0,
+                },
+            }
+        ),
+        200,
+    )
 
 
 __all__ = ["company_bp"]

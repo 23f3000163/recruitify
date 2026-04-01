@@ -64,16 +64,17 @@
                   <th>Company</th>
                   <th>Status</th>
                   <th>Updated</th>
+                  <th>Offer</th>
                   <th>Timeline</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-if="isLoadingApplications">
-                  <td colspan="5" class="std-empty">Loading applications...</td>
+                  <td colspan="6" class="std-empty">Loading applications...</td>
                 </tr>
 
                 <tr v-else-if="!applications.length">
-                  <td colspan="5" class="std-empty">No applications found for this filter.</td>
+                  <td colspan="6" class="std-empty">No applications found for this filter.</td>
                 </tr>
 
                 <tr v-for="row in applications" :key="row.application_id">
@@ -90,6 +91,35 @@
                     <p v-if="row.rejection_reason" class="std-meta-note">Reason: {{ row.rejection_reason }}</p>
                   </td>
                   <td data-label="Updated">{{ formatDateTime(row.updated_at) }}</td>
+                  <td data-label="Offer">
+                    <div v-if="row.offer" class="std-offer-card">
+                      <p class="std-offer-role">{{ row.offer.position || 'Offer' }}</p>
+                      <p class="std-offer-meta">{{ formatCurrency(row.offer.salary) }}</p>
+                      <span class="std-status" :class="offerStatusClass(row.offer.status)">
+                        {{ statusLabel(row.offer.status) }}
+                      </span>
+
+                      <div v-if="canRespondToOffer(row.offer)" class="std-offer-actions">
+                        <button
+                          class="std-btn ghost"
+                          type="button"
+                          :disabled="isRespondingOffer[row.offer.offer_id]"
+                          @click="respondToOffer(row, 'accepted')"
+                        >
+                          {{ isRespondingOffer[row.offer.offer_id] ? 'Saving...' : 'Accept' }}
+                        </button>
+                        <button
+                          class="std-btn ghost danger"
+                          type="button"
+                          :disabled="isRespondingOffer[row.offer.offer_id]"
+                          @click="respondToOffer(row, 'rejected')"
+                        >
+                          {{ isRespondingOffer[row.offer.offer_id] ? 'Saving...' : 'Reject' }}
+                        </button>
+                      </div>
+                    </div>
+                    <span v-else class="std-muted">-</span>
+                  </td>
                   <td data-label="Timeline">
                     <ul v-if="safeTimeline(row.timeline).length" class="std-timeline">
                       <li v-for="event in safeTimeline(row.timeline).slice(-3)" :key="event.id">
@@ -138,7 +168,17 @@
               <h2>Notifications</h2>
               <p>Unread updates from companies and recruitment events.</p>
             </div>
-            <span class="std-badge" :class="{ 'is-empty': unreadCount === 0 }">{{ unreadCount }} unread</span>
+            <div class="std-panel-actions">
+              <span class="std-badge" :class="{ 'is-empty': unreadCount === 0 }">{{ unreadCount }} unread</span>
+              <button
+                class="std-btn ghost std-mark-all-btn"
+                type="button"
+                :disabled="isMarkingAllRead || unreadCount === 0 || isLoadingNotifications"
+                @click="markAllNotificationsRead"
+              >
+                {{ isMarkingAllRead ? 'Saving...' : 'Mark all read' }}
+              </button>
+            </div>
           </header>
 
           <p v-if="isLoadingNotifications" class="std-muted">Loading notifications...</p>
@@ -192,12 +232,16 @@ export default {
         selected: 0,
         waitlisted: 0,
         rejected: 0,
-        offers_released: 0
+        offers_released: 0,
+        offers_accepted: 0,
+        offers_rejected: 0
       },
       applications: [],
       notifications: [],
       unreadCount: 0,
       isMarking: {},
+      isMarkingAllRead: false,
+      isRespondingOffer: {},
       pagination: {
         page: 1,
         pages: 0,
@@ -232,9 +276,9 @@ export default {
         },
         {
           id: 'offers',
-          label: 'Offers',
-          value: this.summary.offers_released,
-          sub: 'Offer letters received'
+          label: 'Offers Accepted',
+          value: this.summary.offers_accepted,
+          sub: 'Confirmed offer decisions'
         },
         {
           id: 'notifications',
@@ -376,6 +420,63 @@ export default {
         }
       }
     },
+    async markAllNotificationsRead() {
+      if (this.isMarkingAllRead || this.unreadCount === 0) {
+        return
+      }
+
+      this.isMarkingAllRead = true
+      try {
+        const response = await studentApi.markAllNotificationsRead()
+        const data = response?.data?.data || {}
+
+        this.notifications = this.notifications.map((item) => ({
+          ...item,
+          is_read: true
+        }))
+
+        this.unreadCount = typeof data.unread_count === 'number' ? data.unread_count : 0
+      } catch (error) {
+        this.errorMessage =
+          error.response?.data?.error ||
+          error.response?.data?.message ||
+          'Unable to update notifications.'
+      } finally {
+        this.isMarkingAllRead = false
+      }
+    },
+    canRespondToOffer(offer) {
+      return String(offer?.status || '').toLowerCase() === 'offered'
+    },
+    async respondToOffer(row, targetStatus) {
+      const offerId = Number(row?.offer?.offer_id)
+      if (!offerId || !this.canRespondToOffer(row.offer) || this.isRespondingOffer[offerId]) {
+        return
+      }
+
+      this.isRespondingOffer = {
+        ...this.isRespondingOffer,
+        [offerId]: true
+      }
+
+      try {
+        await studentApi.respondToOffer(offerId, {
+          status: targetStatus
+        })
+
+        await Promise.all([this.loadDashboard(), this.loadApplications(this.pagination.page || 1)])
+      } catch (error) {
+        this.errorMessage =
+          error.response?.data?.error ||
+          error.response?.data?.message ||
+          'Unable to submit offer response.'
+      } finally {
+        this.isRespondingOffer = {
+          ...this.isRespondingOffer,
+          [offerId]: false
+        }
+      }
+    },
     safeTimeline(timeline) {
       return Array.isArray(timeline) ? timeline : []
     },
@@ -392,6 +493,18 @@ export default {
       if (normalized === 'waitlisted') return 'is-waitlisted'
       if (normalized === 'rejected') return 'is-rejected'
       return 'is-applied'
+    },
+    offerStatusClass(status) {
+      const normalized = String(status || '').toLowerCase()
+      if (normalized === 'accepted') return 'is-selected'
+      if (normalized === 'rejected') return 'is-rejected'
+      if (normalized === 'offered') return 'is-waitlisted'
+      return 'is-applied'
+    },
+    formatCurrency(value) {
+      const parsed = Number(value)
+      if (Number.isNaN(parsed) || parsed <= 0) return '-'
+      return `INR ${parsed.toLocaleString()}`
     },
     formatDateTime(value) {
       if (!value) return '-'
@@ -522,6 +635,12 @@ export default {
   margin-bottom: 10px;
 }
 
+.std-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .std-panel-head h2 {
   font-family: var(--serif);
   font-size: 1.15rem;
@@ -598,6 +717,12 @@ export default {
   color: var(--ink);
   border-color: var(--border);
   font-weight: 600;
+}
+
+.std-btn.ghost.danger {
+  color: var(--red);
+  border-color: rgba(220, 38, 38, 0.2);
+  background: #fff;
 }
 
 .std-btn:disabled {
@@ -701,6 +826,27 @@ export default {
   line-height: 1.35;
 }
 
+.std-offer-card {
+  display: grid;
+  gap: 6px;
+}
+
+.std-offer-role {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.std-offer-meta {
+  color: var(--t2);
+  font-size: 0.74rem;
+}
+
+.std-offer-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .std-timeline {
   list-style: none;
   display: grid;
@@ -791,6 +937,10 @@ export default {
   justify-self: start;
 }
 
+.std-mark-all-btn {
+  white-space: nowrap;
+}
+
 .std-read-pill {
   justify-self: start;
   border: 1px solid var(--border);
@@ -823,6 +973,11 @@ export default {
 
   .std-head {
     flex-direction: column;
+  }
+
+  .std-panel-actions {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .std-summary-grid {

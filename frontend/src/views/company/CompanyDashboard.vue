@@ -61,6 +61,11 @@
           @offers-updated="handleModuleUpdated('Offers')"
         />
 
+        <CompanyNotifications
+          v-else-if="activeView === 'notifications'"
+          @notifications-updated="handleModuleUpdated('Notifications')"
+        />
+
         <section v-else class="cq-state-card">
           <h2>Unknown view requested</h2>
           <p>This module is not available yet. Return to overview to continue.</p>
@@ -77,6 +82,7 @@
 import { authApi, companyApi } from '../../api/api'
 import CompanyApplications from '../../components/company/CompanyApplications.vue'
 import CompanyInterviews from '../../components/company/CompanyInterviews.vue'
+import CompanyNotifications from '../../components/company/CompanyNotifications.vue'
 import CompanyOverview from '../../components/company/CompanyOverview.vue'
 import CompanyOffers from '../../components/company/CompanyOffers.vue'
 import DriveManagement from '../../components/company/DriveManagement.vue'
@@ -88,7 +94,10 @@ const DEFAULT_SUMMARY = Object.freeze({
   active_drives: 0,
   applications_received: 0,
   interviews_scheduled: 0,
-  offers_released: 0
+  offers_released: 0,
+  offers_accepted: 0,
+  offers_rejected: 0,
+  unread_notifications: 0
 })
 
 const STORAGE_KEYS = Object.freeze({
@@ -107,7 +116,8 @@ export default {
     DriveManagement,
     CompanyApplications,
     CompanyInterviews,
-    CompanyOffers
+    CompanyOffers,
+    CompanyNotifications
   },
   data() {
     return {
@@ -137,7 +147,8 @@ export default {
         { id: 'drives', label: 'Drives' },
         { id: 'applications', label: 'Applications' },
         { id: 'interviews', label: 'Interviews' },
-        { id: 'offers', label: 'Offers' }
+        { id: 'offers', label: 'Offers' },
+        { id: 'notifications', label: 'Notifications' }
       ]
     },
     currentPageTitle() {
@@ -146,7 +157,8 @@ export default {
         drives: 'Drive Management',
         applications: 'Applications',
         interviews: 'Interviews',
-        offers: 'Offers'
+        offers: 'Offers',
+        notifications: 'Notifications'
       }
       return labels[this.activeView] || 'Overview'
     },
@@ -172,14 +184,50 @@ export default {
         },
         {
           id: 'offers_released',
-          label: 'Offers Released',
+          label: 'Pending Offer Decisions',
           value: Number(this.summary.offers_released || 0).toLocaleString(),
-          sub: 'Candidates moved to final stage'
+          sub: 'Offers awaiting student response'
+        },
+        {
+          id: 'offers_accepted',
+          label: 'Offers Accepted',
+          value: Number(this.summary.offers_accepted || 0).toLocaleString(),
+          sub: 'Students who accepted your offer'
+        },
+        {
+          id: 'offers_rejected',
+          label: 'Offers Rejected',
+          value: Number(this.summary.offers_rejected || 0).toLocaleString(),
+          sub: 'Candidates who declined offers'
+        },
+        {
+          id: 'unread_notifications',
+          label: 'Unread Notifications',
+          value: Number(this.summary.unread_notifications || 0).toLocaleString(),
+          sub: 'New workflow alerts and responses'
         }
       ]
     },
     priorityActions() {
       const actions = []
+
+      if (Number(this.summary.unread_notifications || 0) > 0) {
+        actions.push({
+          id: 'review-notifications',
+          title: 'Review unread notifications',
+          description: 'Open notifications to process fresh offer responses and candidate updates.',
+          state: 'Attention'
+        })
+      }
+
+      if (Number(this.summary.offers_rejected || 0) > 0) {
+        actions.push({
+          id: 'recover-rejected-offers',
+          title: 'Backfill rejected offers',
+          description: 'Move shortlisted candidates to offers to keep hiring targets on track.',
+          state: 'Priority'
+        })
+      }
 
       if (Number(this.summary.active_drives || 0) === 0) {
         actions.push({
@@ -196,6 +244,15 @@ export default {
           title: 'Prepare interview workflow',
           description: 'Define rounds and panel availability before shortlisting starts.',
           state: 'Planned'
+        })
+      }
+
+      if (Number(this.summary.offers_released || 0) > 0) {
+        actions.push({
+          id: 'follow-up-offers',
+          title: 'Follow up on pending offers',
+          description: 'Track students who have not responded yet and clear final decisions quickly.',
+          state: 'In Progress'
         })
       }
 
@@ -264,7 +321,10 @@ export default {
           active_drives: Number(summary.active_drives || summary.total_drives || 0),
           applications_received: Number(summary.applications_received || summary.total_applications || 0),
           interviews_scheduled: Number(summary.interviews_scheduled || 0),
-          offers_released: Number(summary.offers_released || 0)
+          offers_released: Number(summary.offers_released || 0),
+          offers_accepted: Number(summary.offers_accepted || 0),
+          offers_rejected: Number(summary.offers_rejected || 0),
+          unread_notifications: Number(summary.unread_notifications || 0)
         }
 
         this.pipelineStages = this.buildPipelineStages(dashboardData.pipeline)

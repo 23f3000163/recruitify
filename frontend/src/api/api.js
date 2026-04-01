@@ -93,6 +93,15 @@ export const companyApi = {
   },
   createOffer(payload) {
     return api.post('/company/offers', payload)
+  },
+  getNotifications(params = {}) {
+    return api.get('/company/notifications', { params })
+  },
+  markNotificationRead(notificationId) {
+    return api.put(`/company/notifications/${notificationId}/read`)
+  },
+  markAllNotificationsRead() {
+    return api.put('/company/notifications/read-all')
   }
 }
 
@@ -168,6 +177,12 @@ export const studentApi = {
   },
   markNotificationRead(notificationId) {
     return api.put(`/student/notifications/${notificationId}/read`)
+  },
+  markAllNotificationsRead() {
+    return api.put('/student/notifications/read-all')
+  },
+  respondToOffer(offerId, payload) {
+    return api.put(`/student/offers/${offerId}/respond`, payload)
   },
   updateProfile(payload) {
     return api.put('/student/profile', payload)

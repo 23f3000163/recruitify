@@ -10,6 +10,7 @@ from app.models import (
 	Application,
 	Company,
 	Interview,
+	Notification,
 	PlacementDrive,
 	PlacementOffer,
 	Student,
@@ -325,9 +326,25 @@ def company_dashboard():
 		Application.status.in_(("applied", "shortlisted", "waitlisted"))
 	).count()
 	interviews_scheduled = Interview.query.filter_by(company_id=company.company_id).count()
-	offers_released = PlacementOffer.query.filter_by(company_id=company.company_id).count()
+	offers_released = PlacementOffer.query.filter_by(
+		company_id=company.company_id,
+		status="offered",
+	).count()
+	offers_accepted = PlacementOffer.query.filter_by(
+		company_id=company.company_id,
+		status="accepted",
+	).count()
+	offers_rejected = PlacementOffer.query.filter_by(
+		company_id=company.company_id,
+		status="rejected",
+	).count()
 	pending_drives = PlacementDrive.query.filter_by(
 		company_id=company.company_id, status="pending"
+	).count()
+	unread_notifications = Notification.query.filter(
+		Notification.recipient_id == user_id,
+		Notification.notification_type == "in_app",
+		Notification.is_read.is_(False),
 	).count()
 
 	pipeline = [
@@ -382,6 +399,9 @@ def company_dashboard():
 						"applications_received": applications_received,
 						"interviews_scheduled": interviews_scheduled,
 						"offers_released": offers_released,
+						"offers_accepted": offers_accepted,
+						"offers_rejected": offers_rejected,
+						"unread_notifications": unread_notifications,
 					},
 					"pipeline": pipeline,
 					"recent_applicants": recent_applicants,

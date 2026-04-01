@@ -119,7 +119,8 @@ export default {
         drives: 'M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M4 9h16v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z',
         applications: 'M7 4h8l4 4v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z M15 4v4h4',
         interviews: 'M8 3v3M16 3v3M4 9h16M6 6h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2',
-        offers: 'M7 12l3 3 7-7M4 12a8 8 0 1 0 16 0a8 8 0 1 0-16 0'
+        offers: 'M7 12l3 3 7-7M4 12a8 8 0 1 0 16 0a8 8 0 1 0-16 0',
+        notifications: 'M18 8a6 6 0 1 0-12 0v4l-2 3h16l-2-3z M10 19a2 2 0 0 0 4 0'
       }
 
       return icons[viewId] || icons.overview
