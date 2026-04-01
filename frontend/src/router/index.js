@@ -5,6 +5,7 @@ import Login from '../views/Login.vue'
 import Register from '../views/Register.vue'
 import AdminDashboard from '../views/admin/AdminDashboard.vue'
 import StudentDashboard from '../views/student/StudentDashboard.vue'
+import StudentDashboardV2 from '../views/student/StudentDashboardV2.vue'
 import CompanyDashboard from '../views/company/CompanyDashboard.vue'
 
 const routes = [
@@ -15,6 +16,7 @@ const routes = [
   { path: '/register/company', component: Register },
   { path: '/admin', component: AdminDashboard },
   { path: '/student', component: StudentDashboard },
+  { path: '/student-v2', component: StudentDashboardV2 },
   { path: '/company', component: CompanyDashboard }
 ]
 
