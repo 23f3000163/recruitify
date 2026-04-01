@@ -7,6 +7,7 @@
 
     <div class="cq-topbar-right">
       <p class="cq-access-chip" v-if="dashboardMessage">{{ dashboardMessage }}</p>
+      <p class="cq-sync-chip" :class="`is-${syncTone}`" v-if="syncNote">{{ syncNote }}</p>
 
       <button class="cq-top-user" type="button" @click.stop="toggleUserMenu">
         <div class="cq-user-avatar">{{ initials }}</div>
@@ -49,6 +50,14 @@ export default {
     dashboardMessage: {
       type: String,
       default: ''
+    },
+    syncNote: {
+      type: String,
+      default: ''
+    },
+    syncTone: {
+      type: String,
+      default: 'info'
     }
   },
   emits: ['request-logout'],

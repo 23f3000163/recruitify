@@ -12,7 +12,7 @@
       <article class="cq-panel">
         <header class="cq-panel-head">
           <h2>Drive Pipeline Snapshot</h2>
-          <p>Phase 1 scaffold ready for live endpoint binding</p>
+          <p>Live distribution of candidates moving through each recruitment stage.</p>
         </header>
 
         <ul class="cq-pipeline-list">
@@ -48,7 +48,7 @@
       <article class="cq-panel cq-panel-wide">
         <header class="cq-panel-head">
           <h2>Recent Applicant Signals</h2>
-          <p>This list will auto-populate after company module APIs are added.</p>
+          <p>Most recent application movements across your active placement drives.</p>
         </header>
 
         <div v-if="recentApplicants.length" class="cq-table-wrap">

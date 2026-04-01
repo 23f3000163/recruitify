@@ -5,8 +5,8 @@
       :nav-items="navItems"
       :active-view="activeView"
       :company-name="companyIdentity.companyName || companyIdentity.username"
-      @toggle-sidebar="sidebarCollapsed = !sidebarCollapsed"
-      @select-view="activeView = $event"
+      @toggle-sidebar="toggleSidebar"
+      @select-view="setActiveView($event)"
       @request-logout="handleLogout"
     />
 
@@ -16,6 +16,8 @@
         :company-name="companyIdentity.companyName || companyIdentity.username"
         :company-email="companyIdentity.email"
         :dashboard-message="dashboardMessage"
+        :sync-note="syncNote"
+        :sync-tone="syncTone"
         @request-logout="handleLogout"
       />
 
@@ -28,7 +30,7 @@
         <section v-else-if="loadError" class="cq-state-card is-error">
           <h2>Unable to load dashboard</h2>
           <p>{{ loadError }}</p>
-          <button class="cq-btn" type="button" @click="bootstrapDashboard">Retry</button>
+          <button class="cq-btn" type="button" @click="bootstrapDashboard()">Retry</button>
         </section>
 
         <CompanyOverview
@@ -41,28 +43,28 @@
 
         <DriveManagement
           v-else-if="activeView === 'drives'"
-          @drive-updated="bootstrapDashboard"
+          @drive-updated="handleModuleUpdated('Drives')"
         />
 
         <CompanyApplications
           v-else-if="activeView === 'applications'"
-          @applications-updated="bootstrapDashboard"
+          @applications-updated="handleModuleUpdated('Applications')"
         />
 
         <CompanyInterviews
           v-else-if="activeView === 'interviews'"
-          @interviews-updated="bootstrapDashboard"
+          @interviews-updated="handleModuleUpdated('Interviews')"
         />
 
         <CompanyOffers
           v-else-if="activeView === 'offers'"
-          @offers-updated="bootstrapDashboard"
+          @offers-updated="handleModuleUpdated('Offers')"
         />
 
         <section v-else class="cq-state-card">
           <h2>Unknown view requested</h2>
           <p>This module is not available yet. Return to overview to continue.</p>
-          <button class="cq-btn" type="button" @click="activeView = 'overview'">
+          <button class="cq-btn" type="button" @click="setActiveView('overview')">
             Back to Overview
           </button>
         </section>
@@ -89,6 +91,13 @@ const DEFAULT_SUMMARY = Object.freeze({
   offers_released: 0
 })
 
+const STORAGE_KEYS = Object.freeze({
+  activeView: 'company.dashboard.activeView',
+  sidebarCollapsed: 'company.dashboard.sidebarCollapsed'
+})
+
+const SYNC_NOTE_TIMEOUT_MS = 4200
+
 export default {
   name: 'CompanyDashboard',
   components: {
@@ -107,6 +116,9 @@ export default {
       isLoading: true,
       loadError: '',
       dashboardMessage: '',
+      syncNote: '',
+      syncTone: 'info',
+      syncNoteTimerId: null,
       companyIdentity: {
         userId: null,
         username: '',
@@ -199,13 +211,34 @@ export default {
       return actions
     }
   },
+  watch: {
+    activeView(nextValue) {
+      this.persistPreference(STORAGE_KEYS.activeView, String(nextValue || 'overview'))
+    },
+    sidebarCollapsed(nextValue) {
+      this.persistPreference(STORAGE_KEYS.sidebarCollapsed, nextValue ? '1' : '0')
+    }
+  },
   created() {
+    this.restoreViewState()
+    this.restoreSidebarState()
     this.bootstrapDashboard()
   },
+  beforeUnmount() {
+    if (this.syncNoteTimerId) {
+      clearTimeout(this.syncNoteTimerId)
+      this.syncNoteTimerId = null
+    }
+  },
   methods: {
-    async bootstrapDashboard() {
-      this.isLoading = true
-      this.loadError = ''
+    async bootstrapDashboard(options = {}) {
+      const silent = Boolean(options?.silent)
+      const sourceLabel = String(options?.sourceLabel || '').trim()
+
+      if (!silent) {
+        this.isLoading = true
+        this.loadError = ''
+      }
 
       try {
         const [meResponse, dashboardResponse] = await Promise.all([
@@ -236,14 +269,87 @@ export default {
 
         this.pipelineStages = this.buildPipelineStages(dashboardData.pipeline)
         this.recentApplicants = this.normalizeApplicants(dashboardData.recent_applicants)
+
+        if (sourceLabel) {
+          this.publishSyncNote(`${sourceLabel} synced`, 'success')
+        }
       } catch (error) {
-        this.loadError =
+        const message =
           error.response?.data?.error ||
           error.response?.data?.message ||
           'Session could not be loaded. Please refresh or login again.'
+
+        if (silent) {
+          this.publishSyncNote(message, 'error')
+        } else {
+          this.loadError = message
+        }
       } finally {
-        this.isLoading = false
+        if (!silent) {
+          this.isLoading = false
+        }
       }
+    },
+    handleModuleUpdated(sourceLabel) {
+      this.bootstrapDashboard({
+        silent: true,
+        sourceLabel
+      })
+    },
+    setActiveView(nextView) {
+      if (this.isSupportedView(nextView)) {
+        this.activeView = nextView
+        return
+      }
+
+      this.activeView = 'overview'
+    },
+    toggleSidebar() {
+      this.sidebarCollapsed = !this.sidebarCollapsed
+    },
+    isSupportedView(viewId) {
+      return this.navItems.some((item) => item.id === viewId)
+    },
+    restoreViewState() {
+      try {
+        const storedView = localStorage.getItem(STORAGE_KEYS.activeView)
+        if (this.isSupportedView(storedView)) {
+          this.activeView = storedView
+        }
+      } catch (error) {
+        // Ignore storage read issues and fallback to defaults.
+      }
+    },
+    restoreSidebarState() {
+      try {
+        const stored = localStorage.getItem(STORAGE_KEYS.sidebarCollapsed)
+        if (stored === '1') {
+          this.sidebarCollapsed = true
+        }
+      } catch (error) {
+        // Ignore storage read issues and fallback to defaults.
+      }
+    },
+    persistPreference(key, value) {
+      try {
+        localStorage.setItem(key, value)
+      } catch (error) {
+        // Ignore storage write issues so dashboard remains functional.
+      }
+    },
+    publishSyncNote(message, tone = 'info') {
+      if (this.syncNoteTimerId) {
+        clearTimeout(this.syncNoteTimerId)
+      }
+
+      this.syncNote = message
+      this.syncTone = tone
+
+      this.syncNoteTimerId = setTimeout(() => {
+        this.syncNote = ''
+        this.syncTone = 'info'
+        this.syncNoteTimerId = null
+      }, SYNC_NOTE_TIMEOUT_MS)
     },
     buildPipelineStages(serverStages) {
       if (Array.isArray(serverStages) && serverStages.length) {
