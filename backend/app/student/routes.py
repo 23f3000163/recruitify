@@ -25,7 +25,7 @@ from app.models import (
 student_bp = Blueprint("student", __name__)
 
 # ✅ Allowed ENUM values (MUST match your DB)
-VALID_BRANCHES = {"CSE", "ECE", "MECH", "OTHER"}
+VALID_BRANCHES = {"CSE", "ECE", "MECH", "EE", "OTHER"}
 
 # ✅ Mapping user input → enum
 BRANCH_MAP = {
@@ -35,6 +35,8 @@ BRANCH_MAP = {
     "electronics": "ECE",
     "mech": "MECH",
     "mechanical": "MECH",
+    "ee": "EE",
+    "electrical": "EE",
     "other": "OTHER",
 }
 
@@ -65,25 +67,78 @@ def _normalized_json_payload():
 
 
 def _validate_student_profile_payload(data):
-    """Validate required student profile fields and value ranges."""
+    """Validate and normalize student profile fields used by the dashboard."""
     required_fields = ["college_name", "branch", "year", "cgpa", "roll_number"]
     missing_message = validate_required_fields(data, required_fields)
     if missing_message:
-        return missing_message, None, None
+        return missing_message, None
+
+    branch_raw = str(data.get("branch") or "").strip()
+    normalized_branch = BRANCH_MAP.get(branch_raw.lower(), branch_raw.upper())
+    if normalized_branch not in VALID_BRANCHES:
+        return "Invalid branch value", None
+
+    college_name = str(data.get("college_name") or "").strip()
+    roll_number = str(data.get("roll_number") or "").strip()
 
     try:
         year = int(data.get("year"))
     except (TypeError, ValueError):
-        return "Year must be a valid integer", None, None
+        return "Year must be a valid integer", None
     if year <= 0:
-        return "Year must be greater than 0", None, None
+        return "Year must be greater than 0", None
 
     try:
         cgpa = float(data.get("cgpa"))
     except (TypeError, ValueError):
-        return "CGPA must be a valid number", None, None
+        return "CGPA must be a valid number", None
     if cgpa < 0 or cgpa > 10:
-        return "CGPA must be between 0 and 10", None, None
+        return "CGPA must be between 0 and 10", None
+
+    phone = str(data.get("phone") or "").strip()
+    if phone and len(phone) > 20:
+        return "Phone must be 20 characters or fewer", None
+
+    resume_url = str(data.get("resume_url") or "").strip()
+    if resume_url and len(resume_url) > 500:
+        return "Resume URL must be 500 characters or fewer", None
+
+    skills_raw = data.get("skills")
+    if isinstance(skills_raw, list):
+        normalized_skills = ", ".join(
+            [str(item).strip() for item in skills_raw if str(item).strip()]
+        )
+    else:
+        normalized_skills = str(skills_raw or "").strip()
+
+    experience_summary = str(data.get("experience_summary") or "").strip()
+
+    normalized = {
+        "college_name": college_name,
+        "branch": normalized_branch,
+        "year": year,
+        "cgpa": cgpa,
+        "roll_number": roll_number,
+        "phone": phone or None,
+        "resume_url": resume_url or None,
+        "skills": normalized_skills or None,
+        "experience_summary": experience_summary or None,
+    }
+
+    return None, normalized
+
+
+def _student_profile_payload(student):
+    payload = student.to_dict()
+    payload.update(
+        {
+            "skills": payload.get("skills") or "",
+            "experience_summary": payload.get("experience_summary") or "",
+            "resume_url": payload.get("resume_url") or "",
+            "phone": payload.get("phone") or "",
+        }
+    )
+    return payload
 
     return None, year, cgpa
 
@@ -457,6 +512,30 @@ def _application_to_student_payload(
     return payload
 
 
+@student_bp.get("/profile")
+@role_required("student")
+def get_student_profile():
+    user_id = _current_user_id()
+    if user_id is None:
+        return _json_error("Invalid token identity", 401)
+
+    student = _student_for_user(user_id)
+    if not student:
+        return _json_error("Student profile not found", 404)
+
+    return (
+        jsonify(
+            {
+                "success": True,
+                "data": {
+                    "student": _student_profile_payload(student),
+                },
+            }
+        ),
+        200,
+    )
+
+
 @student_bp.put("/profile")
 @role_required("student")
 def update_student_profile():
@@ -470,15 +549,23 @@ def update_student_profile():
         return _json_error("Student profile not found", 404)
 
     data = _normalized_json_payload()
-    validation_error, year, cgpa = _validate_student_profile_payload(data)
+    validation_error, normalized = _validate_student_profile_payload(data)
     if validation_error:
         return _json_error(validation_error, 400)
 
-    student.college_name = data["college_name"]
-    student.branch = data["branch"]
-    student.year = year
-    student.cgpa = cgpa
-    student.roll_number = data["roll_number"]
+    student.college_name = normalized["college_name"]
+    student.branch = normalized["branch"]
+    student.year = normalized["year"]
+    student.cgpa = normalized["cgpa"]
+    student.roll_number = normalized["roll_number"]
+    student.phone = normalized["phone"]
+    student.resume_url = normalized["resume_url"]
+    student.skills = normalized["skills"]
+    student.experience_summary = normalized["experience_summary"]
+
+    if normalized["resume_url"]:
+        student.resume_uploaded_at = datetime.now(timezone.utc)
+
     student.profile_completed = True
 
     try:
@@ -493,7 +580,7 @@ def update_student_profile():
                 "success": True,
                 "data": {
                     "message": "Student profile updated successfully",
-                    "student": student.to_dict(),
+                    "student": _student_profile_payload(student),
                 },
             }
         ),

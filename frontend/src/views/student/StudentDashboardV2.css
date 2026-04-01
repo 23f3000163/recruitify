@@ -685,7 +685,8 @@ button {
 }
 
 .rq-field input,
-.rq-field select {
+.rq-field select,
+.rq-field textarea {
   border: 1px solid var(--rq-border2);
   border-radius: var(--rq-r-sm);
   padding: 7px 10px;
@@ -696,9 +697,15 @@ button {
 }
 
 .rq-field input:focus,
-.rq-field select:focus {
+.rq-field select:focus,
+.rq-field textarea:focus {
   border-color: var(--rq-blue);
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.rq-field textarea {
+  resize: vertical;
+  min-height: 92px;
 }
 
 .rq-field-grow {
@@ -805,6 +812,11 @@ button {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+.rq-interview-cell {
+  display: grid;
+  gap: 4px;
 }
 
 .rq-offer-state {

@@ -307,7 +307,11 @@ export default {
         branch: 'CSE',
         year: 3,
         cgpa: 8.5,
-        roll_number: 'CS21B042'
+        roll_number: 'CS21B042',
+        phone: '',
+        resume_url: '',
+        skills: '',
+        experience_summary: ''
       }
     }
   },
@@ -413,7 +417,8 @@ export default {
         this.hydrateIdentity(),
         this.loadDashboard(),
         this.loadApplications(1),
-        this.loadNotifications(1)
+        this.loadNotifications(1),
+        this.loadProfile()
       ]
 
       if (this.activeView === 'drives') {
@@ -752,6 +757,39 @@ export default {
         this.isMarkingAllNotifications = false
       }
     },
+    async loadProfile() {
+      this.profileError = ''
+
+      try {
+        const response = await studentApi.getProfile()
+        const studentPayload = response?.data?.data?.student || {}
+
+        this.profileForm = {
+          ...this.profileForm,
+          college_name: studentPayload.college_name || '',
+          branch: studentPayload.branch || '',
+          year: studentPayload.year ?? '',
+          cgpa: studentPayload.cgpa ?? '',
+          roll_number: studentPayload.roll_number || '',
+          phone: studentPayload.phone || '',
+          resume_url: studentPayload.resume_url || '',
+          skills: studentPayload.skills || '',
+          experience_summary: studentPayload.experience_summary || ''
+        }
+
+        this.student = {
+          ...this.student,
+          branch: studentPayload.branch || this.student.branch,
+          year: Number(studentPayload.year || this.student.year),
+          roll: studentPayload.roll_number || this.student.roll
+        }
+      } catch (error) {
+        this.profileError =
+          error.response?.data?.error ||
+          error.response?.data?.message ||
+          'Unable to load profile data.'
+      }
+    },
     async loadHistory(page = 1) {
       this.isLoadingHistory = true
       this.historyError = ''
@@ -887,12 +925,30 @@ export default {
         branch: String(this.profileForm.branch || '').trim(),
         year: Number.isNaN(year) ? this.profileForm.year : year,
         cgpa: Number.isNaN(cgpa) ? this.profileForm.cgpa : cgpa,
-        roll_number: String(this.profileForm.roll_number || '').trim()
+        roll_number: String(this.profileForm.roll_number || '').trim(),
+        phone: String(this.profileForm.phone || '').trim(),
+        resume_url: String(this.profileForm.resume_url || '').trim(),
+        skills: String(this.profileForm.skills || '').trim(),
+        experience_summary: String(this.profileForm.experience_summary || '').trim()
       }
 
       try {
         const response = await studentApi.updateProfile(payload)
         const studentPayload = response?.data?.data?.student || {}
+
+        this.profileForm = {
+          ...this.profileForm,
+          college_name: studentPayload.college_name || payload.college_name,
+          branch: studentPayload.branch || payload.branch,
+          year: studentPayload.year ?? payload.year,
+          cgpa: studentPayload.cgpa ?? payload.cgpa,
+          roll_number: studentPayload.roll_number || payload.roll_number,
+          phone: studentPayload.phone || payload.phone,
+          resume_url: studentPayload.resume_url || payload.resume_url,
+          skills: studentPayload.skills || payload.skills,
+          experience_summary:
+            studentPayload.experience_summary || payload.experience_summary
+        }
 
         this.student = {
           ...this.student,

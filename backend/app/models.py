@@ -194,6 +194,8 @@ class Student(db.Model):
     resume_url = db.Column(db.String(500), nullable=True)
     resume_uploaded_at = db.Column(db.DateTime, nullable=True)
     phone = db.Column(db.String(20), nullable=True)
+    skills = db.Column(db.Text, nullable=True)
+    experience_summary = db.Column(db.Text, nullable=True)
     is_blacklisted = db.Column(db.Boolean, default=False, nullable=False)
     blacklist_reason = db.Column(db.String(500), nullable=True)
     created_at = db.Column(db.DateTime, default=_utcnow, nullable=False)
@@ -227,6 +229,8 @@ class Student(db.Model):
                 else None
             ),
             "phone": self.phone,
+            "skills": self.skills,
+            "experience_summary": self.experience_summary,
             "is_blacklisted": self.is_blacklisted,
             "blacklist_reason": self.blacklist_reason,
             "created_at": self.created_at.isoformat() if self.created_at else None,

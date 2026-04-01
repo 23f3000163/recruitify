@@ -10,6 +10,7 @@ vi.mock('../../src/api/api', () => ({
   },
   studentApi: {
     getDashboard: vi.fn(),
+    getProfile: vi.fn(),
     getDrives: vi.fn(),
     applyToDrive: vi.fn(),
     getApplications: vi.fn(),
@@ -226,6 +227,23 @@ describe('StudentDashboardV2 step 3B wiring', () => {
     })
 
     studentApi.getDashboard.mockResolvedValue(dashboardPayload)
+    studentApi.getProfile.mockResolvedValue({
+      data: {
+        data: {
+          student: {
+            college_name: 'Institute of Technology',
+            branch: 'CSE',
+            year: 3,
+            cgpa: 8.5,
+            roll_number: 'CS21B042',
+            phone: '9999999999',
+            resume_url: 'https://example.com/resume.pdf',
+            skills: 'Python, SQL',
+            experience_summary: 'Internship at Acme'
+          }
+        }
+      }
+    })
     studentApi.getDrives.mockResolvedValue(drivesPayload)
     studentApi.applyToDrive.mockResolvedValue({
       data: {
@@ -277,6 +295,7 @@ describe('StudentDashboardV2 step 3B wiring', () => {
 
     expect(authApi.getMe).toHaveBeenCalledTimes(1)
     expect(studentApi.getDashboard).toHaveBeenCalledTimes(1)
+    expect(studentApi.getProfile).toHaveBeenCalledTimes(1)
     expect(studentApi.getApplications).toHaveBeenCalledTimes(1)
     expect(studentApi.getNotifications).toHaveBeenCalledTimes(1)
     expect(wrapper.text()).toContain('Platform Engineer')
@@ -366,11 +385,16 @@ describe('StudentDashboardV2 step 3B wiring', () => {
     await flushPromises()
 
     const inputs = wrapper.findAll('.rq-form-grid input')
+    const textareas = wrapper.findAll('.rq-form-grid textarea')
     await inputs[0].setValue('My Engineering College')
     await inputs[1].setValue('ECE')
     await inputs[2].setValue('4')
     await inputs[3].setValue('8.9')
     await inputs[4].setValue('CS21B099')
+    await inputs[5].setValue('9876543210')
+    await inputs[6].setValue('https://example.com/new-resume.pdf')
+    await inputs[7].setValue('Vue, Flask, SQL')
+    await textareas[0].setValue('Built and shipped two production student portals.')
 
     const saveButton = wrapper.findAll('button').find((node) => node.text() === 'Save Profile')
     expect(saveButton).toBeTruthy()
@@ -383,7 +407,11 @@ describe('StudentDashboardV2 step 3B wiring', () => {
       branch: 'ECE',
       year: 4,
       cgpa: 8.9,
-      roll_number: 'CS21B099'
+      roll_number: 'CS21B099',
+      phone: '9876543210',
+      resume_url: 'https://example.com/new-resume.pdf',
+      skills: 'Vue, Flask, SQL',
+      experience_summary: 'Built and shipped two production student portals.'
     })
   })
 })

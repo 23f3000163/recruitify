@@ -7,7 +7,7 @@
 
       <div class="rq-card-body">
         <p id="student-profile-note" class="rq-row-sub">
-          Current API supports academic profile fields only. Contact and resume fields will be connected after profile schema expansion.
+          Keep your academic details, resume, skills, and experience summary updated for better drive matching.
         </p>
 
         <p v-if="errorMessage" class="rq-error-text" role="alert" aria-live="assertive">{{ errorMessage }}</p>
@@ -72,6 +72,46 @@
             />
           </label>
 
+          <label class="rq-field">
+            <span>Phone</span>
+            <input
+              type="tel"
+              :value="profileForm.phone"
+              @input="updateField('phone', $event.target.value)"
+              placeholder="Phone number"
+            />
+          </label>
+
+          <label class="rq-field rq-field-full">
+            <span>Resume URL</span>
+            <input
+              type="url"
+              :value="profileForm.resume_url"
+              @input="updateField('resume_url', $event.target.value)"
+              placeholder="https://example.com/resume.pdf"
+            />
+          </label>
+
+          <label class="rq-field rq-field-full">
+            <span>Skills</span>
+            <input
+              type="text"
+              :value="profileForm.skills"
+              @input="updateField('skills', $event.target.value)"
+              placeholder="Python, SQL, Vue, DSA"
+            />
+          </label>
+
+          <label class="rq-field rq-field-full">
+            <span>Experience Summary</span>
+            <textarea
+              rows="4"
+              :value="profileForm.experience_summary"
+              @input="updateField('experience_summary', $event.target.value)"
+              placeholder="Summarize internships, projects, and key responsibilities"
+            ></textarea>
+          </label>
+
           <div class="rq-panel-footer rq-panel-footer-start rq-field-full">
             <button class="rq-btn-primary" type="button" :disabled="isSaving" @click="$emit('save-profile')">
               {{ isSaving ? 'Saving...' : 'Save Profile' }}
@@ -94,7 +134,11 @@ export default {
         branch: '',
         year: '',
         cgpa: '',
-        roll_number: ''
+        roll_number: '',
+        phone: '',
+        resume_url: '',
+        skills: '',
+        experience_summary: ''
       })
     },
     isSaving: {

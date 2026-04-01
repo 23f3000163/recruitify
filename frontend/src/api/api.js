@@ -169,6 +169,9 @@ export const studentApi = {
   getDashboard() {
     return api.get('/student/dashboard')
   },
+  getProfile() {
+    return api.get('/student/profile')
+  },
   getDrives(params = {}) {
     return api.get('/student/drives', { params })
   },

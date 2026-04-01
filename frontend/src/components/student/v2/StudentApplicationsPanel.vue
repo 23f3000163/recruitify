@@ -46,17 +46,18 @@
                 <th scope="col">Role</th>
                 <th scope="col">Company</th>
                 <th scope="col">Status</th>
+                <th scope="col">Interview</th>
                 <th scope="col">Updated</th>
                 <th scope="col">Offer Action</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="isLoading">
-                <td colspan="5" class="rq-empty-row">Loading applications...</td>
+                <td colspan="6" class="rq-empty-row">Loading applications...</td>
               </tr>
 
               <tr v-else-if="!applications.length">
-                <td colspan="5" class="rq-empty-row">No applications found for this filter.</td>
+                <td colspan="6" class="rq-empty-row">No applications found for this filter.</td>
               </tr>
 
               <tr v-for="row in applications" :key="row.application_id">
@@ -71,6 +72,30 @@
                   </span>
                   <p v-if="row.notes" class="rq-inline-note">Note: {{ row.notes }}</p>
                   <p v-if="row.rejection_reason" class="rq-inline-note">Reason: {{ row.rejection_reason }}</p>
+                </td>
+                <td>
+                  <div v-if="row.latest_interview" class="rq-interview-cell">
+                    <p class="rq-row-title">{{ formatDateTime(row.latest_interview.interview_date) }}</p>
+                    <p class="rq-row-sub">
+                      {{ interviewModeLabel(row.latest_interview.interview_mode) }}
+                      <template v-if="row.latest_interview.interviewer_name">
+                        • {{ row.latest_interview.interviewer_name }}
+                      </template>
+                    </p>
+                    <p
+                      v-if="row.latest_interview.feedback"
+                      class="rq-inline-note"
+                    >
+                      Feedback: {{ row.latest_interview.feedback }}
+                    </p>
+                    <span
+                      class="rq-status-pill"
+                      :class="interviewResultClass(row.latest_interview.result)"
+                    >
+                      {{ interviewResultLabel(row.latest_interview.result) }}
+                    </span>
+                  </div>
+                  <span v-else class="rq-row-sub">Not scheduled</span>
                 </td>
                 <td>{{ formatDateTime(row.updated_at) }}</td>
                 <td>
@@ -171,6 +196,28 @@ export default {
   methods: {
     canRespondToOffer(offer) {
       return String(offer?.status || '').toLowerCase() === 'offered'
+    },
+    interviewModeLabel(mode) {
+      const normalized = String(mode || '').toLowerCase()
+      const labels = {
+        online: 'Online Interview',
+        offline: 'On-site Interview',
+        both: 'Hybrid Interview'
+      }
+      return labels[normalized] || 'Interview'
+    },
+    interviewResultLabel(result) {
+      const normalized = String(result || '').toLowerCase()
+      if (!normalized || normalized === 'pending') return 'Pending'
+      if (normalized === 'pass') return 'Passed'
+      if (normalized === 'fail') return 'Not Selected'
+      return normalized
+    },
+    interviewResultClass(result) {
+      const normalized = String(result || '').toLowerCase()
+      if (normalized === 'pass') return 'pill-shortlisted'
+      if (normalized === 'fail') return 'pill-rejected'
+      return 'pill-applied'
     },
     formatDateTime(value) {
       if (!value) return '-'

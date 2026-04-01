@@ -302,3 +302,63 @@ def test_student_can_respond_to_offer_and_notify_company(app, client):
             title="Offer Response Received",
         ).count()
         assert company_notifications == 1
+
+
+def test_student_profile_supports_resume_skills_and_experience(app, client):
+    with app.app_context():
+        student_user = _make_user("student.profile", "student.profile@example.com", "student")
+        student = _make_student_profile(student_user.user_id, "CS21B9210")
+        student.college_name = "Institute of Technology"
+        db.session.commit()
+
+        headers = _auth_headers(student_user.user_id, "student")
+        student_id = student.student_id
+
+    profile_response = client.get("/student/profile", headers=headers)
+    assert profile_response.status_code == 200
+
+    initial_profile = profile_response.get_json()["data"]["student"]
+    assert initial_profile["roll_number"] == "CS21B9210"
+    assert initial_profile["skills"] == ""
+    assert initial_profile["experience_summary"] == ""
+
+    update_response = client.put(
+        "/student/profile",
+        json={
+            "college_name": "My Engineering College",
+            "branch": "electronics",
+            "year": 4,
+            "cgpa": 8.9,
+            "roll_number": "CS21B9210",
+            "phone": "9876543210",
+            "resume_url": "https://example.com/resume.pdf",
+            "skills": "Vue, Flask, SQL",
+            "experience_summary": "Completed two internships in platform engineering.",
+        },
+        headers=headers,
+    )
+    assert update_response.status_code == 200
+
+    updated_profile = update_response.get_json()["data"]["student"]
+    assert updated_profile["branch"] == "ECE"
+    assert updated_profile["phone"] == "9876543210"
+    assert updated_profile["resume_url"] == "https://example.com/resume.pdf"
+    assert updated_profile["skills"] == "Vue, Flask, SQL"
+    assert (
+        updated_profile["experience_summary"]
+        == "Completed two internships in platform engineering."
+    )
+
+    with app.app_context():
+        refreshed = db.session.get(Student, student_id)
+        assert refreshed is not None
+        assert refreshed.profile_completed is True
+        assert refreshed.branch == "ECE"
+        assert refreshed.phone == "9876543210"
+        assert refreshed.resume_url == "https://example.com/resume.pdf"
+        assert refreshed.skills == "Vue, Flask, SQL"
+        assert (
+            refreshed.experience_summary
+            == "Completed two internships in platform engineering."
+        )
+        assert refreshed.resume_uploaded_at is not None
