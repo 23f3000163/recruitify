@@ -15,7 +15,8 @@ const routes = [
   { path: '/register/student', component: Register },
   { path: '/register/company', component: Register },
   { path: '/admin', component: AdminDashboard },
-  { path: '/student', component: StudentDashboard },
+  { path: '/student', component: StudentDashboardV2 },
+  { path: '/student-legacy', component: StudentDashboard },
   { path: '/student-v2', component: StudentDashboardV2 },
   { path: '/company', component: CompanyDashboard }
 ]

@@ -6,26 +6,26 @@
 - Define which student dashboard to keep and when to remove the legacy version.
 
 ## Current Dual-Dashboard State
-- Legacy production route: `/student` -> `StudentDashboard.vue`.
-- V2 preview route: `/student-v2` -> `StudentDashboardV2.vue`.
+- Production route: `/student` -> `StudentDashboardV2.vue`.
+- Compatibility route: `/student-v2` -> `StudentDashboardV2.vue`.
+- Legacy fallback route: `/student-legacy` -> `StudentDashboard.vue`.
 
 Decision:
-- Keep BOTH dashboards temporarily during migration.
-- Keep `StudentDashboard.vue` as the production-safe fallback until V2 reaches feature parity.
-- Keep `StudentDashboardV2.vue` as the active implementation target.
-- Remove legacy only after parity checks, regression tests, and route cutover are complete.
+- Cutover is complete: V2 is now the default student dashboard.
+- Keep `StudentDashboard.vue` only as a rollback-safe fallback during stabilization.
+- Remove legacy route and view only after stabilization checks pass.
 
 ## Keep/Remove Plan
-1. Keep now:
-- Keep `StudentDashboard.vue` untouched for rollback safety.
-- Continue integrating data into `StudentDashboardV2.vue`.
+1. Current state after cutover:
+- `StudentDashboardV2.vue` is default on `/student`.
+- `StudentDashboard.vue` is available only on `/student-legacy`.
 
-2. Cutover point:
-- After V2 parity + tests pass, route `/student` to `StudentDashboardV2.vue`.
-- Move legacy to `StudentDashboardLegacy.vue` for one release cycle.
+2. Stabilization window:
+- Keep the legacy fallback route for one release cycle.
+- Track any production issues against V2 and validate regression gates.
 
 3. Remove point:
-- If no issues after the release cycle, remove legacy view and cleanup related dead code.
+- If no issues after stabilization, remove `/student-legacy` and delete legacy view usage.
 
 ## V2 Section -> API Contract Map
 
@@ -86,32 +86,33 @@ UI blocks:
 - Profile form save
 
 Use now:
+- `GET /student/profile`
 - `PUT /student/profile`
 
-Payload today:
+Payload now:
 - `college_name`
 - `branch`
 - `year`
 - `cgpa`
 - `roll_number`
+- `phone`
+- `resume_url`
+- `skills`
+- `experience_summary`
 
 Status:
-- Available but limited to academic profile fields
-Gap:
-- V2 visual profile includes extra fields (phone, linkedin, github, skill tags, resume metadata) that are not yet persisted by current endpoint schema.
+- Available
 
 ### Drives
 UI blocks:
 - Drive browsing, search/filter, apply action
 
 Use now:
-- No student drives listing/apply endpoints found in current student blueprint.
+- `GET /student/drives`
+- `POST /student/drives/{drive_id}/apply`
 
 Status:
-- Missing
-Needed endpoints:
-- `GET /student/drives` with query/filter/pagination
-- `POST /student/drives/{drive_id}/apply` with duplicate apply protection
+- Available
 
 ### History and Documents
 UI blocks:
@@ -119,28 +120,22 @@ UI blocks:
 - Offer letter or placement confirmation download
 
 Use now:
-- No dedicated student history/download endpoints found in current student blueprint.
+- `GET /student/history`
+- `GET /student/offers/{offer_id}/document`
+- `GET /student/placements/{placement_id}/document`
 
 Status:
-- Missing
-Needed endpoints:
-- `GET /student/history`
-- `GET /student/offers/{offer_id}/document` OR `GET /student/placements/{placement_id}/document`
+- Available
 
 ## Integration Order (Step 3B onward)
-1. Wire available APIs first:
-- Dashboard home
-- Applications
-- Notifications
-- Offer response
-- Profile save (current schema)
+1. Stabilize V2 as default:
+- Keep `/student` mapped to V2 and monitor post-cutover behavior.
 
-2. Add missing backend endpoints next:
-- Drives list/apply
-- History and document download
+2. Keep rollback path during observation:
+- Keep `/student-legacy` for one release cycle.
 
-3. Route cutover:
-- Switch `/student` to V2 after full parity + test pass
+3. Remove legacy after observation:
+- Remove fallback route and legacy dashboard once stable.
 
 ## Test and Review Gates
 Per slice:
