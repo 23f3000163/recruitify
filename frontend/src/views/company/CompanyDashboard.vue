@@ -4,7 +4,7 @@
       :sidebar-collapsed="sidebarCollapsed"
       :nav-items="navItems"
       :active-view="activeView"
-      :company-name="companyIdentity.username"
+      :company-name="companyIdentity.companyName || companyIdentity.username"
       @toggle-sidebar="sidebarCollapsed = !sidebarCollapsed"
       @select-view="activeView = $event"
       @request-logout="handleLogout"
@@ -13,7 +13,7 @@
     <div class="cq-main">
       <CompanyTopbar
         :current-page-title="currentPageTitle"
-        :company-name="companyIdentity.username"
+        :company-name="companyIdentity.companyName || companyIdentity.username"
         :company-email="companyIdentity.email"
         :dashboard-message="dashboardMessage"
         @request-logout="handleLogout"
@@ -39,12 +39,29 @@
           :recent-applicants="recentApplicants"
         />
 
+        <DriveManagement
+          v-else-if="activeView === 'drives'"
+          @drive-updated="bootstrapDashboard"
+        />
+
+        <CompanyApplications
+          v-else-if="activeView === 'applications'"
+          @applications-updated="bootstrapDashboard"
+        />
+
+        <CompanyInterviews
+          v-else-if="activeView === 'interviews'"
+          @interviews-updated="bootstrapDashboard"
+        />
+
+        <CompanyOffers
+          v-else-if="activeView === 'offers'"
+          @offers-updated="bootstrapDashboard"
+        />
+
         <section v-else class="cq-state-card">
-          <h2>{{ currentPageTitle }} module starts in Phase 2</h2>
-          <p>
-            Navigation and layout are ready. This section will be connected to dedicated
-            company APIs in the next phase.
-          </p>
+          <h2>Unknown view requested</h2>
+          <p>This module is not available yet. Return to overview to continue.</p>
           <button class="cq-btn" type="button" @click="activeView = 'overview'">
             Back to Overview
           </button>
@@ -56,7 +73,11 @@
 
 <script>
 import { authApi, companyApi } from '../../api/api'
+import CompanyApplications from '../../components/company/CompanyApplications.vue'
+import CompanyInterviews from '../../components/company/CompanyInterviews.vue'
 import CompanyOverview from '../../components/company/CompanyOverview.vue'
+import CompanyOffers from '../../components/company/CompanyOffers.vue'
+import DriveManagement from '../../components/company/DriveManagement.vue'
 import CompanySidebar from '../../components/company/CompanySidebar.vue'
 import CompanyTopbar from '../../components/company/CompanyTopbar.vue'
 import './CompanyDashboard.css'
@@ -73,7 +94,11 @@ export default {
   components: {
     CompanySidebar,
     CompanyTopbar,
-    CompanyOverview
+    CompanyOverview,
+    DriveManagement,
+    CompanyApplications,
+    CompanyInterviews,
+    CompanyOffers
   },
   data() {
     return {
@@ -85,7 +110,8 @@ export default {
       companyIdentity: {
         userId: null,
         username: '',
-        email: ''
+        email: '',
+        companyName: ''
       },
       summary: { ...DEFAULT_SUMMARY },
       pipelineStages: [],
@@ -194,7 +220,8 @@ export default {
         this.companyIdentity = {
           userId: meData.user_id || dashboardUser.user_id || null,
           username: meData.username || 'Company User',
-          email: meData.email || ''
+          email: meData.email || '',
+          companyName: dashboardUser.company_name || meData.username || 'Company User'
         }
 
         this.dashboardMessage = dashboardResponse?.data?.message || 'Authenticated'

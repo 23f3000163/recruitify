@@ -63,6 +63,36 @@ export const authApi = {
 export const companyApi = {
   getDashboard() {
     return api.get('/auth/company/dashboard')
+  },
+  getDrives(params = {}) {
+    return api.get('/company/drives', { params })
+  },
+  createDrive(payload) {
+    return api.post('/company/drives', payload)
+  },
+  closeDrive(driveId) {
+    return api.put(`/company/drives/${driveId}/close`)
+  },
+  getApplications(params = {}) {
+    return api.get('/company/applications', { params })
+  },
+  updateApplicationStatus(applicationId, payload) {
+    return api.put(`/company/applications/${applicationId}/status`, payload)
+  },
+  getInterviews(params = {}) {
+    return api.get('/company/interviews', { params })
+  },
+  scheduleInterview(payload) {
+    return api.post('/company/interviews', payload)
+  },
+  updateInterviewResult(interviewId, payload) {
+    return api.put(`/company/interviews/${interviewId}/result`, payload)
+  },
+  getOffers(params = {}) {
+    return api.get('/company/offers', { params })
+  },
+  createOffer(payload) {
+    return api.post('/company/offers', payload)
   }
 }
 

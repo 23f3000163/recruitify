@@ -1,0 +1,1019 @@
+"""Company routes for drive, application, interview, and offer management."""
+
+from datetime import date, datetime, timezone
+from math import ceil
+
+from flask import Blueprint, jsonify, request
+from flask_jwt_extended import get_jwt_identity
+from sqlalchemy import func, or_
+
+from app.auth.utils import role_required
+from app.models import (
+    ActivityLog,
+    Application,
+    Company,
+    Interview,
+    PlacementDrive,
+    PlacementOffer,
+    Student,
+    User,
+    db,
+)
+
+company_bp = Blueprint("company_bp", __name__)
+
+MAX_LIMIT = 100
+ALLOWED_DRIVE_STATUSES = {"pending", "approved", "closed"}
+ALLOWED_APPLICATION_STATUSES = {
+    "applied",
+    "shortlisted",
+    "selected",
+    "interviewed",
+    "rejected",
+    "waitlisted",
+}
+ALLOWED_INTERVIEW_MODES = {"online", "offline", "both"}
+ALLOWED_INTERVIEW_RECORD_MODES = {"online", "offline"}
+ALLOWED_INTERVIEW_RESULTS = {"pending", "pass", "fail"}
+ALLOWED_OFFER_STATUSES = {"offered", "accepted", "rejected"}
+ALLOWED_BRANCHES = {"CSE", "ECE", "MECH", "EE", "OTHER"}
+
+
+def _json_error(message, status_code=400):
+    return jsonify({"success": False, "error": message}), status_code
+
+
+def _current_user_id():
+    identity = get_jwt_identity()
+    try:
+        return int(identity)
+    except (TypeError, ValueError):
+        return None
+
+
+def _company_for_user(user_id):
+    return Company.query.filter_by(user_id=user_id).first()
+
+
+def _parse_deadline(raw_deadline):
+    if not isinstance(raw_deadline, str) or not raw_deadline.strip():
+        return None, "application_deadline is required"
+
+    raw_text = raw_deadline.strip()
+    if len(raw_text) == 10:
+        raw_text = f"{raw_text}T23:59:59+00:00"
+    elif raw_text.endswith("Z"):
+        raw_text = f"{raw_text[:-1]}+00:00"
+
+    try:
+        parsed_deadline = datetime.fromisoformat(raw_text)
+    except ValueError:
+        return None, "application_deadline must be a valid ISO datetime"
+
+    if parsed_deadline.tzinfo is None:
+        parsed_deadline = parsed_deadline.replace(tzinfo=timezone.utc)
+    else:
+        parsed_deadline = parsed_deadline.astimezone(timezone.utc)
+
+    if parsed_deadline <= datetime.now(timezone.utc):
+        return None, "application_deadline must be in the future"
+
+    return parsed_deadline, None
+
+
+def _normalize_branches(raw_branches):
+    if not isinstance(raw_branches, list) or not raw_branches:
+        return None, "eligible_branches must be a non-empty array"
+
+    normalized = []
+    for branch in raw_branches:
+        normalized_branch = str(branch or "").strip().upper()
+        if not normalized_branch:
+            continue
+        if normalized_branch not in ALLOWED_BRANCHES:
+            return None, f"Unsupported branch: {normalized_branch}"
+        if normalized_branch not in normalized:
+            normalized.append(normalized_branch)
+
+    if not normalized:
+        return None, "eligible_branches must include at least one valid branch"
+
+    return normalized, None
+
+
+def _normalize_years(raw_years):
+    if not isinstance(raw_years, list) or not raw_years:
+        return None, "eligible_years must be a non-empty array"
+
+    normalized = []
+    for year in raw_years:
+        try:
+            parsed_year = int(year)
+        except (TypeError, ValueError):
+            return None, "eligible_years must contain integers"
+
+        if parsed_year < 1 or parsed_year > 4:
+            return None, "eligible_years values must be between 1 and 4"
+        if parsed_year not in normalized:
+            normalized.append(parsed_year)
+
+    return normalized, None
+
+
+def _append_company_activity(user_id, action, target=None, status="info"):
+    try:
+        actor_id = int(user_id)
+    except (TypeError, ValueError):
+        return
+
+    db.session.add(
+        ActivityLog(
+            user_id=actor_id,
+            action=(action or "Drive Action").strip(),
+            target=(target or "").strip() or None,
+            status=(status or "info").strip().lower() or "info",
+        )
+    )
+
+
+def _parse_pagination():
+    page_raw = request.args.get("page", "1")
+    limit_raw = request.args.get("limit", "10")
+
+    try:
+        page = int(page_raw)
+        limit = int(limit_raw)
+    except (TypeError, ValueError):
+        return None, None, _json_error("page and limit must be integers", 400)
+
+    if page < 1:
+        return None, None, _json_error("page must be greater than 0", 400)
+    if limit < 1:
+        return None, None, _json_error("limit must be greater than 0", 400)
+
+    return page, min(limit, MAX_LIMIT), None
+
+
+def _parse_datetime_value(raw_value, field_name, must_be_future=False):
+    if not isinstance(raw_value, str) or not raw_value.strip():
+        return None, f"{field_name} is required"
+
+    raw_text = raw_value.strip()
+    if len(raw_text) == 10:
+        raw_text = f"{raw_text}T09:00:00+00:00"
+    elif raw_text.endswith("Z"):
+        raw_text = f"{raw_text[:-1]}+00:00"
+
+    try:
+        parsed = datetime.fromisoformat(raw_text)
+    except ValueError:
+        return None, f"{field_name} must be a valid ISO datetime"
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    else:
+        parsed = parsed.astimezone(timezone.utc)
+
+    if must_be_future and parsed <= datetime.now(timezone.utc):
+        return None, f"{field_name} must be in the future"
+
+    return parsed, None
+
+
+def _parse_date_value(raw_value, field_name):
+    if raw_value in (None, ""):
+        return None, None
+
+    if not isinstance(raw_value, str):
+        return None, f"{field_name} must be a valid date"
+
+    try:
+        return date.fromisoformat(raw_value.strip()), None
+    except ValueError:
+        return None, f"{field_name} must be a valid date"
+
+
+def _drive_to_dict(drive, applications_count=0):
+    payload = drive.to_dict()
+    payload.update(
+        {
+            "id": drive.drive_id,
+            "title": drive.job_title,
+            "deadline": payload.get("application_deadline"),
+            "applications_count": int(applications_count or 0),
+        }
+    )
+    return payload
+
+
+def _application_to_dict(application, student=None, student_user=None, drive=None):
+    student_obj = student or application.student
+    user_obj = student_user or (student_obj.user if student_obj else None)
+    drive_obj = drive or application.drive
+
+    has_offer = bool(application.placement_offer)
+    interviews_count = application.interviews.count() if hasattr(application, "interviews") else 0
+
+    payload = application.to_dict()
+    payload.update(
+        {
+            "id": application.application_id,
+            "application_id": application.application_id,
+            "student_name": user_obj.username if user_obj else "Candidate",
+            "student_email": user_obj.email if user_obj else None,
+            "student_branch": student_obj.branch if student_obj else None,
+            "student_year": student_obj.year if student_obj else None,
+            "student_cgpa": student_obj.cgpa if student_obj else None,
+            "resume_url": student_obj.resume_url if student_obj else None,
+            "drive_id": drive_obj.drive_id if drive_obj else application.drive_id,
+            "drive_title": drive_obj.job_title if drive_obj else None,
+            "has_offer": has_offer,
+            "interviews_count": interviews_count,
+        }
+    )
+    return payload
+
+
+def _interview_to_dict(interview, application=None, student=None, student_user=None, drive=None):
+    application_obj = application or interview.application
+    student_obj = student or (application_obj.student if application_obj else None)
+    user_obj = student_user or (student_obj.user if student_obj else None)
+    drive_obj = drive or interview.drive
+
+    payload = interview.to_dict()
+    payload.update(
+        {
+            "id": interview.interview_id,
+            "interview_id": interview.interview_id,
+            "application_id": interview.application_id,
+            "drive_id": interview.drive_id,
+            "drive_title": drive_obj.job_title if drive_obj else None,
+            "student_name": user_obj.username if user_obj else "Candidate",
+            "student_email": user_obj.email if user_obj else None,
+            "application_status": application_obj.status if application_obj else None,
+        }
+    )
+    return payload
+
+
+def _offer_to_dict(offer, application=None, student=None, student_user=None, drive=None):
+    application_obj = application or offer.application
+    student_obj = student or offer.student
+    user_obj = student_user or (student_obj.user if student_obj else None)
+    drive_obj = drive or offer.drive
+
+    payload = offer.to_dict()
+    payload.update(
+        {
+            "id": offer.offer_id,
+            "offer_id": offer.offer_id,
+            "application_id": offer.application_id,
+            "drive_id": offer.drive_id,
+            "drive_title": drive_obj.job_title if drive_obj else None,
+            "student_name": user_obj.username if user_obj else "Candidate",
+            "student_email": user_obj.email if user_obj else None,
+            "application_status": application_obj.status if application_obj else None,
+        }
+    )
+    return payload
+
+
+def _company_drive_options(company_id):
+    drives = (
+        PlacementDrive.query.filter_by(company_id=company_id)
+        .order_by(PlacementDrive.created_at.desc(), PlacementDrive.drive_id.desc())
+        .all()
+    )
+    return [
+        {
+            "id": drive.drive_id,
+            "title": drive.job_title,
+            "status": drive.status,
+        }
+        for drive in drives
+    ]
+
+
+@company_bp.get("/drives")
+@role_required("company")
+def list_drives():
+    user_id = _current_user_id()
+    if user_id is None:
+        return _json_error("Invalid token identity", 401)
+
+    company = _company_for_user(user_id)
+    if not company:
+        return _json_error("Company profile not found", 404)
+
+    page, limit, pagination_error = _parse_pagination()
+    if pagination_error:
+        return pagination_error
+
+    status_filter = (request.args.get("status") or "all").strip().lower()
+    query_text = (request.args.get("q") or "").strip()
+    sort_by = (request.args.get("sort_by") or "created_at").strip().lower()
+    order = (request.args.get("order") or "desc").strip().lower()
+
+    query = PlacementDrive.query.filter(PlacementDrive.company_id == company.company_id)
+
+    if status_filter and status_filter != "all":
+        if status_filter not in ALLOWED_DRIVE_STATUSES:
+            return _json_error("Invalid status filter", 400)
+        query = query.filter(PlacementDrive.status == status_filter)
+
+    if query_text:
+        like_value = f"%{query_text}%"
+        query = query.filter(
+            or_(
+                PlacementDrive.job_title.ilike(like_value),
+                PlacementDrive.job_location.ilike(like_value),
+                PlacementDrive.required_skills.ilike(like_value),
+            )
+        )
+
+    sort_map = {
+        "created_at": PlacementDrive.created_at,
+        "updated_at": PlacementDrive.updated_at,
+        "application_deadline": PlacementDrive.application_deadline,
+        "job_title": PlacementDrive.job_title,
+        "status": PlacementDrive.status,
+    }
+    sort_column = sort_map.get(sort_by, PlacementDrive.created_at)
+    is_ascending = order == "asc"
+    query = query.order_by(sort_column.asc() if is_ascending else sort_column.desc())
+
+    total = query.count()
+    pages = ceil(total / limit) if total else 0
+    drives = query.offset((page - 1) * limit).limit(limit).all()
+
+    drive_ids = [drive.drive_id for drive in drives]
+    applications_count_map = {}
+    if drive_ids:
+        rows = (
+            db.session.query(Application.drive_id, func.count(Application.application_id))
+            .filter(Application.drive_id.in_(drive_ids))
+            .group_by(Application.drive_id)
+            .all()
+        )
+        applications_count_map = {
+            int(drive_id): int(total_apps) for drive_id, total_apps in rows
+        }
+
+    items = [
+        _drive_to_dict(drive, applications_count_map.get(drive.drive_id, 0))
+        for drive in drives
+    ]
+
+    return (
+        jsonify(
+            {
+                "success": True,
+                "data": {
+                    "items": items,
+                    "total": total,
+                    "page": page,
+                    "pages": pages,
+                    "limit": limit,
+                },
+            }
+        ),
+        200,
+    )
+
+
+@company_bp.post("/drives")
+@role_required("company")
+def create_drive():
+    user_id = _current_user_id()
+    if user_id is None:
+        return _json_error("Invalid token identity", 401)
+
+    company = _company_for_user(user_id)
+    if not company:
+        return _json_error("Company profile not found", 404)
+
+    payload = request.get_json(silent=True) or {}
+
+    job_title = (payload.get("job_title") or "").strip()
+    if not job_title:
+        return _json_error("job_title is required", 400)
+
+    job_description = (payload.get("job_description") or "").strip()
+    if not job_description:
+        return _json_error("job_description is required", 400)
+
+    try:
+        min_cgpa = float(payload.get("min_cgpa"))
+    except (TypeError, ValueError):
+        return _json_error("min_cgpa must be a number", 400)
+    if min_cgpa < 0 or min_cgpa > 10:
+        return _json_error("min_cgpa must be between 0 and 10", 400)
+
+    eligible_branches, branch_error = _normalize_branches(payload.get("eligible_branches"))
+    if branch_error:
+        return _json_error(branch_error, 400)
+
+    eligible_years, year_error = _normalize_years(payload.get("eligible_years"))
+    if year_error:
+        return _json_error(year_error, 400)
+
+    interview_mode = (payload.get("interview_mode") or "").strip().lower()
+    if interview_mode not in ALLOWED_INTERVIEW_MODES:
+        return _json_error("interview_mode must be online, offline, or both", 400)
+
+    application_deadline, deadline_error = _parse_deadline(
+        payload.get("application_deadline")
+    )
+    if deadline_error:
+        return _json_error(deadline_error, 400)
+
+    salary_raw = payload.get("salary_lpa")
+    salary_lpa = None
+    if salary_raw not in (None, ""):
+        try:
+            salary_lpa = float(salary_raw)
+        except (TypeError, ValueError):
+            return _json_error("salary_lpa must be a number", 400)
+        if salary_lpa < 0:
+            return _json_error("salary_lpa cannot be negative", 400)
+
+    drive = PlacementDrive(
+        company_id=company.company_id,
+        job_title=job_title,
+        job_description=job_description,
+        required_skills=(payload.get("required_skills") or "").strip() or None,
+        min_cgpa=min_cgpa,
+        eligible_branches=eligible_branches,
+        eligible_years=eligible_years,
+        salary_lpa=salary_lpa,
+        job_location=(payload.get("job_location") or "").strip() or None,
+        application_deadline=application_deadline,
+        interview_mode=interview_mode,
+        status="pending",
+    )
+
+    try:
+        db.session.add(drive)
+        _append_company_activity(user_id, "Drive Created", drive.job_title, "info")
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return _json_error("Failed to create drive", 500)
+
+    return jsonify({"success": True, "data": _drive_to_dict(drive, 0)}), 201
+
+
+@company_bp.put("/drives/<int:drive_id>/close")
+@role_required("company")
+def close_drive(drive_id):
+    user_id = _current_user_id()
+    if user_id is None:
+        return _json_error("Invalid token identity", 401)
+
+    company = _company_for_user(user_id)
+    if not company:
+        return _json_error("Company profile not found", 404)
+
+    drive = PlacementDrive.query.filter_by(
+        drive_id=drive_id,
+        company_id=company.company_id,
+    ).first()
+    if not drive:
+        return _json_error("Drive not found", 404)
+
+    if drive.status != "closed":
+        try:
+            drive.status = "closed"
+            _append_company_activity(user_id, "Drive Closed", drive.job_title, "warning")
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            return _json_error("Failed to close drive", 500)
+
+    applications_count = (
+        db.session.query(func.count(Application.application_id))
+        .filter(Application.drive_id == drive.drive_id)
+        .scalar()
+        or 0
+    )
+
+    return jsonify({"success": True, "data": _drive_to_dict(drive, applications_count)}), 200
+
+
+@company_bp.get("/applications")
+@role_required("company")
+def list_applications():
+    user_id = _current_user_id()
+    if user_id is None:
+        return _json_error("Invalid token identity", 401)
+
+    company = _company_for_user(user_id)
+    if not company:
+        return _json_error("Company profile not found", 404)
+
+    page, limit, pagination_error = _parse_pagination()
+    if pagination_error:
+        return pagination_error
+
+    status_filter = (request.args.get("status") or "all").strip().lower()
+    query_text = (request.args.get("q") or "").strip()
+    drive_id_raw = (request.args.get("drive_id") or "all").strip().lower()
+
+    base_query = (
+        db.session.query(Application, Student, User, PlacementDrive)
+        .join(PlacementDrive, Application.drive_id == PlacementDrive.drive_id)
+        .join(Student, Application.student_id == Student.student_id)
+        .join(User, Student.user_id == User.user_id)
+        .filter(PlacementDrive.company_id == company.company_id)
+    )
+
+    if status_filter != "all":
+        if status_filter not in ALLOWED_APPLICATION_STATUSES:
+            return _json_error("Invalid application status filter", 400)
+        base_query = base_query.filter(Application.status == status_filter)
+
+    if drive_id_raw != "all":
+        try:
+            drive_id = int(drive_id_raw)
+        except (TypeError, ValueError):
+            return _json_error("drive_id must be an integer", 400)
+
+        base_query = base_query.filter(PlacementDrive.drive_id == drive_id)
+
+    if query_text:
+        like_value = f"%{query_text}%"
+        base_query = base_query.filter(
+            or_(
+                User.username.ilike(like_value),
+                User.email.ilike(like_value),
+                PlacementDrive.job_title.ilike(like_value),
+            )
+        )
+
+    ordered_query = base_query.order_by(
+        Application.updated_at.desc(),
+        Application.application_id.desc(),
+    )
+
+    total = ordered_query.count()
+    pages = ceil(total / limit) if total else 0
+    rows = ordered_query.offset((page - 1) * limit).limit(limit).all()
+
+    items = [
+        _application_to_dict(application, student, user, drive)
+        for application, student, user, drive in rows
+    ]
+
+    return (
+        jsonify(
+            {
+                "success": True,
+                "data": {
+                    "items": items,
+                    "total": total,
+                    "page": page,
+                    "pages": pages,
+                    "limit": limit,
+                    "drive_options": _company_drive_options(company.company_id),
+                },
+            }
+        ),
+        200,
+    )
+
+
+@company_bp.put("/applications/<int:application_id>/status")
+@role_required("company")
+def update_application_status(application_id):
+    user_id = _current_user_id()
+    if user_id is None:
+        return _json_error("Invalid token identity", 401)
+
+    company = _company_for_user(user_id)
+    if not company:
+        return _json_error("Company profile not found", 404)
+
+    application = (
+        db.session.query(Application)
+        .join(PlacementDrive, Application.drive_id == PlacementDrive.drive_id)
+        .filter(
+            Application.application_id == application_id,
+            PlacementDrive.company_id == company.company_id,
+        )
+        .first()
+    )
+    if not application:
+        return _json_error("Application not found", 404)
+
+    payload = request.get_json(silent=True) or {}
+    target_status = (payload.get("status") or "").strip().lower()
+    if target_status not in ALLOWED_APPLICATION_STATUSES:
+        return _json_error("Invalid application status", 400)
+
+    try:
+        application.status = target_status
+
+        notes = payload.get("notes")
+        if notes is not None:
+            cleaned_notes = notes.strip() if isinstance(notes, str) else notes
+            application.notes = cleaned_notes or None
+
+        rejection_reason = payload.get("rejection_reason")
+        if target_status == "rejected":
+            cleaned_reason = (
+                rejection_reason.strip()
+                if isinstance(rejection_reason, str)
+                else rejection_reason
+            )
+            application.rejection_reason = cleaned_reason or application.rejection_reason
+        else:
+            application.rejection_reason = None
+
+        _append_company_activity(
+            user_id,
+            "Application Status Updated",
+            f"#{application.application_id} -> {target_status}",
+            "success",
+        )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return _json_error("Failed to update application status", 500)
+
+    return jsonify({"success": True, "data": _application_to_dict(application)}), 200
+
+
+@company_bp.get("/interviews")
+@role_required("company")
+def list_interviews():
+    user_id = _current_user_id()
+    if user_id is None:
+        return _json_error("Invalid token identity", 401)
+
+    company = _company_for_user(user_id)
+    if not company:
+        return _json_error("Company profile not found", 404)
+
+    page, limit, pagination_error = _parse_pagination()
+    if pagination_error:
+        return pagination_error
+
+    result_filter = (request.args.get("result") or "all").strip().lower()
+    drive_id_raw = (request.args.get("drive_id") or "all").strip().lower()
+
+    base_query = (
+        db.session.query(Interview, Application, Student, User, PlacementDrive)
+        .join(Application, Interview.application_id == Application.application_id)
+        .join(PlacementDrive, Interview.drive_id == PlacementDrive.drive_id)
+        .join(Student, Application.student_id == Student.student_id)
+        .join(User, Student.user_id == User.user_id)
+        .filter(Interview.company_id == company.company_id)
+    )
+
+    if result_filter != "all":
+        if result_filter not in ALLOWED_INTERVIEW_RESULTS:
+            return _json_error("Invalid interview result filter", 400)
+        base_query = base_query.filter(Interview.result == result_filter)
+
+    if drive_id_raw != "all":
+        try:
+            drive_id = int(drive_id_raw)
+        except (TypeError, ValueError):
+            return _json_error("drive_id must be an integer", 400)
+
+        base_query = base_query.filter(Interview.drive_id == drive_id)
+
+    ordered_query = base_query.order_by(
+        Interview.interview_date.desc(),
+        Interview.interview_id.desc(),
+    )
+
+    total = ordered_query.count()
+    pages = ceil(total / limit) if total else 0
+    rows = ordered_query.offset((page - 1) * limit).limit(limit).all()
+
+    items = [
+        _interview_to_dict(interview, application, student, user, drive)
+        for interview, application, student, user, drive in rows
+    ]
+
+    return (
+        jsonify(
+            {
+                "success": True,
+                "data": {
+                    "items": items,
+                    "total": total,
+                    "page": page,
+                    "pages": pages,
+                    "limit": limit,
+                    "drive_options": _company_drive_options(company.company_id),
+                },
+            }
+        ),
+        200,
+    )
+
+
+@company_bp.post("/interviews")
+@role_required("company")
+def schedule_interview():
+    user_id = _current_user_id()
+    if user_id is None:
+        return _json_error("Invalid token identity", 401)
+
+    company = _company_for_user(user_id)
+    if not company:
+        return _json_error("Company profile not found", 404)
+
+    payload = request.get_json(silent=True) or {}
+
+    application_id = payload.get("application_id")
+    try:
+        application_id = int(application_id)
+    except (TypeError, ValueError):
+        return _json_error("application_id is required", 400)
+
+    application = (
+        db.session.query(Application)
+        .join(PlacementDrive, Application.drive_id == PlacementDrive.drive_id)
+        .filter(
+            Application.application_id == application_id,
+            PlacementDrive.company_id == company.company_id,
+        )
+        .first()
+    )
+    if not application:
+        return _json_error("Application not found", 404)
+
+    interview_date, date_error = _parse_datetime_value(
+        payload.get("interview_date"),
+        "interview_date",
+        must_be_future=False,
+    )
+    if date_error:
+        return _json_error(date_error, 400)
+
+    interview_mode = (payload.get("interview_mode") or "").strip().lower()
+    if interview_mode not in ALLOWED_INTERVIEW_RECORD_MODES:
+        return _json_error("interview_mode must be online or offline", 400)
+
+    interview = Interview(
+        application_id=application.application_id,
+        company_id=company.company_id,
+        drive_id=application.drive_id,
+        interview_date=interview_date,
+        interview_mode=interview_mode,
+        interview_link=(payload.get("interview_link") or "").strip() or None,
+        interview_location=(payload.get("interview_location") or "").strip() or None,
+        interviewer_name=(payload.get("interviewer_name") or "").strip() or None,
+        result="pending",
+    )
+
+    try:
+        db.session.add(interview)
+        application.status = "interviewed"
+        _append_company_activity(
+            user_id,
+            "Interview Scheduled",
+            f"Application #{application.application_id}",
+            "info",
+        )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return _json_error("Failed to schedule interview", 500)
+
+    return jsonify({"success": True, "data": _interview_to_dict(interview)}), 201
+
+
+@company_bp.put("/interviews/<int:interview_id>/result")
+@role_required("company")
+def update_interview_result(interview_id):
+    user_id = _current_user_id()
+    if user_id is None:
+        return _json_error("Invalid token identity", 401)
+
+    company = _company_for_user(user_id)
+    if not company:
+        return _json_error("Company profile not found", 404)
+
+    interview = Interview.query.filter_by(
+        interview_id=interview_id,
+        company_id=company.company_id,
+    ).first()
+    if not interview:
+        return _json_error("Interview not found", 404)
+
+    payload = request.get_json(silent=True) or {}
+    target_result = (payload.get("result") or "").strip().lower()
+    if target_result not in ALLOWED_INTERVIEW_RESULTS:
+        return _json_error("Invalid interview result", 400)
+
+    try:
+        interview.result = target_result
+
+        feedback = payload.get("feedback")
+        if feedback is not None:
+            cleaned_feedback = feedback.strip() if isinstance(feedback, str) else feedback
+            interview.feedback = cleaned_feedback or None
+
+        rating = payload.get("rating")
+        if rating not in (None, ""):
+            try:
+                interview.rating = float(rating)
+            except (TypeError, ValueError):
+                return _json_error("rating must be a number", 400)
+
+        application = db.session.get(Application, interview.application_id)
+        if application:
+            if target_result == "pass":
+                application.status = "selected"
+            elif target_result == "fail":
+                application.status = "rejected"
+                application.rejection_reason = (
+                    application.rejection_reason or "Rejected after interview"
+                )
+            else:
+                application.status = "interviewed"
+
+        _append_company_activity(
+            user_id,
+            "Interview Result Updated",
+            f"Interview #{interview.interview_id} -> {target_result}",
+            "success",
+        )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return _json_error("Failed to update interview result", 500)
+
+    return jsonify({"success": True, "data": _interview_to_dict(interview)}), 200
+
+
+@company_bp.get("/offers")
+@role_required("company")
+def list_offers():
+    user_id = _current_user_id()
+    if user_id is None:
+        return _json_error("Invalid token identity", 401)
+
+    company = _company_for_user(user_id)
+    if not company:
+        return _json_error("Company profile not found", 404)
+
+    page, limit, pagination_error = _parse_pagination()
+    if pagination_error:
+        return pagination_error
+
+    status_filter = (request.args.get("status") or "all").strip().lower()
+    query_text = (request.args.get("q") or "").strip()
+    drive_id_raw = (request.args.get("drive_id") or "all").strip().lower()
+
+    base_query = (
+        db.session.query(PlacementOffer, Application, Student, User, PlacementDrive)
+        .join(Application, PlacementOffer.application_id == Application.application_id)
+        .join(PlacementDrive, PlacementOffer.drive_id == PlacementDrive.drive_id)
+        .join(Student, PlacementOffer.student_id == Student.student_id)
+        .join(User, Student.user_id == User.user_id)
+        .filter(PlacementOffer.company_id == company.company_id)
+    )
+
+    if status_filter != "all":
+        if status_filter not in ALLOWED_OFFER_STATUSES:
+            return _json_error("Invalid offer status filter", 400)
+        base_query = base_query.filter(PlacementOffer.status == status_filter)
+
+    if drive_id_raw != "all":
+        try:
+            drive_id = int(drive_id_raw)
+        except (TypeError, ValueError):
+            return _json_error("drive_id must be an integer", 400)
+
+        base_query = base_query.filter(PlacementOffer.drive_id == drive_id)
+
+    if query_text:
+        like_value = f"%{query_text}%"
+        base_query = base_query.filter(
+            or_(
+                User.username.ilike(like_value),
+                PlacementOffer.position.ilike(like_value),
+                PlacementDrive.job_title.ilike(like_value),
+            )
+        )
+
+    ordered_query = base_query.order_by(
+        PlacementOffer.created_at.desc(),
+        PlacementOffer.offer_id.desc(),
+    )
+
+    total = ordered_query.count()
+    pages = ceil(total / limit) if total else 0
+    rows = ordered_query.offset((page - 1) * limit).limit(limit).all()
+
+    items = [
+        _offer_to_dict(offer, application, student, user, drive)
+        for offer, application, student, user, drive in rows
+    ]
+
+    return (
+        jsonify(
+            {
+                "success": True,
+                "data": {
+                    "items": items,
+                    "total": total,
+                    "page": page,
+                    "pages": pages,
+                    "limit": limit,
+                    "drive_options": _company_drive_options(company.company_id),
+                },
+            }
+        ),
+        200,
+    )
+
+
+@company_bp.post("/offers")
+@role_required("company")
+def create_offer():
+    user_id = _current_user_id()
+    if user_id is None:
+        return _json_error("Invalid token identity", 401)
+
+    company = _company_for_user(user_id)
+    if not company:
+        return _json_error("Company profile not found", 404)
+
+    payload = request.get_json(silent=True) or {}
+
+    application_id = payload.get("application_id")
+    try:
+        application_id = int(application_id)
+    except (TypeError, ValueError):
+        return _json_error("application_id is required", 400)
+
+    application = (
+        db.session.query(Application)
+        .join(PlacementDrive, Application.drive_id == PlacementDrive.drive_id)
+        .filter(
+            Application.application_id == application_id,
+            PlacementDrive.company_id == company.company_id,
+        )
+        .first()
+    )
+    if not application:
+        return _json_error("Application not found", 404)
+
+    existing_offer = PlacementOffer.query.filter_by(
+        application_id=application.application_id
+    ).first()
+    if existing_offer:
+        return _json_error("Offer already exists for this application", 400)
+
+    salary_raw = payload.get("salary")
+    try:
+        salary = float(salary_raw)
+    except (TypeError, ValueError):
+        return _json_error("salary must be a number", 400)
+    if salary <= 0:
+        return _json_error("salary must be greater than 0", 400)
+
+    position = (payload.get("position") or "").strip()
+    if not position:
+        drive = db.session.get(PlacementDrive, application.drive_id)
+        position = drive.job_title if drive else "Placement Offer"
+
+    joining_date, date_error = _parse_date_value(payload.get("joining_date"), "joining_date")
+    if date_error:
+        return _json_error(date_error, 400)
+
+    offer = PlacementOffer(
+        application_id=application.application_id,
+        student_id=application.student_id,
+        company_id=company.company_id,
+        drive_id=application.drive_id,
+        salary=salary,
+        position=position,
+        joining_date=joining_date,
+        status="offered",
+    )
+
+    try:
+        db.session.add(offer)
+        application.status = "selected"
+        _append_company_activity(
+            user_id,
+            "Offer Released",
+            f"Application #{application.application_id}",
+            "success",
+        )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return _json_error("Failed to create offer", 500)
+
+    return jsonify({"success": True, "data": _offer_to_dict(offer)}), 201
+
+
+__all__ = ["company_bp"]

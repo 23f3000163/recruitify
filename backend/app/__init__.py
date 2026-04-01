@@ -120,6 +120,9 @@ def create_app(config_object=None):
     from app.student import student_bp
     app.register_blueprint(student_bp, url_prefix="/student")
 
+    from app.company import company_bp
+    app.register_blueprint(company_bp, url_prefix="/company")
+
     # =====================================================================
     # Health Check
     # =====================================================================
