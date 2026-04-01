@@ -47,9 +47,22 @@
         type="button"
         @click="$emit('navigate', item.id)"
         :aria-current="activeView === item.id ? 'page' : undefined"
+        :aria-label="sidebarCollapsed ? item.label : undefined"
+        :title="sidebarCollapsed ? item.label : ''"
       >
         <span class="rq-nav-icon" aria-hidden="true" v-html="item.svg"></span>
         <span class="rq-nav-label" v-show="!sidebarCollapsed">{{ item.label }}</span>
+        <span
+          v-if="item.badgeCount && item.badgeCount > 0 && !sidebarCollapsed"
+          class="rq-nav-badge"
+        >
+          {{ item.badgeCount }}
+        </span>
+        <span
+          v-if="item.badgeCount && item.badgeCount > 0 && sidebarCollapsed"
+          class="rq-nav-badge-dot"
+          aria-hidden="true"
+        ></span>
       </button>
 
       <span class="rq-nav-section" v-show="!sidebarCollapsed">PROFILE</span>
@@ -60,6 +73,9 @@
         :class="{ 'is-active': activeView === item.id }"
         type="button"
         @click="$emit('navigate', item.id)"
+        :aria-current="activeView === item.id ? 'page' : undefined"
+        :aria-label="sidebarCollapsed ? item.label : undefined"
+        :title="sidebarCollapsed ? item.label : ''"
       >
         <span class="rq-nav-icon" aria-hidden="true" v-html="item.svg"></span>
         <span class="rq-nav-label" v-show="!sidebarCollapsed">{{ item.label }}</span>

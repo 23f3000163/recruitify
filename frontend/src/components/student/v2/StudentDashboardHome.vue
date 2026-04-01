@@ -16,13 +16,22 @@
       </article>
     </div>
 
+    <article v-if="errorMessage" class="rq-card">
+      <div class="rq-card-body">
+        <p class="rq-error-text">{{ errorMessage }}</p>
+      </div>
+    </article>
+
     <div class="rq-row-2">
       <article class="rq-card">
         <header class="rq-card-hd">
           <span class="rq-card-title">Eligible Drives</span>
         </header>
         <div class="rq-card-body">
-          <div v-if="drives.length" class="rq-list">
+          <div v-if="isLoading" class="rq-list">
+            <p class="rq-empty-text">Loading dashboard highlights...</p>
+          </div>
+          <div v-else-if="drives.length" class="rq-list">
             <div v-for="drive in drives.slice(0, 4)" :key="drive.id" class="rq-list-row">
               <div>
                 <p class="rq-list-title">{{ drive.role }}</p>
@@ -40,7 +49,10 @@
           <span class="rq-card-title">Recent Applications</span>
         </header>
         <div class="rq-card-body">
-          <div v-if="applications.length" class="rq-list">
+          <div v-if="isLoading" class="rq-list">
+            <p class="rq-empty-text">Loading recent applications...</p>
+          </div>
+          <div v-else-if="applications.length" class="rq-list">
             <div v-for="row in applications.slice(0, 4)" :key="row.id" class="rq-list-row">
               <div>
                 <p class="rq-list-title">{{ row.role }}</p>
@@ -76,6 +88,14 @@ export default {
       type: Number,
       default: 0
     },
+    isLoading: {
+      type: Boolean,
+      default: false
+    },
+    errorMessage: {
+      type: String,
+      default: ''
+    },
     statCards: {
       type: Array,
       default: () => []
@@ -92,8 +112,9 @@ export default {
   methods: {
     statusClass(status) {
       const normalized = String(status || '').toLowerCase()
-      if (normalized === 'shortlisted') return 'pill-shortlisted'
-      if (normalized === 'interview') return 'pill-interview'
+      if (normalized === 'shortlisted' || normalized === 'selected' || normalized === 'accepted') return 'pill-shortlisted'
+      if (normalized === 'interview' || normalized === 'interviewed') return 'pill-interview'
+      if (normalized === 'offered') return 'pill-offer'
       if (normalized === 'offer') return 'pill-offer'
       if (normalized === 'rejected') return 'pill-rejected'
       return 'pill-applied'

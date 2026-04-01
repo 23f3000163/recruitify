@@ -1,0 +1,389 @@
+import { mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import StudentDashboardV2 from '../../src/views/student/StudentDashboardV2.vue'
+import { authApi, studentApi } from '../../src/api/api'
+
+vi.mock('../../src/api/api', () => ({
+  authApi: {
+    getMe: vi.fn()
+  },
+  studentApi: {
+    getDashboard: vi.fn(),
+    getDrives: vi.fn(),
+    applyToDrive: vi.fn(),
+    getApplications: vi.fn(),
+    getHistory: vi.fn(),
+    getNotifications: vi.fn(),
+    markNotificationRead: vi.fn(),
+    markAllNotificationsRead: vi.fn(),
+    respondToOffer: vi.fn(),
+    downloadOfferDocument: vi.fn(),
+    downloadPlacementDocument: vi.fn(),
+    updateProfile: vi.fn()
+  }
+}))
+
+const flushPromises = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+const dashboardPayload = {
+  data: {
+    data: {
+      summary: {
+        applications_total: 4,
+        applied: 2,
+        shortlisted: 1,
+        interviewed: 1,
+        selected: 0,
+        waitlisted: 0,
+        rejected: 0,
+        offers_released: 1,
+        offers_accepted: 0,
+        offers_rejected: 0
+      },
+      recent_applications: [
+        {
+          application_id: 91,
+          status: 'shortlisted',
+          status_label: 'Shortlisted',
+          drive: {
+            id: 51,
+            title: 'Platform Engineer',
+            location: 'Bengaluru',
+            application_deadline: '2030-06-12T10:00:00+00:00',
+            salary_lpa: 18
+          },
+          company: {
+            name: 'Orbit Labs'
+          }
+        }
+      ],
+      unread_notifications: 2
+    }
+  }
+}
+
+const applicationsPayload = {
+  data: {
+    data: {
+      items: [
+        {
+          application_id: 501,
+          status: 'selected',
+          status_label: 'Selected',
+          updated_at: '2030-06-02T10:00:00+00:00',
+          drive: {
+            title: 'Backend Engineer',
+            location: 'Remote'
+          },
+          company: {
+            name: 'Acme Labs'
+          },
+          offer: {
+            offer_id: 701,
+            status: 'offered',
+            position: 'Backend Engineer',
+            salary: 1500000
+          },
+          timeline: []
+        }
+      ],
+      total: 1,
+      page: 1,
+      pages: 1,
+      limit: 10
+    }
+  }
+}
+
+const drivesPayload = {
+  data: {
+    data: {
+      items: [
+        {
+          drive_id: 63,
+          job_title: 'Frontend Developer',
+          job_location: 'Pune',
+          salary_lpa: 12,
+          application_deadline: '2030-06-30T10:00:00+00:00',
+          company: {
+            name: 'Nimbus Tech',
+            industry: 'Software'
+          },
+          already_applied: false,
+          is_eligible: true,
+          ineligibility_reasons: [],
+          is_open: true
+        }
+      ],
+      total: 1,
+      page: 1,
+      pages: 1,
+      limit: 8
+    }
+  }
+}
+
+const historyPayload = {
+  data: {
+    data: {
+      summary: {
+        total_applied: 2,
+        offers_received: 1,
+        placements_count: 1,
+        highest_package: 2100000
+      },
+      items: [
+        {
+          application_id: 990,
+          status: 'selected',
+          status_label: 'Selected',
+          updated_at: '2030-06-03T08:30:00+00:00',
+          outcome: 'placed',
+          drive: {
+            job_title: 'SRE Engineer',
+            job_location: 'Remote'
+          },
+          company: {
+            company_name: 'Orbit Labs'
+          },
+          offer: {
+            offer_id: 44,
+            status: 'offered'
+          },
+          placement: {
+            placement_id: 55,
+            position: 'SRE Engineer'
+          }
+        }
+      ],
+      total: 1,
+      page: 1,
+      pages: 1,
+      limit: 10
+    }
+  }
+}
+
+const notificationsPayload = {
+  data: {
+    data: {
+      items: [
+        {
+          notification_id: 801,
+          title: 'Interview update',
+          message: 'Your interview was rescheduled.',
+          created_at: '2030-06-02T12:00:00+00:00',
+          is_read: false
+        }
+      ],
+      unread_count: 1,
+      total: 1,
+      page: 1,
+      pages: 1,
+      limit: 8
+    }
+  }
+}
+
+const mountWrapper = () =>
+  mount(StudentDashboardV2, {
+    global: {
+      stubs: {
+        StudentSidebar: {
+          name: 'StudentSidebar',
+          template: `
+            <div>
+              <button class="to-dashboard" @click="$emit('navigate', 'dashboard')">Dashboard</button>
+              <button class="to-drives" @click="$emit('navigate', 'drives')">Drives</button>
+              <button class="to-applications" @click="$emit('navigate', 'applications')">Applications</button>
+              <button class="to-notifications" @click="$emit('navigate', 'notifications')">Notifications</button>
+              <button class="to-profile" @click="$emit('navigate', 'profile')">Profile</button>
+              <button class="to-history" @click="$emit('navigate', 'history')">History</button>
+            </div>
+          `
+        },
+        StudentTopbar: {
+          name: 'StudentTopbar',
+          template: '<div class="topbar-stub"></div>'
+        }
+      }
+    }
+  })
+
+describe('StudentDashboardV2 step 3B wiring', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    localStorage.clear()
+
+    authApi.getMe.mockResolvedValue({
+      data: {
+        data: {
+          username: 'priya.student',
+          email: 'priya.student@example.com'
+        }
+      }
+    })
+
+    studentApi.getDashboard.mockResolvedValue(dashboardPayload)
+    studentApi.getDrives.mockResolvedValue(drivesPayload)
+    studentApi.applyToDrive.mockResolvedValue({
+      data: {
+        data: {
+          already_applied: false,
+          application: { application_id: 777, status: 'applied' }
+        }
+      }
+    })
+    studentApi.getApplications.mockResolvedValue(applicationsPayload)
+    studentApi.getHistory.mockResolvedValue(historyPayload)
+    studentApi.getNotifications.mockResolvedValue(notificationsPayload)
+    studentApi.respondToOffer.mockResolvedValue({ data: { success: true } })
+    studentApi.markNotificationRead.mockResolvedValue({
+      data: { data: { unread_count: 0 } }
+    })
+    studentApi.markAllNotificationsRead.mockResolvedValue({
+      data: { data: { unread_count: 0 } }
+    })
+    studentApi.downloadOfferDocument.mockResolvedValue({
+      data: new Blob(['offer text'], { type: 'text/plain' }),
+      headers: {
+        'content-disposition': 'attachment; filename="offer-letter-44.txt"'
+      }
+    })
+    studentApi.downloadPlacementDocument.mockResolvedValue({
+      data: new Blob(['placement text'], { type: 'text/plain' }),
+      headers: {
+        'content-disposition': 'attachment; filename="placement-confirmation-55.txt"'
+      }
+    })
+    studentApi.updateProfile.mockResolvedValue({
+      data: {
+        data: {
+          student: {
+            branch: 'CSE',
+            year: 3,
+            roll_number: 'CS21B042'
+          }
+        }
+      }
+    })
+  })
+
+  it('loads dashboard, applications, and notifications on bootstrap', async () => {
+    const wrapper = mountWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    expect(authApi.getMe).toHaveBeenCalledTimes(1)
+    expect(studentApi.getDashboard).toHaveBeenCalledTimes(1)
+    expect(studentApi.getApplications).toHaveBeenCalledTimes(1)
+    expect(studentApi.getNotifications).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('Platform Engineer')
+  })
+
+  it('submits offer response from applications view', async () => {
+    const wrapper = mountWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    await wrapper.get('.to-applications').trigger('click')
+    await flushPromises()
+
+    const acceptButton = wrapper.findAll('button').find((node) => node.text() === 'Accept')
+    expect(acceptButton).toBeTruthy()
+
+    await acceptButton.trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    expect(studentApi.respondToOffer).toHaveBeenCalledWith(701, { status: 'accepted' })
+  })
+
+  it('loads drives and applies for an eligible open drive', async () => {
+    const wrapper = mountWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    await wrapper.get('.to-drives').trigger('click')
+    await flushPromises()
+
+    expect(studentApi.getDrives).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('Frontend Developer')
+
+    const applyButton = wrapper.findAll('button').find((node) => node.text() === 'Apply Now')
+    expect(applyButton).toBeTruthy()
+
+    await applyButton.trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    expect(studentApi.applyToDrive).toHaveBeenCalledWith(63)
+  })
+
+  it('loads history and calls offer/placement document downloads', async () => {
+    const wrapper = mountWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    await wrapper.get('.to-history').trigger('click')
+    await flushPromises()
+
+    expect(studentApi.getHistory).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('SRE Engineer')
+
+    const offerButton = wrapper.findAll('button').find((node) => node.text() === 'Offer Letter')
+    expect(offerButton).toBeTruthy()
+    await offerButton.trigger('click')
+    await flushPromises()
+
+    const placementButton = wrapper.findAll('button').find((node) => node.text() === 'Placement Doc')
+    expect(placementButton).toBeTruthy()
+    await placementButton.trigger('click')
+    await flushPromises()
+
+    expect(studentApi.downloadOfferDocument).toHaveBeenCalledWith(44)
+    expect(studentApi.downloadPlacementDocument).toHaveBeenCalledWith(55)
+  })
+
+  it('marks notifications and saves profile with current schema', async () => {
+    const wrapper = mountWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    await wrapper.get('.to-notifications').trigger('click')
+    await flushPromises()
+
+    const markReadButton = wrapper.findAll('button').find((node) => node.text() === 'Mark read')
+    expect(markReadButton).toBeTruthy()
+
+    await markReadButton.trigger('click')
+    await flushPromises()
+
+    expect(studentApi.markNotificationRead).toHaveBeenCalledWith(801)
+
+    await wrapper.get('.to-profile').trigger('click')
+    await flushPromises()
+
+    const inputs = wrapper.findAll('.rq-form-grid input')
+    await inputs[0].setValue('My Engineering College')
+    await inputs[1].setValue('ECE')
+    await inputs[2].setValue('4')
+    await inputs[3].setValue('8.9')
+    await inputs[4].setValue('CS21B099')
+
+    const saveButton = wrapper.findAll('button').find((node) => node.text() === 'Save Profile')
+    expect(saveButton).toBeTruthy()
+
+    await saveButton.trigger('click')
+    await flushPromises()
+
+    expect(studentApi.updateProfile).toHaveBeenCalledWith({
+      college_name: 'My Engineering College',
+      branch: 'ECE',
+      year: 4,
+      cgpa: 8.9,
+      roll_number: 'CS21B099'
+    })
+  })
+})

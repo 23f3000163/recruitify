@@ -3,9 +3,9 @@
 from datetime import datetime, timezone
 from math import ceil
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, make_response, request
 from flask_jwt_extended import get_jwt_identity
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 
 from app.auth.utils import role_required
 from app.auth.validators import validate_required_fields
@@ -159,6 +159,94 @@ def _parse_pagination():
         return None, None, _json_error("limit must be greater than 0", 400)
 
     return page, min(limit, MAX_LIMIT), None
+
+
+def _parse_bool_param(value, default=False):
+    raw = str(value if value is not None else "").strip().lower()
+    if not raw:
+        return default
+    return raw in {"1", "true", "yes", "y"}
+
+
+def _normalized_upper_set(values):
+    if not isinstance(values, list):
+        return set()
+    return {
+        str(item).strip().upper()
+        for item in values
+        if str(item).strip()
+    }
+
+
+def _normalized_int_set(values):
+    if not isinstance(values, list):
+        return set()
+
+    normalized = set()
+    for item in values:
+        try:
+            normalized.add(int(item))
+        except (TypeError, ValueError):
+            continue
+    return normalized
+
+
+def _coerce_utc(value):
+    if not value:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _is_drive_open_for_student(drive):
+    if not drive or drive.status != "approved":
+        return False
+
+    deadline = _coerce_utc(drive.application_deadline)
+    if not deadline:
+        return False
+
+    return deadline >= datetime.now(timezone.utc)
+
+
+def _student_eligibility_for_drive(student, drive):
+    reasons = []
+
+    if not student:
+        return False, ["Student profile not found"]
+
+    if student.is_blacklisted:
+        reasons.append("Student profile is restricted")
+
+    if not student.profile_completed:
+        reasons.append("Complete your profile first")
+
+    student_branch = str(student.branch or "").strip().upper()
+    student_year = student.year
+    student_cgpa = student.cgpa
+
+    allowed_branches = _normalized_upper_set(drive.eligible_branches)
+    allowed_years = _normalized_int_set(drive.eligible_years)
+
+    if allowed_branches and student_branch not in allowed_branches:
+        reasons.append("Branch not eligible")
+
+    if allowed_years and student_year not in allowed_years:
+        reasons.append("Year not eligible")
+
+    min_cgpa = float(drive.min_cgpa or 0)
+    if student_cgpa is None or float(student_cgpa) < min_cgpa:
+        reasons.append(f"Minimum CGPA is {min_cgpa:g}")
+
+    return len(reasons) == 0, reasons
+
+
+def _text_download_response(filename, content):
+    response = make_response(content, 200)
+    response.headers["Content-Type"] = "text/plain; charset=utf-8"
+    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
 
 
 def _serialize_datetime(value):
@@ -860,6 +948,453 @@ def respond_to_offer(offer_id):
             }
         ),
         200,
+    )
+
+
+@student_bp.get("/drives")
+@role_required("student")
+def list_student_drives():
+    user_id = _current_user_id()
+    if user_id is None:
+        return _json_error("Invalid token identity", 401)
+
+    student = _student_for_user(user_id)
+    if not student:
+        return _json_error("Student profile not found", 404)
+
+    page, limit, pagination_error = _parse_pagination()
+    if pagination_error:
+        return pagination_error
+
+    query_text = (request.args.get("q") or "").strip()
+    company_filter = (request.args.get("company") or "").strip()
+    role_filter = (request.args.get("role") or "").strip()
+    skills_filter = (request.args.get("skills") or "").strip()
+    include_expired = _parse_bool_param(request.args.get("include_expired"), False)
+
+    base_query = (
+        db.session.query(PlacementDrive, Company)
+        .join(Company, PlacementDrive.company_id == Company.company_id)
+        .filter(
+            PlacementDrive.status == "approved",
+            Company.approval_status == "approved",
+            Company.is_blacklisted.is_(False),
+        )
+    )
+
+    if not include_expired:
+        base_query = base_query.filter(
+            PlacementDrive.application_deadline >= datetime.now(timezone.utc)
+        )
+
+    if query_text:
+        like_value = f"%{query_text}%"
+        base_query = base_query.filter(
+            or_(
+                PlacementDrive.job_title.ilike(like_value),
+                PlacementDrive.job_description.ilike(like_value),
+                PlacementDrive.required_skills.ilike(like_value),
+                PlacementDrive.job_location.ilike(like_value),
+                Company.company_name.ilike(like_value),
+            )
+        )
+
+    if company_filter:
+        base_query = base_query.filter(Company.company_name.ilike(f"%{company_filter}%"))
+
+    if role_filter:
+        base_query = base_query.filter(PlacementDrive.job_title.ilike(f"%{role_filter}%"))
+
+    if skills_filter:
+        base_query = base_query.filter(
+            PlacementDrive.required_skills.ilike(f"%{skills_filter}%")
+        )
+
+    ordered_query = base_query.order_by(
+        PlacementDrive.application_deadline.asc(),
+        PlacementDrive.drive_id.desc(),
+    )
+
+    total = ordered_query.count()
+    pages = ceil(total / limit) if total else 0
+    rows = ordered_query.offset((page - 1) * limit).limit(limit).all()
+
+    drive_ids = [drive.drive_id for drive, _ in rows]
+    applied_drive_ids = set()
+    if drive_ids:
+        applied_rows = (
+            db.session.query(Application.drive_id)
+            .filter(
+                Application.student_id == student.student_id,
+                Application.drive_id.in_(drive_ids),
+            )
+            .all()
+        )
+        applied_drive_ids = {row.drive_id for row in applied_rows}
+
+    items = []
+    for drive, company in rows:
+        is_eligible, reasons = _student_eligibility_for_drive(student, drive)
+        payload = drive.to_dict()
+        payload.update(
+            {
+                "id": drive.drive_id,
+                "company": {
+                    "company_id": company.company_id,
+                    "name": company.company_name,
+                    "industry": company.industry,
+                },
+                "already_applied": drive.drive_id in applied_drive_ids,
+                "is_eligible": is_eligible,
+                "ineligibility_reasons": reasons,
+                "is_open": _is_drive_open_for_student(drive),
+            }
+        )
+        items.append(payload)
+
+    return (
+        jsonify(
+            {
+                "success": True,
+                "data": {
+                    "items": items,
+                    "total": total,
+                    "page": page,
+                    "pages": pages,
+                    "limit": limit,
+                },
+            }
+        ),
+        200,
+    )
+
+
+@student_bp.post("/drives/<int:drive_id>/apply")
+@role_required("student")
+def apply_to_drive(drive_id):
+    user_id = _current_user_id()
+    if user_id is None:
+        return _json_error("Invalid token identity", 401)
+
+    student = _student_for_user(user_id)
+    if not student:
+        return _json_error("Student profile not found", 404)
+
+    drive_row = (
+        db.session.query(PlacementDrive, Company)
+        .join(Company, PlacementDrive.company_id == Company.company_id)
+        .filter(PlacementDrive.drive_id == drive_id)
+        .first()
+    )
+    if not drive_row:
+        return _json_error("Drive not found", 404)
+
+    drive, company = drive_row
+
+    if drive.status != "approved":
+        return _json_error("Drive is not open for applications", 400)
+
+    if company.approval_status != "approved" or company.is_blacklisted:
+        return _json_error("Drive is not available for applications", 400)
+
+    if not _is_drive_open_for_student(drive):
+        return _json_error("Application deadline has passed", 400)
+
+    is_eligible, reasons = _student_eligibility_for_drive(student, drive)
+    if not is_eligible:
+        reason_text = "; ".join(reasons) if reasons else "Not eligible for this drive"
+        return _json_error(reason_text, 400)
+
+    existing_application = Application.query.filter_by(
+        student_id=student.student_id,
+        drive_id=drive.drive_id,
+    ).first()
+    if existing_application:
+        latest_interview = (
+            Interview.query.filter_by(application_id=existing_application.application_id)
+            .order_by(Interview.interview_date.desc(), Interview.interview_id.desc())
+            .first()
+        )
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "data": {
+                        "already_applied": True,
+                        "application": _application_to_student_payload(
+                            existing_application,
+                            drive=drive,
+                            company=company,
+                            latest_interview=latest_interview,
+                            offer=existing_application.placement_offer,
+                        ),
+                    },
+                }
+            ),
+            200,
+        )
+
+    application = Application(
+        student_id=student.student_id,
+        drive_id=drive.drive_id,
+        status="applied",
+    )
+    db.session.add(application)
+    _append_student_activity(
+        user_id,
+        "Application Submitted",
+        f"Drive #{drive.drive_id} - {drive.job_title}",
+        "success",
+    )
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return _json_error("Unable to submit application", 500)
+
+    return (
+        jsonify(
+            {
+                "success": True,
+                "data": {
+                    "already_applied": False,
+                    "application": _application_to_student_payload(
+                        application,
+                        drive=drive,
+                        company=company,
+                        latest_interview=None,
+                        offer=None,
+                    ),
+                },
+            }
+        ),
+        201,
+    )
+
+
+@student_bp.get("/history")
+@role_required("student")
+def student_history():
+    user_id = _current_user_id()
+    if user_id is None:
+        return _json_error("Invalid token identity", 401)
+
+    student = _student_for_user(user_id)
+    if not student:
+        return _json_error("Student profile not found", 404)
+
+    page, limit, pagination_error = _parse_pagination()
+    if pagination_error:
+        return pagination_error
+
+    query_text = (request.args.get("q") or "").strip()
+
+    base_query = (
+        db.session.query(Application, PlacementDrive, Company)
+        .join(PlacementDrive, Application.drive_id == PlacementDrive.drive_id)
+        .join(Company, PlacementDrive.company_id == Company.company_id)
+        .filter(Application.student_id == student.student_id)
+    )
+
+    if query_text:
+        like_value = f"%{query_text}%"
+        base_query = base_query.filter(
+            or_(
+                PlacementDrive.job_title.ilike(like_value),
+                Company.company_name.ilike(like_value),
+                PlacementDrive.job_location.ilike(like_value),
+            )
+        )
+
+    ordered_query = base_query.order_by(
+        Application.updated_at.desc(),
+        Application.application_id.desc(),
+    )
+
+    total = ordered_query.count()
+    pages = ceil(total / limit) if total else 0
+    rows = ordered_query.offset((page - 1) * limit).limit(limit).all()
+
+    items = []
+    for application, drive, company in rows:
+        offer = application.placement_offer
+        placement = (
+            Placement.query.filter_by(
+                student_id=student.student_id,
+                company_id=company.company_id,
+                drive_id=drive.drive_id,
+            )
+            .order_by(Placement.created_at.desc(), Placement.placement_id.desc())
+            .first()
+        )
+
+        outcome = "in_progress"
+        if placement or (offer and offer.status == "accepted"):
+            outcome = "placed"
+        elif offer and offer.status == "offered":
+            outcome = "offer_released"
+        elif application.status == "rejected":
+            outcome = "rejected"
+
+        items.append(
+            {
+                "application_id": application.application_id,
+                "status": application.status,
+                "status_label": _status_label(application.status),
+                "updated_at": _serialize_datetime(application.updated_at),
+                "drive": {
+                    "drive_id": drive.drive_id,
+                    "job_title": drive.job_title,
+                    "job_location": drive.job_location,
+                },
+                "company": {
+                    "company_id": company.company_id,
+                    "company_name": company.company_name,
+                },
+                "offer": offer.to_dict() if offer else None,
+                "placement": placement.to_dict() if placement else None,
+                "outcome": outcome,
+            }
+        )
+
+    offers_received = PlacementOffer.query.filter(
+        PlacementOffer.student_id == student.student_id
+    ).count()
+    placements_count = Placement.query.filter(
+        Placement.student_id == student.student_id
+    ).count()
+    highest_offer_salary = (
+        db.session.query(func.max(PlacementOffer.salary))
+        .filter(PlacementOffer.student_id == student.student_id)
+        .scalar()
+    )
+    highest_placement_salary = (
+        db.session.query(func.max(Placement.salary))
+        .filter(Placement.student_id == student.student_id)
+        .scalar()
+    )
+
+    highest_package = max(
+        float(highest_offer_salary or 0),
+        float(highest_placement_salary or 0),
+    )
+
+    summary = {
+        "total_applied": Application.query.filter(
+            Application.student_id == student.student_id
+        ).count(),
+        "offers_received": offers_received,
+        "placements_count": placements_count,
+        "highest_package": highest_package,
+    }
+
+    return (
+        jsonify(
+            {
+                "success": True,
+                "data": {
+                    "summary": summary,
+                    "items": items,
+                    "total": total,
+                    "page": page,
+                    "pages": pages,
+                    "limit": limit,
+                },
+            }
+        ),
+        200,
+    )
+
+
+@student_bp.get("/offers/<int:offer_id>/document")
+@role_required("student")
+def download_offer_document(offer_id):
+    user_id = _current_user_id()
+    if user_id is None:
+        return _json_error("Invalid token identity", 401)
+
+    student = _student_for_user(user_id)
+    if not student:
+        return _json_error("Student profile not found", 404)
+
+    offer = PlacementOffer.query.filter(
+        PlacementOffer.offer_id == offer_id,
+        PlacementOffer.student_id == student.student_id,
+    ).first()
+    if not offer:
+        return _json_error("Offer not found", 404)
+
+    student_name = student.user.username if student.user else f"Student {student.student_id}"
+    company_name = offer.company.company_name if offer.company else "Company"
+    drive_title = offer.drive.job_title if offer.drive else "Placement Role"
+
+    content = "\n".join(
+        [
+            "Recruitify Offer Letter",
+            "-----------------------",
+            f"Offer ID: {offer.offer_id}",
+            f"Student: {student_name}",
+            f"Company: {company_name}",
+            f"Role: {offer.position}",
+            f"Drive: {drive_title}",
+            f"Salary: INR {float(offer.salary):,.0f}",
+            f"Joining Date: {offer.joining_date.isoformat() if offer.joining_date else 'TBD'}",
+            f"Status: {_status_label(offer.status)}",
+            "",
+            "This document is system-generated for placement workflow tracking.",
+        ]
+    )
+
+    return _text_download_response(f"offer-letter-{offer.offer_id}.txt", content)
+
+
+@student_bp.get("/placements/<int:placement_id>/document")
+@role_required("student")
+def download_placement_document(placement_id):
+    user_id = _current_user_id()
+    if user_id is None:
+        return _json_error("Invalid token identity", 401)
+
+    student = _student_for_user(user_id)
+    if not student:
+        return _json_error("Student profile not found", 404)
+
+    placement = Placement.query.filter(
+        Placement.placement_id == placement_id,
+        Placement.student_id == student.student_id,
+    ).first()
+    if not placement:
+        return _json_error("Placement not found", 404)
+
+    student_name = student.user.username if student.user else f"Student {student.student_id}"
+    company_name = placement.company.company_name if placement.company else "Company"
+    drive_title = placement.drive.job_title if placement.drive else "Placement Role"
+
+    content = "\n".join(
+        [
+            "Recruitify Placement Confirmation",
+            "-------------------------------",
+            f"Placement ID: {placement.placement_id}",
+            f"Student: {student_name}",
+            f"Company: {company_name}",
+            f"Role: {placement.position}",
+            f"Drive: {drive_title}",
+            f"Package: INR {float(placement.salary):,.0f}",
+            (
+                f"Joining Date: {placement.joining_date.isoformat()}"
+                if placement.joining_date
+                else "Joining Date: TBD"
+            ),
+            f"Generated At: {_serialize_datetime(datetime.now(timezone.utc))}",
+            "",
+            "This is a system-generated placement confirmation for institutional records.",
+        ]
+    )
+
+    return _text_download_response(
+        f"placement-confirmation-{placement.placement_id}.txt",
+        content,
     )
 
 
