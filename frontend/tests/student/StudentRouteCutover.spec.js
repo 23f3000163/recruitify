@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
 import router from '../../src/router'
-import StudentDashboard from '../../src/views/student/StudentDashboard.vue'
 import StudentDashboardV2 from '../../src/views/student/StudentDashboardV2.vue'
 
 describe('Student route cutover', () => {
@@ -13,9 +12,9 @@ describe('Student route cutover', () => {
     expect(v2Alias.matched[0]?.components?.default).toBe(StudentDashboardV2)
   })
 
-  it('keeps legacy dashboard on fallback route', () => {
-    const legacyStudent = router.resolve('/student-legacy')
+  it('removes legacy student route after stabilization', () => {
+    const hasLegacyRoute = router.getRoutes().some((route) => route.path === '/student-legacy')
 
-    expect(legacyStudent.matched[0]?.components?.default).toBe(StudentDashboard)
+    expect(hasLegacyRoute).toBe(false)
   })
 })

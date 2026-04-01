@@ -8,24 +8,21 @@
 ## Current Dual-Dashboard State
 - Production route: `/student` -> `StudentDashboardV2.vue`.
 - Compatibility route: `/student-v2` -> `StudentDashboardV2.vue`.
-- Legacy fallback route: `/student-legacy` -> `StudentDashboard.vue`.
 
 Decision:
-- Cutover is complete: V2 is now the default student dashboard.
-- Keep `StudentDashboard.vue` only as a rollback-safe fallback during stabilization.
-- Remove legacy route and view only after stabilization checks pass.
+- Legacy cleanup is complete: `StudentDashboard.vue` route usage is removed.
+- Student experience is now fully standardized on V2.
 
 ## Keep/Remove Plan
-1. Current state after cutover:
+1. Current state:
 - `StudentDashboardV2.vue` is default on `/student`.
-- `StudentDashboard.vue` is available only on `/student-legacy`.
+- `StudentDashboardV2.vue` is also available on `/student-v2` for compatibility.
 
-2. Stabilization window:
-- Keep the legacy fallback route for one release cycle.
-- Track any production issues against V2 and validate regression gates.
+2. Stabilization validation:
+- Continue running regression and smoke checks on V2-only routes.
 
-3. Remove point:
-- If no issues after stabilization, remove `/student-legacy` and delete legacy view usage.
+3. Cleanup status:
+- Legacy route and dashboard usage have been removed.
 
 ## V2 Section -> API Contract Map
 
@@ -132,10 +129,10 @@ Status:
 - Keep `/student` mapped to V2 and monitor post-cutover behavior.
 
 2. Keep rollback path during observation:
-- Keep `/student-legacy` for one release cycle.
+- Optional temporary aliasing only if rollback is needed via git revert.
 
 3. Remove legacy after observation:
-- Remove fallback route and legacy dashboard once stable.
+- Completed.
 
 ## Test and Review Gates
 Per slice:
