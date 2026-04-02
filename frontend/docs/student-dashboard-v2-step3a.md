@@ -1,5 +1,8 @@
 # Student Dashboard V2 - Step 3A API Mapping and Migration Decision
 
+> Status: Historical reference. This plan has been executed and superseded by
+> the final closure document in frontend/docs/student-dashboard-v2-milestone-closure.md.
+
 ## Objective
 - Map each Student Dashboard V2 section to current backend endpoints.
 - Identify endpoint gaps before integration.
