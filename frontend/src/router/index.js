@@ -4,7 +4,7 @@ import Landing from '../views/Landing.vue'
 import Login from '../views/Login.vue'
 import Register from '../views/Register.vue'
 import AdminDashboard from '../views/admin/AdminDashboard.vue'
-import StudentDashboardV2 from '../views/student/StudentDashboardV2.vue'
+import StudentDashboard from '../views/student/StudentDashboard.vue'
 import CompanyDashboard from '../views/company/CompanyDashboard.vue'
 
 const routes = [
@@ -14,8 +14,8 @@ const routes = [
   { path: '/register/student', component: Register },
   { path: '/register/company', component: Register },
   { path: '/admin', component: AdminDashboard },
-  { path: '/student', component: StudentDashboardV2 },
-  { path: '/student-v2', component: StudentDashboardV2 },
+  { path: '/student', component: StudentDashboard },
+  { path: '/student-v2', component: StudentDashboard },
   { path: '/company', component: CompanyDashboard }
 ]
 

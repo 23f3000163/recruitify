@@ -20,8 +20,8 @@
 Remaining work is operational only (PR creation, review approval, merge).
 
 ## Final Routing State
-- /student -> StudentDashboardV2.vue (default)
-- /student-v2 -> StudentDashboardV2.vue (compatibility alias)
+- /student -> StudentDashboard.vue (default)
+- /student-v2 -> StudentDashboard.vue (compatibility alias)
 - /student-legacy -> removed
 
 ## Delivered Scope vs Milestone Requirements
@@ -100,6 +100,6 @@ Remaining work is operational only (PR creation, review approval, merge).
    - git pull origin main
 
 ## Final Notes
-- Student Dashboard V2 is the only active student dashboard implementation.
+- StudentDashboard is the only active student dashboard implementation.
 - Legacy dashboard code and route references are removed.
 - This milestone is ready for merge without additional development changes.

@@ -129,6 +129,91 @@
           </table>
         </div>
 
+        <div class="rq-mobile-list" :aria-busy="isLoading ? 'true' : 'false'" aria-live="polite">
+          <article v-if="isLoading" class="rq-mobile-empty">
+            Loading applications...
+          </article>
+
+          <article v-else-if="!applications.length" class="rq-mobile-empty">
+            No applications found for this filter.
+          </article>
+
+          <details
+            v-for="row in applications"
+            :key="`mobile-${row.application_id}`"
+            class="rq-mobile-item"
+          >
+            <summary class="rq-mobile-summary">
+              <div class="rq-mobile-head">
+                <p class="rq-mobile-title">{{ row.drive?.title || 'Role unavailable' }}</p>
+                <p class="rq-mobile-sub">{{ row.company?.name || '-' }}</p>
+              </div>
+
+              <div class="rq-mobile-primary">
+                <span class="rq-status-pill" :class="statusClass(row.status)">
+                  {{ row.status_label || statusLabel(row.status) }}
+                </span>
+
+                <button
+                  v-if="canRespondToOffer(row.offer)"
+                  class="rq-btn-primary rq-btn-primary-compact"
+                  type="button"
+                  :disabled="isResponding[row.offer.offer_id]"
+                  :aria-label="`Accept offer for ${row.drive?.title || 'selected role'}`"
+                  @click.stop.prevent="$emit('respond-offer', row.offer.offer_id, 'accepted')"
+                >
+                  {{ isResponding[row.offer.offer_id] ? 'Saving...' : 'Accept' }}
+                </button>
+              </div>
+            </summary>
+
+            <div class="rq-mobile-meta">
+              <p class="rq-row-sub">Location: {{ row.drive?.location || '-' }}</p>
+              <p class="rq-row-sub">Updated: {{ formatDateTime(row.updated_at) }}</p>
+
+              <div>
+                <p v-if="row.notes" class="rq-inline-note">Note: {{ row.notes }}</p>
+                <p v-if="row.rejection_reason" class="rq-inline-note">Reason: {{ row.rejection_reason }}</p>
+              </div>
+
+              <div v-if="row.latest_interview" class="rq-interview-cell">
+                <p class="rq-row-title">{{ formatDateTime(row.latest_interview.interview_date) }}</p>
+                <p class="rq-row-sub">
+                  {{ interviewModeLabel(row.latest_interview.interview_mode) }}
+                  <template v-if="row.latest_interview.interviewer_name">
+                    • {{ row.latest_interview.interviewer_name }}
+                  </template>
+                </p>
+                <p v-if="row.latest_interview.feedback" class="rq-inline-note">
+                  Feedback: {{ row.latest_interview.feedback }}
+                </p>
+                <span class="rq-status-pill" :class="interviewResultClass(row.latest_interview.result)">
+                  {{ interviewResultLabel(row.latest_interview.result) }}
+                </span>
+              </div>
+              <p v-else class="rq-row-sub">Interview: Not scheduled</p>
+
+              <div
+                v-if="canRespondToOffer(row.offer)"
+                class="rq-mobile-aux-actions"
+              >
+                <button
+                  class="rq-ghost rq-ghost-danger"
+                  type="button"
+                  :disabled="isResponding[row.offer.offer_id]"
+                  :aria-label="`Reject offer for ${row.drive?.title || 'selected role'}`"
+                  @click.stop.prevent="$emit('respond-offer', row.offer.offer_id, 'rejected')"
+                >
+                  {{ isResponding[row.offer.offer_id] ? 'Saving...' : 'Reject' }}
+                </button>
+              </div>
+              <span v-else-if="row.offer" class="rq-offer-state">
+                Offer: {{ statusLabel(row.offer.status) }}
+              </span>
+            </div>
+          </details>
+        </div>
+
         <footer class="rq-panel-footer" v-if="pagination.pages > 1">
           <button
             class="rq-ghost"

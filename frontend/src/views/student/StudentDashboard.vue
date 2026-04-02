@@ -142,17 +142,17 @@ import StudentProfilePanel from '../../components/student/v2/StudentProfilePanel
 import StudentSectionPlaceholder from '../../components/student/v2/StudentSectionPlaceholder.vue'
 import StudentSidebar from '../../components/student/v2/StudentSidebar.vue'
 import StudentTopbar from '../../components/student/v2/StudentTopbar.vue'
-import './StudentDashboardV2.css'
+import './StudentDashboard.css'
 
 const STORAGE_KEYS = Object.freeze({
-  activeView: 'student.v2.activeView',
-  sidebarCollapsed: 'student.v2.sidebarCollapsed'
+  activeView: 'student.dashboard.activeView',
+  sidebarCollapsed: 'student.dashboard.sidebarCollapsed'
 })
 
 const ACTION_NOTE_TIMEOUT_MS = 3200
 
 export default {
-  name: 'StudentDashboardV2',
+  name: 'StudentDashboard',
   components: {
     StudentSidebar,
     StudentTopbar,

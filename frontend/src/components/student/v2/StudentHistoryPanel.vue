@@ -115,6 +115,81 @@
           </table>
         </div>
 
+        <div class="rq-mobile-list" :aria-busy="isLoading ? 'true' : 'false'" aria-live="polite">
+          <article v-if="isLoading" class="rq-mobile-empty">
+            Loading placement history...
+          </article>
+
+          <article v-else-if="!historyItems.length" class="rq-mobile-empty">
+            No history records found.
+          </article>
+
+          <details
+            v-for="row in historyItems"
+            :key="`mobile-${row.application_id}`"
+            class="rq-mobile-item"
+          >
+            <summary class="rq-mobile-summary">
+              <div class="rq-mobile-head">
+                <p class="rq-mobile-title">{{ row.drive?.job_title || 'Role unavailable' }}</p>
+                <p class="rq-mobile-sub">{{ row.company?.company_name || '-' }}</p>
+              </div>
+
+              <div class="rq-mobile-primary">
+                <span class="rq-status-pill" :class="outcomeClass(row.outcome)">
+                  {{ outcomeLabel(row.outcome) }}
+                </span>
+
+                <button
+                  v-if="primaryDocument(row)"
+                  class="rq-ghost"
+                  type="button"
+                  :disabled="isDocDownloading(primaryDocument(row))"
+                  @click.stop.prevent="triggerDocumentDownload(primaryDocument(row))"
+                >
+                  {{ isDocDownloading(primaryDocument(row)) ? 'Downloading...' : primaryDocument(row).label }}
+                </button>
+              </div>
+            </summary>
+
+            <div class="rq-mobile-meta">
+              <p class="rq-row-sub">Location: {{ row.drive?.job_location || '-' }}</p>
+              <p class="rq-row-sub">Updated: {{ formatDateTime(row.updated_at) }}</p>
+
+              <div>
+                <span class="rq-status-pill" :class="statusClass(row.status)">
+                  {{ row.status_label || statusLabel(row.status) }}
+                </span>
+              </div>
+
+              <div
+                v-if="row.offer?.offer_id || row.placement?.placement_id"
+                class="rq-mobile-aux-actions"
+              >
+                <button
+                  v-if="row.offer?.offer_id"
+                  class="rq-ghost"
+                  type="button"
+                  :disabled="Boolean(isDownloading[`offer-${row.offer.offer_id}`])"
+                  @click.stop.prevent="$emit('download-offer', row.offer.offer_id)"
+                >
+                  {{ isDownloading[`offer-${row.offer.offer_id}`] ? 'Downloading...' : 'Offer Letter' }}
+                </button>
+
+                <button
+                  v-if="row.placement?.placement_id"
+                  class="rq-ghost"
+                  type="button"
+                  :disabled="Boolean(isDownloading[`placement-${row.placement.placement_id}`])"
+                  @click.stop.prevent="$emit('download-placement', row.placement.placement_id)"
+                >
+                  {{ isDownloading[`placement-${row.placement.placement_id}`] ? 'Downloading...' : 'Placement Doc' }}
+                </button>
+              </div>
+            </div>
+          </details>
+        </div>
+
         <footer class="rq-panel-footer" v-if="pagination.pages > 1">
           <button
             class="rq-ghost"
@@ -238,6 +313,38 @@ export default {
       if (normalized === 'offer_released') return 'pill-offer'
       if (normalized === 'rejected') return 'pill-rejected'
       return 'pill-applied'
+    },
+    primaryDocument(row) {
+      if (row?.placement?.placement_id) {
+        return {
+          type: 'placement',
+          id: row.placement.placement_id,
+          key: `placement-${row.placement.placement_id}`,
+          label: 'Placement Doc'
+        }
+      }
+      if (row?.offer?.offer_id) {
+        return {
+          type: 'offer',
+          id: row.offer.offer_id,
+          key: `offer-${row.offer.offer_id}`,
+          label: 'Offer Letter'
+        }
+      }
+      return null
+    },
+    isDocDownloading(document) {
+      return Boolean(document && this.isDownloading[document.key])
+    },
+    triggerDocumentDownload(document) {
+      if (!document) {
+        return
+      }
+      if (document.type === 'offer') {
+        this.$emit('download-offer', document.id)
+        return
+      }
+      this.$emit('download-placement', document.id)
     }
   }
 }

@@ -9,8 +9,8 @@
 - Define which student dashboard to keep and when to remove the legacy version.
 
 ## Current Dual-Dashboard State
-- Production route: `/student` -> `StudentDashboardV2.vue`.
-- Compatibility route: `/student-v2` -> `StudentDashboardV2.vue`.
+- Production route: `/student` -> `StudentDashboard.vue`.
+- Compatibility route: `/student-v2` -> `StudentDashboard.vue`.
 
 Decision:
 - Legacy cleanup is complete: `StudentDashboard.vue` route usage is removed.
@@ -18,8 +18,8 @@ Decision:
 
 ## Keep/Remove Plan
 1. Current state:
-- `StudentDashboardV2.vue` is default on `/student`.
-- `StudentDashboardV2.vue` is also available on `/student-v2` for compatibility.
+- `StudentDashboard.vue` is default on `/student`.
+- `StudentDashboard.vue` is also available on `/student-v2` for compatibility.
 
 2. Stabilization validation:
 - Continue running regression and smoke checks on V2-only routes.

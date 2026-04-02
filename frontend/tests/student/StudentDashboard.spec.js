@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import StudentDashboardV2 from '../../src/views/student/StudentDashboardV2.vue'
+import StudentDashboard from '../../src/views/student/StudentDashboard.vue'
 import { authApi, studentApi } from '../../src/api/api'
 
 vi.mock('../../src/api/api', () => ({
@@ -188,7 +188,7 @@ const notificationsPayload = {
 }
 
 const mountWrapper = () =>
-  mount(StudentDashboardV2, {
+  mount(StudentDashboard, {
     global: {
       stubs: {
         StudentSidebar: {
@@ -212,7 +212,7 @@ const mountWrapper = () =>
     }
   })
 
-describe('StudentDashboardV2 step 3B wiring', () => {
+describe('StudentDashboard step 3B wiring', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()

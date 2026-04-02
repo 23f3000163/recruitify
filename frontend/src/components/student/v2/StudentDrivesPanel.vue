@@ -132,6 +132,64 @@
           </table>
         </div>
 
+        <div class="rq-mobile-list" :aria-busy="isLoading ? 'true' : 'false'" aria-live="polite">
+          <article v-if="isLoading" class="rq-mobile-empty">
+            Loading drives...
+          </article>
+
+          <article v-else-if="!drives.length" class="rq-mobile-empty">
+            No drives found for this filter.
+          </article>
+
+          <details
+            v-for="row in drives"
+            :key="`mobile-${row.drive_id}`"
+            class="rq-mobile-item"
+          >
+            <summary class="rq-mobile-summary">
+              <div class="rq-mobile-head">
+                <p class="rq-mobile-title">{{ row.job_title || 'Role unavailable' }}</p>
+                <p class="rq-mobile-sub">{{ row.company?.name || '-' }}</p>
+              </div>
+
+              <div class="rq-mobile-primary">
+                <span class="rq-status-pill" :class="driveStateClass(row)">
+                  {{ driveStateLabel(row) }}
+                </span>
+
+                <button
+                  v-if="canApply(row)"
+                  class="rq-btn-primary rq-btn-primary-compact"
+                  type="button"
+                  :disabled="isApplying[row.drive_id]"
+                  :aria-label="`Apply for ${row.job_title || 'drive'}`"
+                  @click.stop.prevent="$emit('apply-drive', row.drive_id)"
+                >
+                  {{ isApplying[row.drive_id] ? 'Applying...' : 'Apply' }}
+                </button>
+                <span v-else class="rq-offer-state">{{ blockedActionLabel(row) }}</span>
+              </div>
+            </summary>
+
+            <div class="rq-mobile-meta">
+              <p class="rq-row-sub">Location: {{ row.job_location || '-' }}</p>
+              <p class="rq-row-sub">Package: {{ formatSalary(row.salary_lpa) }}</p>
+              <p class="rq-row-sub">Deadline: {{ formatDate(row.application_deadline) }}</p>
+              <div>
+                <span class="rq-status-pill" :class="eligibilityClass(row)">
+                  {{ eligibilityLabel(row) }}
+                </span>
+                <p
+                  v-if="!row.is_eligible && row.ineligibility_reasons?.length"
+                  class="rq-inline-note"
+                >
+                  {{ row.ineligibility_reasons.join('; ') }}
+                </p>
+              </div>
+            </div>
+          </details>
+        </div>
+
         <footer class="rq-panel-footer" v-if="pagination.pages > 1">
           <button
             class="rq-ghost"

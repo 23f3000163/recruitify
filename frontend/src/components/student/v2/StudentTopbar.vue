@@ -10,26 +10,39 @@
     </div>
 
     <div class="rq-topbar-right">
-      <div class="rq-search" :class="{ 'is-focused': searchFocused }" role="search">
+      <div
+        class="rq-search"
+        :class="{ 'is-focused': searchFocused, 'is-active': searchQuery.length > 0 }"
+        role="search"
+      >
+        <svg class="rq-search-ico" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+          <circle cx="6" cy="6" r="4.5" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M9.5 9.5L12 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+
         <input
+          ref="searchInput"
           class="rq-search-field"
           type="text"
           :value="searchQuery"
           placeholder="Search drives, companies, roles"
           autocomplete="off"
           aria-label="Search drives, companies, roles"
+          aria-keyshortcuts="Control+K"
           @focus="$emit('update:search-focused', true)"
           @blur="$emit('update:search-focused', false)"
           @input="$emit('update:search-query', $event.target.value)"
           @keydown.escape="$emit('update:search-query', '')"
         />
 
+        <kbd class="rq-search-kbd" v-if="!searchQuery">Ctrl+K</kbd>
+
         <button
           v-if="searchQuery"
           class="rq-search-clear"
           type="button"
           aria-label="Clear search"
-          @click="$emit('update:search-query', '')"
+          @click="clearSearch"
         >
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
             <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
@@ -90,6 +103,40 @@ export default {
       })
     }
   },
-  emits: ['update:search-query', 'update:search-focused', 'navigate']
+  emits: ['update:search-query', 'update:search-focused', 'navigate'],
+  mounted() {
+    document.addEventListener('keydown', this.handleGlobalHotkeys)
+  },
+  beforeUnmount() {
+    document.removeEventListener('keydown', this.handleGlobalHotkeys)
+  },
+  methods: {
+    clearSearch() {
+      this.$emit('update:search-query', '')
+      this.focusSearchInput()
+    },
+    focusSearchInput() {
+      const input = this.$refs.searchInput
+      if (input && typeof input.focus === 'function') {
+        input.focus()
+        this.$emit('update:search-focused', true)
+      }
+    },
+    handleGlobalHotkeys(event) {
+      const key = String(event.key || '').toLowerCase()
+      const tagName = String(event.target?.tagName || '').toLowerCase()
+      const isTypingTarget =
+        ['input', 'textarea', 'select'].includes(tagName) ||
+        Boolean(event.target?.isContentEditable)
+
+      const isCtrlK = (event.ctrlKey || event.metaKey) && key === 'k'
+      const isSlashFocus = key === '/' && !event.ctrlKey && !event.metaKey && !event.altKey
+
+      if (isCtrlK || (isSlashFocus && !isTypingTarget)) {
+        event.preventDefault()
+        this.focusSearchInput()
+      }
+    }
+  }
 }
 </script>
