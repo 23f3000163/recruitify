@@ -169,8 +169,20 @@ export const studentApi = {
   getDashboard() {
     return api.get('/student/dashboard')
   },
+  getProfile() {
+    return api.get('/student/profile')
+  },
+  getDrives(params = {}) {
+    return api.get('/student/drives', { params })
+  },
+  applyToDrive(driveId) {
+    return api.post(`/student/drives/${driveId}/apply`)
+  },
   getApplications(params = {}) {
     return api.get('/student/applications', { params })
+  },
+  getHistory(params = {}) {
+    return api.get('/student/history', { params })
   },
   getNotifications(params = {}) {
     return api.get('/student/notifications', { params })
@@ -183,6 +195,16 @@ export const studentApi = {
   },
   respondToOffer(offerId, payload) {
     return api.put(`/student/offers/${offerId}/respond`, payload)
+  },
+  downloadOfferDocument(offerId) {
+    return api.get(`/student/offers/${offerId}/document`, {
+      responseType: 'blob'
+    })
+  },
+  downloadPlacementDocument(placementId) {
+    return api.get(`/student/placements/${placementId}/document`, {
+      responseType: 'blob'
+    })
   },
   updateProfile(payload) {
     return api.put('/student/profile', payload)

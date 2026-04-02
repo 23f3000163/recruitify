@@ -1,0 +1,162 @@
+# Student Dashboard V2 - Step 3A API Mapping and Migration Decision
+
+> Status: Historical reference. This plan has been executed and superseded by
+> the final closure document in frontend/docs/student-dashboard-v2-milestone-closure.md.
+
+## Objective
+- Map each Student Dashboard V2 section to current backend endpoints.
+- Identify endpoint gaps before integration.
+- Define which student dashboard to keep and when to remove the legacy version.
+
+## Current Dual-Dashboard State
+- Production route: `/student` -> `StudentDashboard.vue`.
+- Compatibility route: `/student-v2` -> `StudentDashboard.vue`.
+
+Decision:
+- Legacy cleanup is complete: `StudentDashboard.vue` route usage is removed.
+- Student experience is now fully standardized on V2.
+
+## Keep/Remove Plan
+1. Current state:
+- `StudentDashboard.vue` is default on `/student`.
+- `StudentDashboard.vue` is also available on `/student-v2` for compatibility.
+
+2. Stabilization validation:
+- Continue running regression and smoke checks on V2-only routes.
+
+3. Cleanup status:
+- Legacy route and dashboard usage have been removed.
+
+## V2 Section -> API Contract Map
+
+### Dashboard Home
+UI blocks:
+- Summary cards
+- Recent applications
+- Unread notifications badge
+
+Use now:
+- `GET /student/dashboard`
+
+Response fields used:
+- `data.summary`
+- `data.recent_applications`
+- `data.unread_notifications`
+
+Status:
+- Available
+
+### My Applications
+UI blocks:
+- Table, status filter, search filter, pagination, timeline, offer actions
+
+Use now:
+- `GET /student/applications?status=&q=&page=&limit=`
+- `PUT /student/offers/{offer_id}/respond` (accept/reject)
+
+Response fields used:
+- `data.items`
+- `data.total`
+- `data.page`
+- `data.pages`
+- `data.limit`
+- Item fields include drive/company/interview/offer/timeline payload
+
+Status:
+- Available
+
+### Notifications
+UI blocks:
+- List, unread count, mark one read, mark all read, optional filter
+
+Use now:
+- `GET /student/notifications?is_read=&page=&limit=`
+- `PUT /student/notifications/{notification_id}/read`
+- `PUT /student/notifications/read-all`
+
+Response fields used:
+- `data.items`
+- `data.unread_count`
+
+Status:
+- Available
+
+### Profile
+UI blocks:
+- Profile form save
+
+Use now:
+- `GET /student/profile`
+- `PUT /student/profile`
+
+Payload now:
+- `college_name`
+- `branch`
+- `year`
+- `cgpa`
+- `roll_number`
+- `phone`
+- `resume_url`
+- `skills`
+- `experience_summary`
+
+Status:
+- Available
+
+### Drives
+UI blocks:
+- Drive browsing, search/filter, apply action
+
+Use now:
+- `GET /student/drives`
+- `POST /student/drives/{drive_id}/apply`
+
+Status:
+- Available
+
+### History and Documents
+UI blocks:
+- Placement history timeline/cards
+- Offer letter or placement confirmation download
+
+Use now:
+- `GET /student/history`
+- `GET /student/offers/{offer_id}/document`
+- `GET /student/placements/{placement_id}/document`
+
+Status:
+- Available
+
+## Integration Order (Step 3B onward)
+1. Stabilize V2 as default:
+- Keep `/student` mapped to V2 and monitor post-cutover behavior.
+
+2. Keep rollback path during observation:
+- Optional temporary aliasing only if rollback is needed via git revert.
+
+3. Remove legacy after observation:
+- Completed.
+
+## Test and Review Gates
+Per slice:
+- Backend: run student and related pytest modules.
+- Frontend: run vitest suite.
+- Manual responsive check at desktop/tablet/mobile widths.
+
+Before cutover:
+- Full backend suite pass
+- Full frontend suite pass
+- Route-level smoke check for `/student` and `/student-v2`
+
+## Git Checkpoint Pattern
+- Commit after each stable slice.
+- Push after each stable slice.
+
+Suggested commit sequence:
+1. `feat(student-v2): wire dashboard summary recent applications notifications`
+2. `feat(student-v2): wire applications timeline and offer response`
+3. `feat(student-v2): wire student profile save with current schema`
+4. `feat(student-api): add drives listing and apply endpoints`
+5. `feat(student-api): add history and document download endpoints`
+6. `chore(student-v2): cutover /student route to v2 and retain legacy backup`
+7. `chore(student-v2): remove legacy dashboard after stabilization`

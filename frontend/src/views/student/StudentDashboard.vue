@@ -1,229 +1,209 @@
 <template>
-  <section class="std-shell">
-    <div class="std-wrap">
-      <header class="std-head">
-        <div>
-          <p class="std-kicker">Student Workspace</p>
-          <h1>Application Timeline</h1>
-          <p>Track your recruitment status, feedback, and next actions in one place.</p>
-        </div>
+  <div class="rq-app" :class="{ 'is-collapsed': sidebarCollapsed }">
+    <StudentSidebar
+      :sidebar-collapsed="sidebarCollapsed"
+      :active-view="activeView"
+      :nav-items="mainNavItems"
+      :profile-nav-items="profileNavItems"
+      :student="student"
+      @toggle-sidebar="toggleSidebar"
+      @navigate="navigate"
+    />
 
-        <button class="std-btn" type="button" :disabled="isRefreshing" @click="refreshAll">
-          {{ isRefreshing ? 'Refreshing...' : 'Refresh' }}
-        </button>
-      </header>
+    <div class="rq-main">
+      <StudentTopbar
+        :current-page-title="currentPageTitle"
+        :search-query="searchQuery"
+        :search-focused="searchFocused"
+        :unread-count="unreadCount"
+        :student="student"
+        @update:search-query="searchQuery = $event"
+        @update:search-focused="searchFocused = $event"
+        @navigate="navigate"
+      />
 
-      <p v-if="errorMessage" class="std-alert">{{ errorMessage }}</p>
-
-      <section class="std-summary-grid">
-        <article v-for="card in summaryCards" :key="card.id" class="std-summary-card">
-          <p class="std-summary-label">{{ card.label }}</p>
-          <p class="std-summary-value">{{ card.value }}</p>
-          <p class="std-summary-sub">{{ card.sub }}</p>
-        </article>
-      </section>
-
-      <div class="std-grid">
-        <article class="std-panel std-panel-wide">
-          <header class="std-panel-head">
-            <div>
-              <h2>My Applications</h2>
-              <p>See status updates, feedback notes, and timeline milestones.</p>
-            </div>
-          </header>
-
-          <div class="std-tools">
-            <label class="std-field">
-              <span>Status</span>
-              <select v-model="statusFilter">
-                <option value="all">All</option>
-                <option v-for="status in statusOptions" :key="status" :value="status">
-                  {{ statusLabel(status) }}
-                </option>
-              </select>
-            </label>
-
-            <label class="std-field std-search-field">
-              <span>Search</span>
-              <input
-                v-model.trim="queryText"
-                type="text"
-                placeholder="Role, company, or location"
-                @keyup.enter="applyFilters"
-              />
-            </label>
-
-            <button class="std-btn ghost" type="button" @click="applyFilters">Apply</button>
-          </div>
-
-          <div class="std-table-wrap is-mobile-cards">
-            <table class="std-table">
-              <thead>
-                <tr>
-                  <th>Role</th>
-                  <th>Company</th>
-                  <th>Status</th>
-                  <th>Updated</th>
-                  <th>Offer</th>
-                  <th>Timeline</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-if="isLoadingApplications">
-                  <td colspan="6" class="std-empty">Loading applications...</td>
-                </tr>
-
-                <tr v-else-if="!applications.length">
-                  <td colspan="6" class="std-empty">No applications found for this filter.</td>
-                </tr>
-
-                <tr v-for="row in applications" :key="row.application_id">
-                  <td data-label="Role">
-                    <p class="std-role-title">{{ row.drive?.title || 'Role unavailable' }}</p>
-                    <p class="std-role-sub">{{ row.drive?.location || '-' }}</p>
-                  </td>
-                  <td data-label="Company">{{ row.company?.name || '-' }}</td>
-                  <td data-label="Status">
-                    <span class="std-status" :class="statusClass(row.status)">
-                      {{ row.status_label || statusLabel(row.status) }}
-                    </span>
-                    <p v-if="row.notes" class="std-meta-note">Note: {{ row.notes }}</p>
-                    <p v-if="row.rejection_reason" class="std-meta-note">Reason: {{ row.rejection_reason }}</p>
-                  </td>
-                  <td data-label="Updated">{{ formatDateTime(row.updated_at) }}</td>
-                  <td data-label="Offer">
-                    <div v-if="row.offer" class="std-offer-card">
-                      <p class="std-offer-role">{{ row.offer.position || 'Offer' }}</p>
-                      <p class="std-offer-meta">{{ formatCurrency(row.offer.salary) }}</p>
-                      <span class="std-status" :class="offerStatusClass(row.offer.status)">
-                        {{ statusLabel(row.offer.status) }}
-                      </span>
-
-                      <div v-if="canRespondToOffer(row.offer)" class="std-offer-actions">
-                        <button
-                          class="std-btn ghost"
-                          type="button"
-                          :disabled="isRespondingOffer[row.offer.offer_id]"
-                          @click="respondToOffer(row, 'accepted')"
-                        >
-                          {{ isRespondingOffer[row.offer.offer_id] ? 'Saving...' : 'Accept' }}
-                        </button>
-                        <button
-                          class="std-btn ghost danger"
-                          type="button"
-                          :disabled="isRespondingOffer[row.offer.offer_id]"
-                          @click="respondToOffer(row, 'rejected')"
-                        >
-                          {{ isRespondingOffer[row.offer.offer_id] ? 'Saving...' : 'Reject' }}
-                        </button>
-                      </div>
-                    </div>
-                    <span v-else class="std-muted">-</span>
-                  </td>
-                  <td data-label="Timeline">
-                    <ul v-if="safeTimeline(row.timeline).length" class="std-timeline">
-                      <li v-for="event in safeTimeline(row.timeline).slice(-3)" :key="event.id">
-                        <span class="std-dot" :class="`is-${event.tone || 'info'}`"></span>
-                        <div>
-                          <p class="std-timeline-label">{{ event.label }}</p>
-                          <p class="std-timeline-msg">{{ event.message }}</p>
-                        </div>
-                      </li>
-                    </ul>
-                    <span v-else class="std-muted">No timeline events yet.</span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <footer class="std-footer">
-            <p class="std-muted">{{ pagination.total }} applications total</p>
-
-            <div class="std-pager" v-if="pagination.pages > 1">
-              <button
-                class="std-btn ghost"
-                type="button"
-                :disabled="pagination.page <= 1 || isLoadingApplications"
-                @click="loadApplications(pagination.page - 1)"
-              >
-                Previous
-              </button>
-              <span>Page {{ pagination.page }} of {{ pagination.pages }}</span>
-              <button
-                class="std-btn ghost"
-                type="button"
-                :disabled="pagination.page >= pagination.pages || isLoadingApplications"
-                @click="loadApplications(pagination.page + 1)"
-              >
-                Next
-              </button>
-            </div>
-          </footer>
-        </article>
-
-        <article class="std-panel">
-          <header class="std-panel-head">
-            <div>
-              <h2>Notifications</h2>
-              <p>Unread updates from companies and recruitment events.</p>
-            </div>
-            <div class="std-panel-actions">
-              <span class="std-badge" :class="{ 'is-empty': unreadCount === 0 }">{{ unreadCount }} unread</span>
-              <button
-                class="std-btn ghost std-mark-all-btn"
-                type="button"
-                :disabled="isMarkingAllRead || unreadCount === 0 || isLoadingNotifications"
-                @click="markAllNotificationsRead"
-              >
-                {{ isMarkingAllRead ? 'Saving...' : 'Mark all read' }}
-              </button>
-            </div>
-          </header>
-
-          <p v-if="isLoadingNotifications" class="std-muted">Loading notifications...</p>
-
-          <ul v-else-if="notifications.length" class="std-notify-list">
-            <li v-for="notification in notifications" :key="notification.notification_id" class="std-notify-item">
-              <div>
-                <p class="std-notify-title">{{ notification.title }}</p>
-                <p class="std-notify-message">{{ notification.message }}</p>
-                <p class="std-notify-time">{{ formatDateTime(notification.created_at) }}</p>
-              </div>
-
-              <button
-                v-if="!notification.is_read"
-                class="std-btn ghost std-notify-btn"
-                type="button"
-                :disabled="isMarking[notification.notification_id]"
-                @click="markNotificationRead(notification)"
-              >
-                {{ isMarking[notification.notification_id] ? 'Saving...' : 'Mark Read' }}
-              </button>
-              <span v-else class="std-read-pill">Read</span>
-            </li>
-          </ul>
-
-          <p v-else class="std-muted">No notifications yet.</p>
-        </article>
+      <div
+        v-if="actionNote"
+        class="rq-action-note"
+        :class="`tone-${actionTone}`"
+        role="status"
+        aria-live="polite"
+      >
+        {{ actionNote }}
       </div>
+
+      <main class="rq-page" role="main">
+        <StudentDashboardHome
+          v-if="activeView === 'dashboard'"
+          :student-first-name="student.firstName"
+          :time-of-day="timeOfDay"
+          :today-date="todayDate"
+          :live-open-count="liveOpenCount"
+          :is-loading="isLoadingDashboard"
+          :error-message="dashboardError"
+          :stat-cards="statCards"
+          :drives="dashboardDrives"
+          :applications="dashboardApplications"
+        />
+
+        <StudentDrivesPanel
+          v-else-if="activeView === 'drives'"
+          :drives="drives"
+          :pagination="drivesPagination"
+          :query-text="driveFilters.query"
+          :company-filter="driveFilters.company"
+          :role-filter="driveFilters.role"
+          :skills-filter="driveFilters.skills"
+          :include-expired="driveFilters.includeExpired"
+          :is-loading="isLoadingDrives"
+          :error-message="drivesError"
+          :is-applying="isApplyingDrive"
+          @update:query-text="driveFilters.query = $event"
+          @update:company-filter="driveFilters.company = $event"
+          @update:role-filter="driveFilters.role = $event"
+          @update:skills-filter="driveFilters.skills = $event"
+          @update:include-expired="driveFilters.includeExpired = $event"
+          @apply-filters="applyDriveFilters"
+          @page-change="loadDrives"
+          @apply-drive="applyToDrive"
+        />
+
+        <StudentApplicationsPanel
+          v-else-if="activeView === 'applications'"
+          :applications="applications"
+          :pagination="applicationsPagination"
+          :status-filter="statusFilter"
+          :query-text="queryText"
+          :is-loading="isLoadingApplications"
+          :error-message="applicationsError"
+          :is-responding="isRespondingOffer"
+          @update:status-filter="statusFilter = $event"
+          @update:query-text="queryText = $event"
+          @apply-filters="applyApplicationFilters"
+          @page-change="loadApplications"
+          @respond-offer="respondToOffer"
+        />
+
+        <StudentNotificationsPanel
+          v-else-if="activeView === 'notifications'"
+          :notifications="notifications"
+          :is-loading="isLoadingNotifications"
+          :unread-count="unreadCount"
+          :error-message="notificationsError"
+          :is-marking="isMarkingNotification"
+          :is-marking-all="isMarkingAllNotifications"
+          @mark-read="markNotificationRead"
+          @mark-all="markAllNotificationsRead"
+        />
+
+        <StudentProfilePanel
+          v-else-if="activeView === 'profile'"
+          :profile-form="profileForm"
+          :is-saving="isSavingProfile"
+          :error-message="profileError"
+          @update-field="updateProfileField"
+          @save-profile="saveProfile"
+        />
+
+        <StudentHistoryPanel
+          v-else-if="activeView === 'history'"
+          :history-items="historyItems"
+          :summary="historySummary"
+          :pagination="historyPagination"
+          :query-text="historyQuery"
+          :is-loading="isLoadingHistory"
+          :error-message="historyError"
+          :is-downloading="isDownloadingDocument"
+          @update:query-text="historyQuery = $event"
+          @apply-filters="applyHistoryFilters"
+          @page-change="loadHistory"
+          @download-offer="downloadOfferDocument"
+          @download-placement="downloadPlacementDocument"
+        />
+
+        <StudentSectionPlaceholder
+          v-else
+          title="Section unavailable"
+          description="This section is not available in the current dashboard state."
+        />
+      </main>
     </div>
-  </section>
+  </div>
 </template>
 
 <script>
-import { studentApi } from '../../api/api'
+import { authApi, studentApi } from '../../api/api'
+import StudentApplicationsPanel from '../../components/student/v2/StudentApplicationsPanel.vue'
+import StudentDashboardHome from '../../components/student/v2/StudentDashboardHome.vue'
+import StudentDrivesPanel from '../../components/student/v2/StudentDrivesPanel.vue'
+import StudentHistoryPanel from '../../components/student/v2/StudentHistoryPanel.vue'
+import StudentNotificationsPanel from '../../components/student/v2/StudentNotificationsPanel.vue'
+import StudentProfilePanel from '../../components/student/v2/StudentProfilePanel.vue'
+import StudentSectionPlaceholder from '../../components/student/v2/StudentSectionPlaceholder.vue'
+import StudentSidebar from '../../components/student/v2/StudentSidebar.vue'
+import StudentTopbar from '../../components/student/v2/StudentTopbar.vue'
+import './StudentDashboard.css'
+
+const STORAGE_KEYS = Object.freeze({
+  activeView: 'student.dashboard.activeView',
+  sidebarCollapsed: 'student.dashboard.sidebarCollapsed'
+})
+
+const ACTION_NOTE_TIMEOUT_MS = 3200
 
 export default {
   name: 'StudentDashboard',
+  components: {
+    StudentSidebar,
+    StudentTopbar,
+    StudentDashboardHome,
+    StudentDrivesPanel,
+    StudentHistoryPanel,
+    StudentApplicationsPanel,
+    StudentNotificationsPanel,
+    StudentProfilePanel,
+    StudentSectionPlaceholder
+  },
   data() {
+    const now = new Date()
+    const hour = now.getHours()
+
     return {
-      isRefreshing: false,
+      sidebarCollapsed: false,
+      activeView: 'dashboard',
+      searchQuery: '',
+      searchFocused: false,
+      isLoadingDashboard: false,
+      isLoadingDrives: false,
       isLoadingApplications: false,
       isLoadingNotifications: false,
-      errorMessage: '',
-      statusFilter: 'all',
-      queryText: '',
+      isLoadingHistory: false,
+      isSavingProfile: false,
+      dashboardError: '',
+      drivesError: '',
+      applicationsError: '',
+      notificationsError: '',
+      historyError: '',
+      profileError: '',
+      actionNote: '',
+      actionTone: 'info',
+      actionNoteTimerId: null,
+      timeOfDay: hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening',
+      todayDate: now.toLocaleDateString('en-IN', {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric'
+      }),
+      student: {
+        firstName: 'Priya',
+        name: 'Priya Sharma',
+        initials: 'PS',
+        roll: 'CS21B042',
+        branch: 'CSE',
+        year: 3,
+        email: ''
+      },
       summary: {
         applications_total: 0,
         applied: 0,
@@ -236,116 +216,408 @@ export default {
         offers_accepted: 0,
         offers_rejected: 0
       },
+      recentApplications: [],
+      drivesPreview: [],
+      navItems: [
+        {
+          id: 'dashboard',
+          label: 'Dashboard',
+          svg: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="1" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.4"/><rect x="1" y="9" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="9" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.4"/></svg>'
+        },
+        {
+          id: 'drives',
+          label: 'Placement Drives',
+          svg: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="3" width="14" height="11" rx="2" stroke="currentColor" stroke-width="1.4"/><path d="M5 3V2M11 3V2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M1 7h14" stroke="currentColor" stroke-width="1.4"/></svg>'
+        },
+        {
+          id: 'applications',
+          label: 'My Applications',
+          svg: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 2h10a1 1 0 011 1v11a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z" stroke="currentColor" stroke-width="1.4"/><path d="M5 6h6M5 9h4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>'
+        },
+        {
+          id: 'notifications',
+          label: 'Notifications',
+          svg: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13 11H3l1.5-2.5V7a3.5 3.5 0 017 0v1.5L13 11z" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.5 13a1.5 1.5 0 003 0" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>'
+        }
+      ],
+      profileNavItems: [
+        {
+          id: 'profile',
+          label: 'My Profile',
+          svg: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="5" r="3" stroke="currentColor" stroke-width="1.4"/><path d="M2 14c0-3.3 2.7-5 6-5s6 1.7 6 5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>'
+        },
+        {
+          id: 'history',
+          label: 'History',
+          svg: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.4"/><path d="M8 5v3.5l2 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+        }
+      ],
       applications: [],
-      notifications: [],
-      unreadCount: 0,
-      isMarking: {},
-      isMarkingAllRead: false,
-      isRespondingOffer: {},
-      pagination: {
+      applicationsPagination: {
         page: 1,
         pages: 0,
         total: 0,
         limit: 10
+      },
+      drives: [],
+      drivesPagination: {
+        page: 1,
+        pages: 0,
+        total: 0,
+        limit: 8
+      },
+      driveFilters: {
+        query: '',
+        company: '',
+        role: '',
+        skills: '',
+        includeExpired: false
+      },
+      isApplyingDrive: {},
+      statusFilter: 'all',
+      queryText: '',
+      isRespondingOffer: {},
+      notifications: [],
+      notificationsPagination: {
+        page: 1,
+        pages: 0,
+        total: 0,
+        limit: 8
+      },
+      unreadNotificationsCount: 0,
+      isMarkingNotification: {},
+      isMarkingAllNotifications: false,
+      historyItems: [],
+      historySummary: {
+        total_applied: 0,
+        offers_received: 0,
+        placements_count: 0,
+        highest_package: 0
+      },
+      historyPagination: {
+        page: 1,
+        pages: 0,
+        total: 0,
+        limit: 10
+      },
+      historyQuery: '',
+      isDownloadingDocument: {},
+      profileForm: {
+        college_name: 'Institute of Technology',
+        branch: 'CSE',
+        year: 3,
+        cgpa: 8.5,
+        roll_number: 'CS21B042',
+        phone: '',
+        resume_url: '',
+        skills: '',
+        experience_summary: ''
       }
     }
   },
   computed: {
-    statusOptions() {
-      return ['applied', 'shortlisted', 'interviewed', 'selected', 'waitlisted', 'rejected']
+    currentPageTitle() {
+      const labels = {
+        dashboard: 'Dashboard',
+        drives: 'Placement Drives',
+        applications: 'My Applications',
+        notifications: 'Notifications',
+        profile: 'My Profile',
+        history: 'Placement History'
+      }
+      return labels[this.activeView] || 'Dashboard'
     },
-    summaryCards() {
+    mainNavItems() {
+      return this.navItems.map((item) => ({
+        ...item,
+        badgeCount: item.id === 'notifications' ? this.unreadCount : 0
+      }))
+    },
+    statCards() {
       return [
         {
-          id: 'applications',
-          label: 'Applications',
-          value: this.summary.applications_total,
-          sub: 'Total drives applied'
+          id: 'applied',
+          label: 'Applied',
+          value: Number(this.summary.applied || 0).toLocaleString(),
+          sub: 'Applications submitted'
         },
         {
           id: 'shortlisted',
           label: 'Shortlisted',
-          value: this.summary.shortlisted,
+          value: Number(this.summary.shortlisted || 0).toLocaleString(),
           sub: 'Moved to next stage'
         },
         {
           id: 'interviewed',
-          label: 'Interviews',
-          value: this.summary.interviewed,
-          sub: 'Interview rounds scheduled'
+          label: 'Interviewed',
+          value: Number(this.summary.interviewed || 0).toLocaleString(),
+          sub: 'Interview rounds completed'
         },
         {
           id: 'offers',
           label: 'Offers Accepted',
-          value: this.summary.offers_accepted,
+          value: Number(this.summary.offers_accepted || 0).toLocaleString(),
           sub: 'Confirmed offer decisions'
-        },
-        {
-          id: 'notifications',
-          label: 'Unread Updates',
-          value: this.unreadCount,
-          sub: 'Actionable notifications'
         }
       ]
+    },
+    liveOpenCount() {
+      return this.dashboardDrives.length
+    },
+    unreadCount() {
+      return Number(this.unreadNotificationsCount || 0)
+    },
+    dashboardDrives() {
+      const query = this.searchQuery.trim().toLowerCase()
+      if (!query) {
+        return this.drivesPreview
+      }
+
+      return this.drivesPreview.filter(
+        (item) =>
+          item.role.toLowerCase().includes(query) ||
+          item.company.toLowerCase().includes(query)
+      )
+    },
+    dashboardApplications() {
+      const query = this.searchQuery.trim().toLowerCase()
+      if (!query) {
+        return this.recentApplications
+      }
+
+      return this.recentApplications.filter(
+        (item) =>
+          item.role.toLowerCase().includes(query) ||
+          item.company.toLowerCase().includes(query)
+      )
+    }
+  },
+  watch: {
+    activeView(nextValue) {
+      this.persistPreference(STORAGE_KEYS.activeView, String(nextValue || 'dashboard'))
+    },
+    sidebarCollapsed(nextValue) {
+      this.persistPreference(STORAGE_KEYS.sidebarCollapsed, nextValue ? '1' : '0')
     }
   },
   created() {
-    this.refreshAll()
+    this.restoreViewState()
+    this.restoreSidebarState()
+    this.bootstrap()
+  },
+  beforeUnmount() {
+    if (this.actionNoteTimerId) {
+      clearTimeout(this.actionNoteTimerId)
+      this.actionNoteTimerId = null
+    }
   },
   methods: {
-    async refreshAll() {
-      this.isRefreshing = true
-      this.errorMessage = ''
+    async bootstrap() {
+      const bootTasks = [
+        this.hydrateIdentity(),
+        this.loadDashboard(),
+        this.loadApplications(1),
+        this.loadNotifications(1),
+        this.loadProfile()
+      ]
 
-      await Promise.all([this.loadDashboard(), this.loadApplications(1), this.loadNotifications()])
+      if (this.activeView === 'drives') {
+        bootTasks.push(this.loadDrives(1))
+      }
+      if (this.activeView === 'history') {
+        bootTasks.push(this.loadHistory(1))
+      }
 
-      this.isRefreshing = false
+      await Promise.all(bootTasks)
     },
-    async loadDashboard() {
+    async hydrateIdentity() {
       try {
-        const response = await studentApi.getDashboard()
+        const response = await authApi.getMe()
         const data = response?.data?.data || {}
 
-        if (data.summary && typeof data.summary === 'object') {
-          this.summary = {
-            ...this.summary,
-            ...data.summary
-          }
-        }
+        const displayName = String(data.username || this.student.name || 'Student').trim()
+        const chunks = displayName.split(/\s+/).filter(Boolean)
+        const initials = chunks
+          .slice(0, 2)
+          .map((chunk) => chunk[0]?.toUpperCase() || '')
+          .join('') || 'ST'
 
-        if (typeof data.unread_notifications === 'number') {
-          this.unreadCount = data.unread_notifications
+        this.student = {
+          ...this.student,
+          firstName: chunks[0] || this.student.firstName,
+          name: displayName,
+          initials,
+          email: data.email || ''
         }
       } catch (error) {
-        this.errorMessage =
+        // Keep UI usable even if identity hydration fails.
+      }
+    },
+    async loadDashboard() {
+      this.isLoadingDashboard = true
+      this.dashboardError = ''
+
+      try {
+        const response = await studentApi.getDashboard()
+        const payload = response?.data?.data || {}
+        const summary = payload.summary || {}
+
+        this.summary = {
+          applications_total: Number(summary.applications_total || 0),
+          applied: Number(summary.applied || 0),
+          shortlisted: Number(summary.shortlisted || 0),
+          interviewed: Number(summary.interviewed || 0),
+          selected: Number(summary.selected || 0),
+          waitlisted: Number(summary.waitlisted || 0),
+          rejected: Number(summary.rejected || 0),
+          offers_released: Number(summary.offers_released || 0),
+          offers_accepted: Number(summary.offers_accepted || 0),
+          offers_rejected: Number(summary.offers_rejected || 0)
+        }
+
+        this.unreadNotificationsCount = Number(
+          payload.unread_notifications || this.unreadNotificationsCount || 0
+        )
+
+        const rows = Array.isArray(payload.recent_applications)
+          ? payload.recent_applications
+          : []
+
+        this.recentApplications = rows.map((row) => ({
+          id: row.application_id || row.id,
+          role: row.drive?.title || 'Role unavailable',
+          company: row.company?.name || '-',
+          status: row.status || 'applied',
+          statusLabel: row.status_label || this.statusLabel(row.status)
+        }))
+
+        this.drivesPreview = this.buildDrivesPreview(rows)
+      } catch (error) {
+        this.dashboardError =
           error.response?.data?.error ||
           error.response?.data?.message ||
-          'Unable to load student dashboard.'
+          'Unable to load dashboard summary.'
+        this.publishActionNote(this.dashboardError, 'error')
+      } finally {
+        this.isLoadingDashboard = false
+      }
+    },
+    buildDrivesPreview(rows) {
+      const unique = new Map()
+
+      rows.forEach((row) => {
+        const driveId = row.drive?.id || row.drive_id || `drive-${row.application_id}`
+        if (unique.has(driveId)) {
+          return
+        }
+
+        const salaryLpa = Number(row.drive?.salary_lpa || 0)
+        unique.set(driveId, {
+          id: driveId,
+          role: row.drive?.title || 'Opportunity',
+          company: row.company?.name || '-',
+          salary: salaryLpa > 0 ? `${salaryLpa.toLocaleString()} LPA` : '-',
+          deadline: this.formatShortDate(row.drive?.application_deadline)
+        })
+      })
+
+      return Array.from(unique.values()).slice(0, 6)
+    },
+    async loadDrives(page = 1) {
+      this.isLoadingDrives = true
+      this.drivesError = ''
+
+      try {
+        const response = await studentApi.getDrives({
+          page,
+          limit: this.drivesPagination.limit,
+          q: this.driveFilters.query,
+          company: this.driveFilters.company,
+          role: this.driveFilters.role,
+          skills: this.driveFilters.skills,
+          include_expired: this.driveFilters.includeExpired
+        })
+
+        const data = response?.data?.data || {}
+        this.drives = Array.isArray(data.items) ? data.items : []
+        this.drivesPagination = {
+          page: Number(data.page || page),
+          pages: Number(data.pages || 0),
+          total: Number(data.total || 0),
+          limit: Number(data.limit || this.drivesPagination.limit)
+        }
+      } catch (error) {
+        this.drivesError =
+          error.response?.data?.error ||
+          error.response?.data?.message ||
+          'Unable to load drives.'
+      } finally {
+        this.isLoadingDrives = false
+      }
+    },
+    async applyDriveFilters() {
+      await this.loadDrives(1)
+    },
+    async applyToDrive(driveId) {
+      const parsedDriveId = Number(driveId)
+      if (!parsedDriveId || this.isApplyingDrive[parsedDriveId]) {
+        return
+      }
+
+      this.isApplyingDrive = {
+        ...this.isApplyingDrive,
+        [parsedDriveId]: true
+      }
+
+      try {
+        const response = await studentApi.applyToDrive(parsedDriveId)
+        const data = response?.data?.data || {}
+        await Promise.all([
+          this.loadDrives(this.drivesPagination.page || 1),
+          this.loadDashboard(),
+          this.loadApplications(1)
+        ])
+
+        if (data.already_applied) {
+          this.publishActionNote('You already applied to this drive.', 'info')
+        } else {
+          this.publishActionNote('Application submitted successfully.', 'success')
+        }
+      } catch (error) {
+        this.drivesError =
+          error.response?.data?.error ||
+          error.response?.data?.message ||
+          'Unable to apply for this drive.'
+        this.publishActionNote(this.drivesError, 'error')
+      } finally {
+        this.isApplyingDrive = {
+          ...this.isApplyingDrive,
+          [parsedDriveId]: false
+        }
       }
     },
     async loadApplications(page = 1) {
       this.isLoadingApplications = true
+      this.applicationsError = ''
 
       try {
-        const params = {
+        const response = await studentApi.getApplications({
           page,
-          limit: this.pagination.limit,
+          limit: this.applicationsPagination.limit,
           status: this.statusFilter,
           q: this.queryText
-        }
+        })
 
-        const response = await studentApi.getApplications(params)
         const data = response?.data?.data || {}
-
         this.applications = Array.isArray(data.items) ? data.items : []
-        this.pagination = {
+        this.applicationsPagination = {
           page: Number(data.page || page),
           pages: Number(data.pages || 0),
           total: Number(data.total || 0),
-          limit: Number(data.limit || this.pagination.limit)
+          limit: Number(data.limit || this.applicationsPagination.limit)
         }
       } catch (error) {
-        this.errorMessage =
+        this.applicationsError =
           error.response?.data?.error ||
           error.response?.data?.message ||
           'Unable to load applications.'
@@ -353,21 +625,66 @@ export default {
         this.isLoadingApplications = false
       }
     },
-    async loadNotifications() {
+    async applyApplicationFilters() {
+      await this.loadApplications(1)
+    },
+    async respondToOffer(offerId, targetStatus) {
+      const parsedOfferId = Number(offerId)
+      if (!parsedOfferId || this.isRespondingOffer[parsedOfferId]) {
+        return
+      }
+
+      this.isRespondingOffer = {
+        ...this.isRespondingOffer,
+        [parsedOfferId]: true
+      }
+
+      try {
+        await studentApi.respondToOffer(parsedOfferId, { status: targetStatus })
+        await Promise.all([
+          this.loadDashboard(),
+          this.loadApplications(this.applicationsPagination.page || 1),
+          this.loadNotifications(1)
+        ])
+        this.publishActionNote(`Offer response submitted: ${targetStatus}.`, 'success')
+      } catch (error) {
+        this.applicationsError =
+          error.response?.data?.error ||
+          error.response?.data?.message ||
+          'Unable to submit offer response.'
+        this.publishActionNote(this.applicationsError, 'error')
+      } finally {
+        this.isRespondingOffer = {
+          ...this.isRespondingOffer,
+          [parsedOfferId]: false
+        }
+      }
+    },
+    async loadNotifications(page = 1) {
       this.isLoadingNotifications = true
+      this.notificationsError = ''
 
       try {
         const response = await studentApi.getNotifications({
-          page: 1,
-          limit: 8,
+          page,
+          limit: this.notificationsPagination.limit,
           is_read: 'all'
         })
-        const data = response?.data?.data || {}
 
+        const data = response?.data?.data || {}
         this.notifications = Array.isArray(data.items) ? data.items : []
-        this.unreadCount = Number(data.unread_count || 0)
+        this.notificationsPagination = {
+          page: Number(data.page || page),
+          pages: Number(data.pages || 0),
+          total: Number(data.total || 0),
+          limit: Number(data.limit || this.notificationsPagination.limit)
+        }
+
+        if (typeof data.unread_count === 'number') {
+          this.unreadNotificationsCount = data.unread_count
+        }
       } catch (error) {
-        this.errorMessage =
+        this.notificationsError =
           error.response?.data?.error ||
           error.response?.data?.message ||
           'Unable to load notifications.'
@@ -375,57 +692,51 @@ export default {
         this.isLoadingNotifications = false
       }
     },
-    applyFilters() {
-      this.loadApplications(1)
-    },
-    async markNotificationRead(notification) {
-      const notificationId = Number(notification?.notification_id)
-      if (!notificationId || notification.is_read || this.isMarking[notificationId]) {
+    async markNotificationRead(notificationId) {
+      const parsedId = Number(notificationId)
+      if (!parsedId || this.isMarkingNotification[parsedId]) {
         return
       }
 
-      this.isMarking = {
-        ...this.isMarking,
-        [notificationId]: true
+      this.isMarkingNotification = {
+        ...this.isMarkingNotification,
+        [parsedId]: true
       }
 
       try {
-        const response = await studentApi.markNotificationRead(notificationId)
+        const response = await studentApi.markNotificationRead(parsedId)
         const data = response?.data?.data || {}
-        const updatedNotification = data.notification || {}
 
-        this.notifications = this.notifications.map((item) => {
-          if (item.notification_id !== notificationId) return item
-          return {
-            ...item,
-            ...updatedNotification,
-            is_read: true
-          }
-        })
+        this.notifications = this.notifications.map((item) =>
+          item.notification_id === parsedId
+            ? { ...item, is_read: true }
+            : item
+        )
 
         if (typeof data.unread_count === 'number') {
-          this.unreadCount = data.unread_count
-        } else {
-          this.unreadCount = Math.max(0, this.unreadCount - 1)
+          this.unreadNotificationsCount = data.unread_count
         }
+
+        this.publishActionNote('Notification marked as read.', 'success')
       } catch (error) {
-        this.errorMessage =
+        this.notificationsError =
           error.response?.data?.error ||
           error.response?.data?.message ||
           'Unable to update notification.'
+        this.publishActionNote(this.notificationsError, 'error')
       } finally {
-        this.isMarking = {
-          ...this.isMarking,
-          [notificationId]: false
+        this.isMarkingNotification = {
+          ...this.isMarkingNotification,
+          [parsedId]: false
         }
       }
     },
     async markAllNotificationsRead() {
-      if (this.isMarkingAllRead || this.unreadCount === 0) {
+      if (this.isMarkingAllNotifications || this.unreadNotificationsCount === 0) {
         return
       }
 
-      this.isMarkingAllRead = true
+      this.isMarkingAllNotifications = true
       try {
         const response = await studentApi.markAllNotificationsRead()
         const data = response?.data?.data || {}
@@ -434,621 +745,319 @@ export default {
           ...item,
           is_read: true
         }))
-
-        this.unreadCount = typeof data.unread_count === 'number' ? data.unread_count : 0
+        this.unreadNotificationsCount = Number(data.unread_count || 0)
+        this.publishActionNote('All notifications marked as read.', 'success')
       } catch (error) {
-        this.errorMessage =
+        this.notificationsError =
           error.response?.data?.error ||
           error.response?.data?.message ||
           'Unable to update notifications.'
+        this.publishActionNote(this.notificationsError, 'error')
       } finally {
-        this.isMarkingAllRead = false
+        this.isMarkingAllNotifications = false
       }
     },
-    canRespondToOffer(offer) {
-      return String(offer?.status || '').toLowerCase() === 'offered'
+    async loadProfile() {
+      this.profileError = ''
+
+      try {
+        const response = await studentApi.getProfile()
+        const studentPayload = response?.data?.data?.student || {}
+
+        this.profileForm = {
+          ...this.profileForm,
+          college_name: studentPayload.college_name || '',
+          branch: studentPayload.branch || '',
+          year: studentPayload.year ?? '',
+          cgpa: studentPayload.cgpa ?? '',
+          roll_number: studentPayload.roll_number || '',
+          phone: studentPayload.phone || '',
+          resume_url: studentPayload.resume_url || '',
+          skills: studentPayload.skills || '',
+          experience_summary: studentPayload.experience_summary || ''
+        }
+
+        this.student = {
+          ...this.student,
+          branch: studentPayload.branch || this.student.branch,
+          year: Number(studentPayload.year || this.student.year),
+          roll: studentPayload.roll_number || this.student.roll
+        }
+      } catch (error) {
+        this.profileError =
+          error.response?.data?.error ||
+          error.response?.data?.message ||
+          'Unable to load profile data.'
+      }
     },
-    async respondToOffer(row, targetStatus) {
-      const offerId = Number(row?.offer?.offer_id)
-      if (!offerId || !this.canRespondToOffer(row.offer) || this.isRespondingOffer[offerId]) {
+    async loadHistory(page = 1) {
+      this.isLoadingHistory = true
+      this.historyError = ''
+
+      try {
+        const response = await studentApi.getHistory({
+          page,
+          limit: this.historyPagination.limit,
+          q: this.historyQuery
+        })
+
+        const data = response?.data?.data || {}
+        this.historyItems = Array.isArray(data.items) ? data.items : []
+        this.historySummary = {
+          total_applied: Number(data.summary?.total_applied || 0),
+          offers_received: Number(data.summary?.offers_received || 0),
+          placements_count: Number(data.summary?.placements_count || 0),
+          highest_package: Number(data.summary?.highest_package || 0)
+        }
+        this.historyPagination = {
+          page: Number(data.page || page),
+          pages: Number(data.pages || 0),
+          total: Number(data.total || 0),
+          limit: Number(data.limit || this.historyPagination.limit)
+        }
+      } catch (error) {
+        this.historyError =
+          error.response?.data?.error ||
+          error.response?.data?.message ||
+          'Unable to load placement history.'
+      } finally {
+        this.isLoadingHistory = false
+      }
+    },
+    async applyHistoryFilters() {
+      await this.loadHistory(1)
+    },
+    async downloadOfferDocument(offerId) {
+      await this.downloadDocument('offer', Number(offerId))
+    },
+    async downloadPlacementDocument(placementId) {
+      await this.downloadDocument('placement', Number(placementId))
+    },
+    async downloadDocument(type, id) {
+      if (!id || id <= 0) {
         return
       }
 
-      this.isRespondingOffer = {
-        ...this.isRespondingOffer,
-        [offerId]: true
+      const key = `${type}-${id}`
+      if (this.isDownloadingDocument[key]) {
+        return
+      }
+
+      this.isDownloadingDocument = {
+        ...this.isDownloadingDocument,
+        [key]: true
       }
 
       try {
-        await studentApi.respondToOffer(offerId, {
-          status: targetStatus
-        })
+        const response =
+          type === 'offer'
+            ? await studentApi.downloadOfferDocument(id)
+            : await studentApi.downloadPlacementDocument(id)
 
-        await Promise.all([this.loadDashboard(), this.loadApplications(this.pagination.page || 1)])
+        const fallbackName =
+          type === 'offer'
+            ? `offer-letter-${id}.txt`
+            : `placement-confirmation-${id}.txt`
+
+        const filename = this.extractFilename(response?.headers, fallbackName)
+        this.triggerFileDownload(response?.data, filename)
+        this.publishActionNote(`Downloaded ${filename}.`, 'success')
       } catch (error) {
-        this.errorMessage =
+        this.historyError =
           error.response?.data?.error ||
           error.response?.data?.message ||
-          'Unable to submit offer response.'
+          'Unable to download document.'
+        this.publishActionNote(this.historyError, 'error')
       } finally {
-        this.isRespondingOffer = {
-          ...this.isRespondingOffer,
-          [offerId]: false
+        this.isDownloadingDocument = {
+          ...this.isDownloadingDocument,
+          [key]: false
         }
       }
     },
-    safeTimeline(timeline) {
-      return Array.isArray(timeline) ? timeline : []
+    extractFilename(headers, fallback) {
+      const disposition = String(
+        headers?.['content-disposition'] || headers?.['Content-Disposition'] || ''
+      )
+      const match = disposition.match(/filename\*?=(?:UTF-8''|\")?([^\";]+)/i)
+      if (match && match[1]) {
+        return decodeURIComponent(match[1]).trim()
+      }
+      return fallback
+    },
+    triggerFileDownload(payload, filename) {
+      if (
+        typeof window === 'undefined' ||
+        !window.URL ||
+        typeof window.URL.createObjectURL !== 'function' ||
+        typeof document === 'undefined'
+      ) {
+        return
+      }
+
+      const blob = payload instanceof Blob ? payload : new Blob([payload || ''])
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+
+      if (typeof window.URL.revokeObjectURL === 'function') {
+        window.URL.revokeObjectURL(url)
+      }
+    },
+    updateProfileField(field, value) {
+      this.profileForm = {
+        ...this.profileForm,
+        [field]: value
+      }
+    },
+    async saveProfile() {
+      this.isSavingProfile = true
+      this.profileError = ''
+
+      const year = Number(this.profileForm.year)
+      const cgpa = Number(this.profileForm.cgpa)
+      const payload = {
+        college_name: String(this.profileForm.college_name || '').trim(),
+        branch: String(this.profileForm.branch || '').trim(),
+        year: Number.isNaN(year) ? this.profileForm.year : year,
+        cgpa: Number.isNaN(cgpa) ? this.profileForm.cgpa : cgpa,
+        roll_number: String(this.profileForm.roll_number || '').trim(),
+        phone: String(this.profileForm.phone || '').trim(),
+        resume_url: String(this.profileForm.resume_url || '').trim(),
+        skills: String(this.profileForm.skills || '').trim(),
+        experience_summary: String(this.profileForm.experience_summary || '').trim()
+      }
+
+      try {
+        const response = await studentApi.updateProfile(payload)
+        const studentPayload = response?.data?.data?.student || {}
+
+        this.profileForm = {
+          ...this.profileForm,
+          college_name: studentPayload.college_name || payload.college_name,
+          branch: studentPayload.branch || payload.branch,
+          year: studentPayload.year ?? payload.year,
+          cgpa: studentPayload.cgpa ?? payload.cgpa,
+          roll_number: studentPayload.roll_number || payload.roll_number,
+          phone: studentPayload.phone || payload.phone,
+          resume_url: studentPayload.resume_url || payload.resume_url,
+          skills: studentPayload.skills || payload.skills,
+          experience_summary:
+            studentPayload.experience_summary || payload.experience_summary
+        }
+
+        this.student = {
+          ...this.student,
+          branch: studentPayload.branch || this.student.branch,
+          year: Number(studentPayload.year || this.student.year),
+          roll: studentPayload.roll_number || this.student.roll
+        }
+        this.publishActionNote('Profile updated successfully.', 'success')
+      } catch (error) {
+        this.profileError =
+          error.response?.data?.error ||
+          error.response?.data?.message ||
+          'Unable to save profile.'
+        this.publishActionNote(this.profileError, 'error')
+      } finally {
+        this.isSavingProfile = false
+      }
+    },
+    formatShortDate(value) {
+      if (!value) {
+        return '-'
+      }
+
+      const parsed = new Date(value)
+      if (Number.isNaN(parsed.getTime())) {
+        return '-'
+      }
+
+      return parsed.toLocaleDateString('en-IN', {
+        month: 'short',
+        day: 'numeric'
+      })
     },
     statusLabel(status) {
-      const source = String(status || '')
-      if (!source) return 'Unknown'
-      return source.charAt(0).toUpperCase() + source.slice(1)
+      const normalized = String(status || '').trim().toLowerCase()
+      const labels = {
+        applied: 'Applied',
+        shortlisted: 'Shortlisted',
+        interviewed: 'Interviewed',
+        selected: 'Selected',
+        waitlisted: 'Waitlisted',
+        rejected: 'Rejected',
+        offered: 'Offer Released',
+        accepted: 'Offer Accepted'
+      }
+      return labels[normalized] || (normalized ? normalized : 'Updated')
     },
-    statusClass(status) {
-      const normalized = String(status || '').toLowerCase()
-      if (normalized === 'selected') return 'is-selected'
-      if (normalized === 'shortlisted') return 'is-shortlisted'
-      if (normalized === 'interviewed') return 'is-interviewed'
-      if (normalized === 'waitlisted') return 'is-waitlisted'
-      if (normalized === 'rejected') return 'is-rejected'
-      return 'is-applied'
+    restoreViewState() {
+      try {
+        const storedView = localStorage.getItem(STORAGE_KEYS.activeView)
+        if (storedView) {
+          this.activeView = storedView
+        }
+      } catch (error) {
+        // Ignore storage read failures and keep defaults.
+      }
     },
-    offerStatusClass(status) {
-      const normalized = String(status || '').toLowerCase()
-      if (normalized === 'accepted') return 'is-selected'
-      if (normalized === 'rejected') return 'is-rejected'
-      if (normalized === 'offered') return 'is-waitlisted'
-      return 'is-applied'
+    restoreSidebarState() {
+      try {
+        const stored = localStorage.getItem(STORAGE_KEYS.sidebarCollapsed)
+        this.sidebarCollapsed = stored === '1'
+      } catch (error) {
+        // Ignore storage read failures and keep defaults.
+      }
     },
-    formatCurrency(value) {
-      const parsed = Number(value)
-      if (Number.isNaN(parsed) || parsed <= 0) return '-'
-      return `INR ${parsed.toLocaleString()}`
+    persistPreference(key, value) {
+      try {
+        localStorage.setItem(key, value)
+      } catch (error) {
+        // Ignore storage write failures and keep dashboard functional.
+      }
     },
-    formatDateTime(value) {
-      if (!value) return '-'
-      const parsed = new Date(value)
-      if (Number.isNaN(parsed.getTime())) return '-'
-      return parsed.toLocaleString()
+    publishActionNote(message, tone = 'info') {
+      if (!message) {
+        return
+      }
+
+      if (this.actionNoteTimerId) {
+        clearTimeout(this.actionNoteTimerId)
+      }
+
+      this.actionNote = String(message)
+      this.actionTone = tone
+
+      this.actionNoteTimerId = setTimeout(() => {
+        this.actionNote = ''
+        this.actionTone = 'info'
+        this.actionNoteTimerId = null
+      }, ACTION_NOTE_TIMEOUT_MS)
+    },
+    toggleSidebar() {
+      this.sidebarCollapsed = !this.sidebarCollapsed
+    },
+    navigate(viewId) {
+      this.activeView = viewId
+
+      if (viewId === 'drives' && !this.drives.length) {
+        this.loadDrives(1)
+      }
+      if (viewId === 'applications' && !this.applications.length) {
+        this.loadApplications(1)
+      }
+      if (viewId === 'notifications' && !this.notifications.length) {
+        this.loadNotifications(1)
+      }
+      if (viewId === 'history' && !this.historyItems.length) {
+        this.loadHistory(1)
+      }
     }
   }
 }
 </script>
-
-<style scoped>
-.std-shell {
-  min-height: calc(100vh - 86px);
-  padding: 96px 4% 40px;
-  background:
-    radial-gradient(860px circle at 0% -10%, rgba(37, 99, 235, 0.08), transparent 42%),
-    radial-gradient(680px circle at 100% -10%, rgba(5, 150, 105, 0.08), transparent 40%),
-    var(--parch);
-}
-
-.std-wrap {
-  max-width: 1200px;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.std-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 14px;
-}
-
-.std-kicker {
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--blue);
-  font-weight: 800;
-}
-
-.std-head h1 {
-  margin-top: 6px;
-  font-family: var(--serif);
-  font-size: 2rem;
-  line-height: 1.08;
-  letter-spacing: -0.02em;
-}
-
-.std-head p {
-  margin-top: 8px;
-  color: var(--t2);
-}
-
-.std-alert {
-  border: 1px solid rgba(220, 38, 38, 0.24);
-  background: var(--red-lt);
-  color: var(--red);
-  border-radius: 12px;
-  padding: 10px 12px;
-  font-size: 0.86rem;
-  font-weight: 600;
-}
-
-.std-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(10, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.std-summary-card {
-  grid-column: span 2;
-  background: #fff;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 14px;
-  box-shadow: var(--sh-xs);
-}
-
-.std-summary-label {
-  font-size: 0.72rem;
-  color: var(--t2);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-weight: 700;
-}
-
-.std-summary-value {
-  margin-top: 4px;
-  font-family: var(--serif);
-  font-size: 1.35rem;
-  font-weight: 700;
-}
-
-.std-summary-sub {
-  margin-top: 2px;
-  color: var(--t2);
-  font-size: 0.8rem;
-}
-
-.std-grid {
-  display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.std-panel {
-  grid-column: span 4;
-  background: #fff;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 14px;
-  box-shadow: var(--sh-xs);
-}
-
-.std-panel-wide {
-  grid-column: span 8;
-}
-
-.std-panel-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-.std-panel-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.std-panel-head h2 {
-  font-family: var(--serif);
-  font-size: 1.15rem;
-  font-weight: 600;
-}
-
-.std-panel-head p {
-  margin-top: 3px;
-  color: var(--t2);
-  font-size: 0.82rem;
-}
-
-.std-badge {
-  border: 1px solid rgba(37, 99, 235, 0.25);
-  background: var(--blue-lt);
-  color: var(--blue-d);
-  border-radius: 999px;
-  padding: 4px 9px;
-  font-size: 0.72rem;
-  font-weight: 700;
-}
-
-.std-badge.is-empty {
-  border-color: var(--border);
-  background: #f8fafc;
-  color: var(--t2);
-}
-
-.std-tools {
-  display: grid;
-  grid-template-columns: 180px 1fr auto;
-  gap: 10px;
-  align-items: end;
-  margin-bottom: 10px;
-}
-
-.std-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.std-field > span {
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--t2);
-  font-weight: 700;
-}
-
-.std-field input,
-.std-field select {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 9px 10px;
-  background: #fff;
-  color: var(--ink);
-  font-size: 0.84rem;
-}
-
-.std-btn {
-  border: 1px solid transparent;
-  background: var(--ink);
-  color: #fff;
-  border-radius: 10px;
-  padding: 9px 12px;
-  font-size: 0.82rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.std-btn.ghost {
-  background: #fff;
-  color: var(--ink);
-  border-color: var(--border);
-  font-weight: 600;
-}
-
-.std-btn.ghost.danger {
-  color: var(--red);
-  border-color: rgba(220, 38, 38, 0.2);
-  background: #fff;
-}
-
-.std-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.std-table-wrap {
-  overflow-x: auto;
-}
-
-.std-table {
-  width: 100%;
-  border-collapse: collapse;
-  min-width: 900px;
-}
-
-.std-table th,
-.std-table td {
-  border-bottom: 1px solid var(--border);
-  padding: 10px;
-  text-align: left;
-  font-size: 0.82rem;
-  vertical-align: top;
-}
-
-.std-table th {
-  color: var(--t2);
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.std-empty,
-.std-muted {
-  color: var(--t2);
-  font-size: 0.82rem;
-}
-
-.std-empty {
-  text-align: center;
-  padding: 18px 10px;
-}
-
-.std-role-title {
-  font-size: 0.84rem;
-  font-weight: 700;
-}
-
-.std-role-sub {
-  margin-top: 2px;
-  color: var(--t2);
-  font-size: 0.76rem;
-}
-
-.std-status {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  padding: 4px 8px;
-  font-size: 0.72rem;
-  font-weight: 700;
-  border: 1px solid transparent;
-}
-
-.std-status.is-applied {
-  color: #0f172a;
-  background: #f8fafc;
-  border-color: #cbd5e1;
-}
-
-.std-status.is-shortlisted,
-.std-status.is-interviewed {
-  color: #155e75;
-  background: #ecfeff;
-  border-color: #67e8f9;
-}
-
-.std-status.is-selected {
-  color: #065f46;
-  background: #ecfdf5;
-  border-color: #34d399;
-}
-
-.std-status.is-waitlisted {
-  color: #92400e;
-  background: #fffbeb;
-  border-color: #fbbf24;
-}
-
-.std-status.is-rejected {
-  color: #991b1b;
-  background: #fff1f2;
-  border-color: #fecdd3;
-}
-
-.std-meta-note {
-  margin-top: 4px;
-  color: var(--t2);
-  font-size: 0.76rem;
-  line-height: 1.35;
-}
-
-.std-offer-card {
-  display: grid;
-  gap: 6px;
-}
-
-.std-offer-role {
-  font-size: 0.8rem;
-  font-weight: 700;
-}
-
-.std-offer-meta {
-  color: var(--t2);
-  font-size: 0.74rem;
-}
-
-.std-offer-actions {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.std-timeline {
-  list-style: none;
-  display: grid;
-  gap: 6px;
-}
-
-.std-timeline li {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 7px;
-}
-
-.std-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  margin-top: 5px;
-  background: #64748b;
-}
-
-.std-dot.is-success {
-  background: #16a34a;
-}
-
-.std-dot.is-error {
-  background: #dc2626;
-}
-
-.std-timeline-label {
-  font-size: 0.76rem;
-  font-weight: 700;
-}
-
-.std-timeline-msg {
-  color: var(--t2);
-  font-size: 0.74rem;
-  line-height: 1.35;
-}
-
-.std-footer {
-  margin-top: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.std-pager {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.8rem;
-}
-
-.std-notify-list {
-  list-style: none;
-  display: grid;
-  gap: 10px;
-}
-
-.std-notify-item {
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 10px;
-  display: grid;
-  gap: 8px;
-}
-
-.std-notify-title {
-  font-size: 0.84rem;
-  font-weight: 700;
-}
-
-.std-notify-message {
-  margin-top: 2px;
-  color: var(--t2);
-  font-size: 0.78rem;
-  line-height: 1.4;
-}
-
-.std-notify-time {
-  margin-top: 4px;
-  color: var(--t3);
-  font-size: 0.72rem;
-}
-
-.std-notify-btn {
-  justify-self: start;
-}
-
-.std-mark-all-btn {
-  white-space: nowrap;
-}
-
-.std-read-pill {
-  justify-self: start;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 4px 8px;
-  font-size: 0.72rem;
-  color: var(--t2);
-  font-weight: 700;
-}
-
-@media (max-width: 1160px) {
-  .std-summary-grid {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-  }
-
-  .std-summary-card {
-    grid-column: span 2;
-  }
-
-  .std-panel,
-  .std-panel-wide {
-    grid-column: span 12;
-  }
-}
-
-@media (max-width: 820px) {
-  .std-shell {
-    padding: 84px 16px 24px;
-  }
-
-  .std-head {
-    flex-direction: column;
-  }
-
-  .std-panel-actions {
-    width: 100%;
-    justify-content: space-between;
-  }
-
-  .std-summary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .std-summary-card {
-    grid-column: span 1;
-  }
-
-  .std-tools {
-    grid-template-columns: 1fr;
-  }
-
-  .std-table-wrap.is-mobile-cards {
-    overflow: visible;
-  }
-
-  .std-table-wrap.is-mobile-cards .std-table {
-    min-width: 0;
-    border-collapse: separate;
-    border-spacing: 0;
-  }
-
-  .std-table-wrap.is-mobile-cards .std-table thead {
-    display: none;
-  }
-
-  .std-table-wrap.is-mobile-cards .std-table tbody {
-    display: grid;
-    gap: 10px;
-  }
-
-  .std-table-wrap.is-mobile-cards .std-table tr {
-    display: grid;
-    gap: 8px;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 10px;
-    background: #fff;
-  }
-
-  .std-table-wrap.is-mobile-cards .std-table td {
-    display: grid;
-    grid-template-columns: 100px 1fr;
-    gap: 8px;
-    padding: 0;
-    border-bottom: 0;
-  }
-
-  .std-table-wrap.is-mobile-cards .std-table td::before {
-    content: attr(data-label);
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--t2);
-    font-weight: 700;
-  }
-
-  .std-table-wrap.is-mobile-cards .std-empty {
-    text-align: left;
-    padding: 0;
-  }
-
-  .std-table-wrap.is-mobile-cards .std-empty::before {
-    content: '';
-  }
-
-  .std-footer {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-}
-</style>
