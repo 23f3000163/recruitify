@@ -138,6 +138,9 @@ def create_app(config_object=None):
     from app.company import company_bp
     app.register_blueprint(company_bp, url_prefix="/company")
 
+    from app.applications import applications_bp
+    app.register_blueprint(applications_bp)
+
     # =====================================================================
     # Health Check
     # =====================================================================

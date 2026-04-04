@@ -465,11 +465,17 @@ class Application(db.Model):
     )
 
     def to_dict(self) -> dict:
+        company_id = self.drive.company_id if self.drive else None
+        applied_at = self.application_date.isoformat() if self.application_date else None
         return {
+            "id": self.application_id,
             "application_id": self.application_id,
             "student_id": self.student_id,
+            "job_id": self.drive_id,
             "drive_id": self.drive_id,
+            "company_id": company_id,
             "status": self.status,
+            "applied_at": applied_at,
             "application_date": (
                 self.application_date.isoformat()
                 if self.application_date

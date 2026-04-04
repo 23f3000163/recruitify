@@ -60,6 +60,21 @@ export const authApi = {
   }
 }
 
+export const applicationsApi = {
+  applyToJob(payload) {
+    return api.post('/applications', payload)
+  },
+  getStudentApplications(params = {}) {
+    return api.get('/applications/student', { params })
+  },
+  getApplicationsForJob(jobId, params = {}) {
+    return api.get(`/applications/job/${jobId}`, { params })
+  },
+  updateStatus(applicationId, payload) {
+    return api.patch(`/applications/${applicationId}`, payload)
+  }
+}
+
 export const companyApi = {
   getDashboard() {
     return api.get('/auth/company/dashboard')
@@ -78,6 +93,9 @@ export const companyApi = {
   },
   updateApplicationStatus(applicationId, payload) {
     return api.put(`/company/applications/${applicationId}/status`, payload)
+  },
+  updateAtsApplicationStatus(applicationId, payload) {
+    return applicationsApi.updateStatus(applicationId, payload)
   },
   getInterviews(params = {}) {
     return api.get('/company/interviews', { params })
@@ -179,7 +197,10 @@ export const studentApi = {
     return api.post(`/student/drives/${driveId}/apply`)
   },
   getApplications(params = {}) {
-    return api.get('/student/applications', { params })
+    return applicationsApi.getStudentApplications(params)
+  },
+  applyToJob(jobId) {
+    return applicationsApi.applyToJob({ job_id: jobId })
   },
   getHistory(params = {}) {
     return api.get('/student/history', { params })

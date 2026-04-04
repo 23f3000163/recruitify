@@ -465,6 +465,8 @@ def create_drive():
     company = _company_for_user(user_id)
     if not company:
         return _json_error("Company profile not found", 404)
+    if company.approval_status != "approved" or company.is_blacklisted:
+        return _json_error("Only approved companies can create jobs", 403)
 
     payload = request.get_json(silent=True) or {}
 
