@@ -256,6 +256,7 @@ class Company(db.Model):
     )
     company_name = db.Column(db.String(200), unique=True, nullable=False)
     industry = db.Column(db.String(120), nullable=True)
+    location = db.Column(db.String(160), nullable=True)
     website = db.Column(db.String(300), nullable=True)
     hr_contact_name = db.Column(db.String(120), nullable=False)
     hr_contact_email = db.Column(db.String(120), unique=True, nullable=False)
@@ -295,6 +296,7 @@ class Company(db.Model):
             "user_id": self.user_id,
             "company_name": self.company_name,
             "industry": self.industry,
+            "location": self.location,
             "website": self.website,
             "hr_contact_name": self.hr_contact_name,
             "hr_contact_email": self.hr_contact_email,

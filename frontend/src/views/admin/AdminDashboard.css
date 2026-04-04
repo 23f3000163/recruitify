@@ -65,6 +65,23 @@ button {
   position: relative;
 }
 
+/*
+  Admin and student dashboards share class names globally.
+  Keep toggle visibility stable by applying higher-specificity admin-only rules.
+*/
+.rq-admin-app .rq-sidebar {
+  overflow: visible;
+}
+
+.rq-admin-app .rq-sidebar-toggle,
+.rq-admin-app.is-collapsed .rq-sidebar-toggle {
+  right: 8px;
+  top: 16px;
+  z-index: 900;
+  border: 1px solid #94A3B8;
+  outline: 2px solid var(--rq-parch);
+}
+
 .rq-sidebar {
   width: var(--rq-sb-w);
   min-height: 100vh;
@@ -93,13 +110,14 @@ button {
   height: 26px;
   border-radius: 50%;
   background: var(--rq-white);
-  border: 1px solid var(--rq-border2);
+  border: 1px solid #CBD5E1;
+  outline: 2px solid var(--rq-parch);
   box-shadow: var(--rq-sh-sm);
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--rq-t3);
-  z-index: 10;
+  z-index: 450;
   transition: color var(--rq-ease), box-shadow var(--rq-ease), transform 0.15s ease;
 }
 
@@ -1976,6 +1994,12 @@ button {
 @media (max-width: 960px) {
   .rq-app {
     flex-direction: column;
+  }
+
+  .rq-admin-app .rq-sidebar-toggle,
+  .rq-admin-app.is-collapsed .rq-sidebar-toggle {
+    right: 14px;
+    top: 16px;
   }
 
   .rq-sidebar {

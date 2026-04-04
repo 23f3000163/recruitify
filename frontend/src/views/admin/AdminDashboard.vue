@@ -1,5 +1,5 @@
 <template>
-  <div class="rq-app" :class="{ 'is-collapsed': sidebarCollapsed }">
+  <div class="rq-app rq-admin-app" :class="{ 'is-collapsed': sidebarCollapsed }">
     <Sidebar
       :sidebar-collapsed="sidebarCollapsed"
       :nav-items="navItems"

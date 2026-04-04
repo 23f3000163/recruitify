@@ -58,6 +58,8 @@ def create_app(config_object=None):
                 }
                 if "industry" not in columns:
                     conn.exec_driver_sql("ALTER TABLE company ADD COLUMN industry VARCHAR(120)")
+                if "location" not in columns:
+                    conn.exec_driver_sql("ALTER TABLE company ADD COLUMN location VARCHAR(160)")
 
                 student_table_exists = conn.exec_driver_sql(
                     "SELECT name FROM sqlite_master WHERE type='table' AND name='student'"
@@ -72,6 +74,25 @@ def create_app(config_object=None):
                     if "experience_summary" not in student_columns:
                         conn.exec_driver_sql(
                             "ALTER TABLE student ADD COLUMN experience_summary TEXT"
+                        )
+
+                drive_table_exists = conn.exec_driver_sql(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='placement_drive'"
+                ).fetchone()
+                if drive_table_exists:
+                    drive_columns = {
+                        row[1]
+                        for row in conn.exec_driver_sql(
+                            "PRAGMA table_info(placement_drive)"
+                        ).fetchall()
+                    }
+                    if "experience_required" not in drive_columns:
+                        conn.exec_driver_sql(
+                            "ALTER TABLE placement_drive ADD COLUMN experience_required VARCHAR(120)"
+                        )
+                    if "benefits" not in drive_columns:
+                        conn.exec_driver_sql(
+                            "ALTER TABLE placement_drive ADD COLUMN benefits TEXT"
                         )
 
                 activity_table_exists = conn.exec_driver_sql(

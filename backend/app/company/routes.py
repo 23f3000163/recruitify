@@ -8,6 +8,7 @@ from flask_jwt_extended import get_jwt_identity
 from sqlalchemy import func, or_
 
 from app.auth.utils import role_required
+from app.auth.validators import validate_email
 from app.models import (
     ActivityLog,
     Application,
@@ -366,6 +367,141 @@ def _company_drive_options(company_id):
         }
         for drive in drives
     ]
+
+
+def _company_profile_payload(company):
+    payload = company.to_dict()
+    if company.user:
+        payload["username"] = company.user.username
+        payload["email"] = company.user.email
+    return payload
+
+
+@company_bp.get("/profile")
+@role_required("company")
+def get_company_profile():
+    user_id = _current_user_id()
+    if user_id is None:
+        return _json_error("Invalid token identity", 401)
+
+    company = _company_for_user(user_id)
+    if not company:
+        return _json_error("Company profile not found", 404)
+
+    return jsonify({"success": True, "data": _company_profile_payload(company)}), 200
+
+
+@company_bp.patch("/profile")
+@role_required("company")
+def update_company_profile():
+    user_id = _current_user_id()
+    if user_id is None:
+        return _json_error("Invalid token identity", 401)
+
+    company = _company_for_user(user_id)
+    if not company:
+        return _json_error("Company profile not found", 404)
+
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return _json_error("Invalid request body", 400)
+
+    updatable_keys = {
+        "company_name",
+        "website",
+        "hr_contact_name",
+        "hr_contact_email",
+        "hr_contact_phone",
+        "industry",
+        "location",
+        "company_description",
+    }
+    provided_keys = [key for key in updatable_keys if key in payload]
+    if not provided_keys:
+        return _json_error("No profile fields provided for update", 400)
+
+    if "company_name" in payload:
+        company_name = str(payload.get("company_name") or "").strip()
+        if not company_name:
+            return _json_error("company_name cannot be empty", 400)
+        if len(company_name) > 200:
+            return _json_error("company_name must be at most 200 characters", 400)
+
+        duplicate_name = Company.query.filter(
+            Company.company_name == company_name,
+            Company.company_id != company.company_id,
+        ).first()
+        if duplicate_name:
+            return _json_error("Company name already exists", 409)
+
+        company.company_name = company_name
+
+    if "hr_contact_name" in payload:
+        hr_contact_name = str(payload.get("hr_contact_name") or "").strip()
+        if not hr_contact_name:
+            return _json_error("hr_contact_name cannot be empty", 400)
+        if len(hr_contact_name) > 120:
+            return _json_error("hr_contact_name must be at most 120 characters", 400)
+        company.hr_contact_name = hr_contact_name
+
+    if "hr_contact_email" in payload:
+        hr_contact_email = str(payload.get("hr_contact_email") or "").strip().lower()
+        if not hr_contact_email:
+            return _json_error("hr_contact_email cannot be empty", 400)
+
+        email_error = validate_email(hr_contact_email)
+        if email_error:
+            return _json_error("Invalid HR contact email format", 400)
+
+        duplicate_hr_email = Company.query.filter(
+            Company.hr_contact_email == hr_contact_email,
+            Company.company_id != company.company_id,
+        ).first()
+        if duplicate_hr_email:
+            return _json_error("HR contact email already exists", 409)
+
+        company.hr_contact_email = hr_contact_email
+
+    if "website" in payload:
+        website = str(payload.get("website") or "").strip() or None
+        if website and len(website) > 300:
+            return _json_error("website must be at most 300 characters", 400)
+        company.website = website
+
+    if "hr_contact_phone" in payload:
+        hr_contact_phone = str(payload.get("hr_contact_phone") or "").strip() or None
+        if hr_contact_phone and len(hr_contact_phone) > 20:
+            return _json_error("hr_contact_phone must be at most 20 characters", 400)
+        if hr_contact_phone is None:
+            return _json_error("hr_contact_phone cannot be empty", 400)
+        company.hr_contact_phone = hr_contact_phone
+
+    if "industry" in payload:
+        industry = str(payload.get("industry") or "").strip() or None
+        if industry and len(industry) > 120:
+            return _json_error("industry must be at most 120 characters", 400)
+        company.industry = industry
+
+    if "location" in payload:
+        location = str(payload.get("location") or "").strip() or None
+        if location and len(location) > 160:
+            return _json_error("location must be at most 160 characters", 400)
+        company.location = location
+
+    if "company_description" in payload:
+        company_description = str(payload.get("company_description") or "").strip() or None
+        if company_description and len(company_description) > 5000:
+            return _json_error("company_description must be at most 5000 characters", 400)
+        company.company_description = company_description
+
+    try:
+        _append_company_activity(user_id, "Company Profile Updated", company.company_name, "info")
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return _json_error("Unable to update company profile", 500)
+
+    return jsonify({"success": True, "data": _company_profile_payload(company)}), 200
 
 
 @company_bp.get("/drives")

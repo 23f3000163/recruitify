@@ -2,56 +2,146 @@ import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import CompanyDashboard from '../../src/views/company/CompanyDashboard.vue'
-import { authApi, companyApi } from '../../src/api/api'
+import { companyApi, parseApiError } from '../../src/api/api'
 
 vi.mock('../../src/api/api', () => ({
-  authApi: {
-    getMe: vi.fn()
-  },
+  parseApiError: vi.fn((error, fallback = 'Something went wrong') => (
+    error?.response?.data?.error ||
+    error?.response?.data?.message ||
+    error?.message ||
+    fallback
+  )),
   companyApi: {
-    getDashboard: vi.fn()
+    getDashboardData: vi.fn(),
+    mapDashboardSummary: vi.fn(),
+    getProfile: vi.fn(),
+    getDrives: vi.fn(),
+    getApplications: vi.fn(),
+    getNotifications: vi.fn(),
+    createDrive: vi.fn(),
+    updateDrive: vi.fn(),
+    updateApplicationStatus: vi.fn(),
+    updateProfile: vi.fn(),
+    markNotificationRead: vi.fn(),
+    markAllNotificationsRead: vi.fn()
   }
 }))
 
 const flushPromises = () => new Promise((resolve) => setTimeout(resolve, 0))
 
-const STORAGE_KEYS = {
-  activeView: 'company.dashboard.activeView',
-  sidebarCollapsed: 'company.dashboard.sidebarCollapsed'
-}
+const SUMMARY = Object.freeze({
+  active_drives: 2,
+  applications_received: 3,
+  interviews_scheduled: 1,
+  offers_released: 1,
+  offers_accepted: 0,
+  offers_rejected: 0,
+  unread_notifications: 1
+})
 
-const buildDashboardResponse = () => ({
+const buildDrivesResponse = (items = []) => ({
   data: {
-    message: 'Authenticated',
     data: {
-      user: {
-        user_id: 41,
-        company_name: 'Acme Labs'
-      },
-      summary: {
-        active_drives: 3,
-        applications_received: 12,
-        interviews_scheduled: 5,
-        offers_released: 2,
-        offers_accepted: 1,
-        offers_rejected: 1,
-        unread_notifications: 4
-      },
-      pipeline: [
-        { id: 'applied', label: 'Applied', count: 12 },
-        { id: 'shortlisted', label: 'Shortlisted', count: 6 }
-      ],
-      recent_applicants: [
-        {
-          application_id: 101,
-          student_name: 'Asha Sharma',
-          job_title: 'Platform Engineer',
-          status: 'shortlisted'
-        }
-      ]
+      items
     }
   }
 })
+
+const buildApplicationsResponse = (items = []) => ({
+  data: {
+    data: {
+      items
+    }
+  }
+})
+
+const buildNotificationsResponse = (items = []) => ({
+  data: {
+    data: {
+      items
+    }
+  }
+})
+
+const configureBootstrapMocks = ({ approvalStatus = 'approved' } = {}) => {
+  companyApi.getDashboardData.mockResolvedValue({ summary: SUMMARY })
+  companyApi.mapDashboardSummary.mockImplementation((summary) => ({ ...summary }))
+
+  companyApi.getProfile.mockResolvedValue({
+    data: {
+      data: {
+        company_name: 'Acme Labs',
+        website: 'acme.example',
+        hr_contact_name: 'Ari HR',
+        hr_contact_email: 'ari@acme.example',
+        industry: 'Software',
+        location: 'Pune',
+        company_description: 'Hiring backend and data roles.',
+        approval_status: approvalStatus,
+        created_at: '2024-06-01T00:00:00+00:00'
+      }
+    }
+  })
+
+  companyApi.getDrives.mockResolvedValue(
+    buildDrivesResponse([
+      {
+        id: 11,
+        job_title: 'Backend Engineer',
+        status: 'approved',
+        salary_lpa: 12,
+        min_cgpa: 7.0,
+        eligible_branches: ['CSE'],
+        interview_mode: 'online',
+        application_deadline: '2026-12-31T23:59:59+00:00',
+        applications_count: 1
+      }
+    ])
+  )
+
+  companyApi.getApplications.mockResolvedValue(
+    buildApplicationsResponse([
+      {
+        application_id: 501,
+        drive_id: 11,
+        drive_title: 'Backend Engineer',
+        student_name: 'Asha Sharma',
+        student_email: 'asha@example.com',
+        student_branch: 'CSE',
+        student_year: 4,
+        student_cgpa: 8.6,
+        status: 'applied',
+        applied_at: '2026-04-01T10:00:00+00:00'
+      }
+    ])
+  )
+
+  companyApi.getNotifications.mockResolvedValue(
+    buildNotificationsResponse([
+      {
+        notification_id: 801,
+        title: 'New application received',
+        message: 'A new student applied for Backend Engineer.',
+        is_read: false,
+        created_at: '2026-04-01T11:00:00+00:00'
+      }
+    ])
+  )
+
+  companyApi.updateApplicationStatus.mockResolvedValue({
+    data: {
+      data: {
+        status: 'shortlisted'
+      }
+    }
+  })
+
+  companyApi.createDrive.mockResolvedValue({ data: { success: true } })
+  companyApi.updateDrive.mockResolvedValue({ data: { success: true } })
+  companyApi.updateProfile.mockResolvedValue({ data: { data: {} } })
+  companyApi.markNotificationRead.mockResolvedValue({ data: { success: true } })
+  companyApi.markAllNotificationsRead.mockResolvedValue({ data: { success: true } })
+}
 
 const makeWrapper = (routerPush = vi.fn()) =>
   mount(CompanyDashboard, {
@@ -62,54 +152,86 @@ const makeWrapper = (routerPush = vi.fn()) =>
         }
       },
       stubs: {
-        CompanySidebar: {
-          name: 'CompanySidebar',
+        Sidebar: {
+          name: 'Sidebar',
           template: `
             <div class="sidebar-stub">
               <button class="toggle-sidebar" @click="$emit('toggle-sidebar')">Toggle</button>
-              <button class="to-drives" @click="$emit('select-view', 'drives')">Drives</button>
-              <button class="to-interviews" @click="$emit('select-view', 'interviews')">Interviews</button>
-              <button class="to-notifications" @click="$emit('select-view', 'notifications')">Notifications</button>
-              <button class="sidebar-logout" @click="$emit('request-logout')">Logout</button>
+              <button class="to-dashboard" @click="$emit('select-view', { id: 'dashboard', locked: false })">Dashboard</button>
+              <button class="to-drives" @click="$emit('select-view', { id: 'drives', locked: false })">Drives</button>
+              <button class="to-applications" @click="$emit('select-view', { id: 'applications', locked: false })">Applications</button>
+              <button class="to-profile" @click="$emit('select-view', { id: 'profile', locked: false })">Profile</button>
+              <button class="to-locked" @click="$emit('select-view', { id: 'drives', locked: true })">Locked</button>
             </div>
           `
         },
-        CompanyTopbar: {
-          name: 'CompanyTopbar',
-          props: ['currentPageTitle', 'dashboardMessage', 'syncNote', 'syncTone'],
+        Topbar: {
+          name: 'Topbar',
           template: `
-            <div class="topbar-stub">
-              <span class="page-title">{{ currentPageTitle }}</span>
-              <span class="dashboard-message">{{ dashboardMessage }}</span>
-              <span class="sync-note">{{ syncNote }}</span>
-              <span class="sync-tone">{{ syncTone }}</span>
-              <button class="topbar-logout" @click="$emit('request-logout')">Logout</button>
+            <div class="topbar-stub" @click.stop>
+              <button class="topbar-toggle-notifications" @click="$emit('toggle-notifications')">Toggle Notifications</button>
+              <button class="topbar-open-profile" @click="$emit('open-profile')">Open Profile</button>
             </div>
           `
         },
-        CompanyOverview: {
-          name: 'CompanyOverview',
-          template: '<div class="overview-stub">Overview module</div>'
+        NotificationPanel: {
+          name: 'NotificationPanel',
+          template: `
+            <div class="notification-panel-stub" @click.stop>
+              <button class="mark-all-read" @click="$emit('mark-all-read')">Mark all read</button>
+              <button class="close-notifications" @click="$emit('close')">Close</button>
+            </div>
+          `
         },
-        DriveManagement: {
-          name: 'DriveManagement',
-          template: '<button class="drive-updated" @click="$emit(\'drive-updated\')">Emit</button>'
+        DashboardOverview: {
+          name: 'DashboardOverview',
+          template: '<div class="dashboard-overview-stub">Dashboard overview</div>'
         },
-        CompanyApplications: {
-          name: 'CompanyApplications',
-          template: '<button class="applications-updated" @click="$emit(\'applications-updated\')">Emit</button>'
+        DrivesView: {
+          name: 'DrivesView',
+          template: `
+            <div class="drives-view-stub">
+              <button class="open-new-drive" @click="$emit('request-new-drive')">New drive</button>
+              <button class="open-applications" @click="$emit('open-applications', 11)">Open applications</button>
+            </div>
+          `
         },
-        CompanyInterviews: {
-          name: 'CompanyInterviews',
-          template: '<button class="interviews-updated" @click="$emit(\'interviews-updated\')">Emit</button>'
+        ApplicationsView: {
+          name: 'ApplicationsView',
+          props: ['filteredApplications'],
+          template: `
+            <div class="applications-view-stub">
+              <button
+                class="shortlist-first"
+                @click="$emit('shortlist', filteredApplications[0])"
+              >Shortlist first</button>
+            </div>
+          `
         },
-        CompanyOffers: {
-          name: 'CompanyOffers',
-          template: '<button class="offers-updated" @click="$emit(\'offers-updated\')">Emit</button>'
+        ProfileView: {
+          name: 'ProfileView',
+          template: '<div class="profile-view-stub">Profile view</div>'
         },
-        CompanyNotifications: {
-          name: 'CompanyNotifications',
-          template: '<button class="notifications-updated" @click="$emit(\'notifications-updated\')">Emit</button>'
+        AnalyticsView: {
+          name: 'AnalyticsView',
+          template: '<div class="analytics-view-stub">Analytics view</div>'
+        },
+        NewDriveModal: {
+          name: 'NewDriveModal',
+          template: `
+            <div class="new-drive-modal-stub">
+              <button class="set-title" @click="$emit('update-field', 'title', 'Platform Engineer Intern')">Title</button>
+              <button class="set-salary" @click="$emit('update-field', 'salary', '18')">Salary</button>
+              <button class="set-deadline" @click="$emit('update-field', 'deadline', '2026-12-30')">Deadline</button>
+              <button class="submit-drive" @click="$emit('submit')">Submit</button>
+              <button class="close-drive-modal" @click="$emit('close')">Close</button>
+            </div>
+          `
+        },
+        Toast: {
+          name: 'Toast',
+          props: ['toast'],
+          template: '<div class="toast-stub">{{ toast.message }}</div>'
         }
       }
     }
@@ -118,133 +240,128 @@ const makeWrapper = (routerPush = vi.fn()) =>
 describe('CompanyDashboard phase 6 integration', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    localStorage.clear()
+    configureBootstrapMocks()
   })
 
-  it('bootstraps identity and renders overview by default', async () => {
-    authApi.getMe.mockResolvedValue({
-      data: {
-        data: {
-          user_id: 41,
-          username: 'acme_admin',
-          email: 'admin@acme.example'
-        }
-      }
-    })
-    companyApi.getDashboard.mockResolvedValue(buildDashboardResponse())
-
+  it('bootstraps API data and renders dashboard by default', async () => {
     const wrapper = makeWrapper()
     await flushPromises()
     await flushPromises()
 
-    expect(authApi.getMe).toHaveBeenCalledTimes(1)
-    expect(companyApi.getDashboard).toHaveBeenCalledTimes(1)
-    expect(wrapper.find('.overview-stub').exists()).toBe(true)
-    expect(wrapper.text()).toContain('Authenticated')
-    expect(wrapper.vm.summary).toMatchObject({
-      active_drives: 3,
-      applications_received: 12,
-      interviews_scheduled: 5,
-      offers_released: 2,
-      offers_accepted: 1,
-      offers_rejected: 1,
-      unread_notifications: 4
-    })
+    expect(companyApi.getDashboardData).toHaveBeenCalledTimes(1)
+    expect(companyApi.getProfile).toHaveBeenCalledTimes(1)
+    expect(companyApi.getDrives).toHaveBeenCalledTimes(1)
+    expect(companyApi.getApplications).toHaveBeenCalledTimes(1)
+    expect(companyApi.getNotifications).toHaveBeenCalledTimes(1)
+    expect(companyApi.mapDashboardSummary).toHaveBeenCalledTimes(1)
+
+    expect(wrapper.vm.activeView).toBe('dashboard')
+    expect(wrapper.find('.dashboard-overview-stub').exists()).toBe(true)
+    expect(wrapper.vm.companyProfile.name).toBe('Acme Labs')
+    expect(wrapper.vm.myDrives).toHaveLength(1)
+    expect(wrapper.vm.allApplications).toHaveLength(1)
   })
 
-  it('restores persisted view and sidebar state from localStorage', async () => {
-    localStorage.setItem(STORAGE_KEYS.activeView, 'interviews')
-    localStorage.setItem(STORAGE_KEYS.sidebarCollapsed, '1')
-
-    authApi.getMe.mockResolvedValue({
-      data: {
-        data: {
-          user_id: 41,
-          username: 'acme_admin',
-          email: 'admin@acme.example'
-        }
-      }
-    })
-    companyApi.getDashboard.mockResolvedValue(buildDashboardResponse())
-
-    const wrapper = makeWrapper()
-    await flushPromises()
-    await flushPromises()
-
-    expect(wrapper.vm.activeView).toBe('interviews')
-    expect(wrapper.vm.sidebarCollapsed).toBe(true)
-    expect(wrapper.find('.interviews-updated').exists()).toBe(true)
-  })
-
-  it('falls back to overview when persisted view is invalid', async () => {
-    localStorage.setItem(STORAGE_KEYS.activeView, 'invalid-view')
-
-    authApi.getMe.mockResolvedValue({
-      data: {
-        data: {
-          user_id: 41,
-          username: 'acme_admin',
-          email: 'admin@acme.example'
-        }
-      }
-    })
-    companyApi.getDashboard.mockResolvedValue(buildDashboardResponse())
-
-    const wrapper = makeWrapper()
-    await flushPromises()
-    await flushPromises()
-
-    expect(wrapper.vm.activeView).toBe('overview')
-    expect(wrapper.find('.overview-stub').exists()).toBe(true)
-  })
-
-  it('shows load error and retries bootstrap successfully', async () => {
-    authApi.getMe
+  it('shows load error and retries bootstrap successfully when profile call fails', async () => {
+    companyApi.getProfile
       .mockRejectedValueOnce({
         response: {
           data: {
-            error: 'Session expired. Login again.'
+            error: 'Profile temporarily unavailable'
           }
         }
       })
-      .mockResolvedValueOnce({
-        data: {
-          data: {
-            user_id: 41,
-            username: 'acme_admin',
-            email: 'admin@acme.example'
-          }
-        }
-      })
-
-    companyApi.getDashboard.mockResolvedValue(buildDashboardResponse())
 
     const wrapper = makeWrapper()
     await flushPromises()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Session expired. Login again.')
+    expect(wrapper.text()).toContain('Profile temporarily unavailable')
+    expect(parseApiError).toHaveBeenCalled()
 
-    await wrapper.get('.cq-state-card.is-error .cq-btn').trigger('click')
+    await wrapper.get('.rq-btn-primary').trigger('click')
     await flushPromises()
     await flushPromises()
 
-    expect(authApi.getMe).toHaveBeenCalledTimes(2)
-    expect(companyApi.getDashboard).toHaveBeenCalledTimes(2)
-    expect(wrapper.find('.overview-stub').exists()).toBe(true)
+    expect(companyApi.getProfile).toHaveBeenCalledTimes(2)
+    expect(wrapper.vm.loadError).toBe('')
+    expect(wrapper.find('.dashboard-overview-stub').exists()).toBe(true)
   })
 
-  it('persists UI state and refreshes dashboard when module emits update event', async () => {
-    authApi.getMe.mockResolvedValue({
-      data: {
-        data: {
-          user_id: 41,
-          username: 'acme_admin',
-          email: 'admin@acme.example'
-        }
-      }
-    })
-    companyApi.getDashboard.mockResolvedValue(buildDashboardResponse())
+  it('keeps dashboard visible when a non-critical API call fails', async () => {
+    companyApi.getNotifications.mockRejectedValueOnce({ message: 'Network Error' })
+
+    const wrapper = makeWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.vm.loadError).toBe('')
+    expect(wrapper.find('.dashboard-overview-stub').exists()).toBe(true)
+    expect(wrapper.vm.toast.show).toBe(true)
+    expect(wrapper.vm.toast.type).toBe('warning')
+    expect(wrapper.vm.toast.message).toContain('temporarily unavailable')
+  })
+
+  it('toggles sidebar and blocks locked section while pending approval', async () => {
+    configureBootstrapMocks({ approvalStatus: 'pending' })
+
+    const wrapper = makeWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    await wrapper.get('.toggle-sidebar').trigger('click')
+    expect(wrapper.vm.sidebarCollapsed).toBe(true)
+
+    await wrapper.get('.to-locked').trigger('click')
+    expect(wrapper.vm.activeView).toBe('dashboard')
+    expect(wrapper.vm.toast.show).toBe(true)
+    expect(wrapper.vm.toast.type).toBe('warning')
+    expect(wrapper.vm.toast.message).toContain('available after admin approval')
+  })
+
+  it('creates a new drive from modal and refreshes drive list', async () => {
+    companyApi.getDrives
+      .mockResolvedValueOnce(
+        buildDrivesResponse([
+          {
+            id: 11,
+            job_title: 'Backend Engineer',
+            status: 'approved',
+            salary_lpa: 12,
+            min_cgpa: 7.0,
+            eligible_branches: ['CSE'],
+            interview_mode: 'online',
+            application_deadline: '2026-12-31T23:59:59+00:00',
+            applications_count: 1
+          }
+        ])
+      )
+      .mockResolvedValueOnce(
+        buildDrivesResponse([
+          {
+            id: 11,
+            job_title: 'Backend Engineer',
+            status: 'approved',
+            salary_lpa: 12,
+            min_cgpa: 7.0,
+            eligible_branches: ['CSE'],
+            interview_mode: 'online',
+            application_deadline: '2026-12-31T23:59:59+00:00',
+            applications_count: 1
+          },
+          {
+            id: 12,
+            job_title: 'Platform Engineer Intern',
+            status: 'pending',
+            salary_lpa: 18,
+            min_cgpa: 7.5,
+            eligible_branches: ['CSE', 'ECE'],
+            interview_mode: 'both',
+            application_deadline: '2026-12-30T23:59:59+00:00',
+            applications_count: 0
+          }
+        ])
+      )
 
     const wrapper = makeWrapper()
     await flushPromises()
@@ -252,113 +369,100 @@ describe('CompanyDashboard phase 6 integration', () => {
 
     await wrapper.get('.to-drives').trigger('click')
     expect(wrapper.vm.activeView).toBe('drives')
-    expect(localStorage.getItem(STORAGE_KEYS.activeView)).toBe('drives')
 
-    await wrapper.get('.toggle-sidebar').trigger('click')
-    expect(wrapper.vm.sidebarCollapsed).toBe(true)
-    expect(localStorage.getItem(STORAGE_KEYS.sidebarCollapsed)).toBe('1')
+    await wrapper.get('.open-new-drive').trigger('click')
+    expect(wrapper.vm.showNewDriveModal).toBe(true)
 
-    await wrapper.get('.drive-updated').trigger('click')
+    await wrapper.get('.set-title').trigger('click')
+    await wrapper.get('.set-salary').trigger('click')
+    await wrapper.get('.set-deadline').trigger('click')
+    await wrapper.get('.submit-drive').trigger('click')
     await flushPromises()
     await flushPromises()
 
-    expect(authApi.getMe).toHaveBeenCalledTimes(2)
-    expect(companyApi.getDashboard).toHaveBeenCalledTimes(2)
-    expect(wrapper.text()).toContain('Drives synced')
-    expect(wrapper.vm.syncTone).toBe('success')
+    expect(companyApi.createDrive).toHaveBeenCalledWith(
+      expect.objectContaining({
+        job_title: 'Platform Engineer Intern',
+        salary_lpa: 18,
+        application_deadline: '2026-12-30T23:59:59+00:00'
+      })
+    )
+    expect(companyApi.getDrives).toHaveBeenCalledTimes(2)
+    expect(wrapper.vm.showNewDriveModal).toBe(false)
+    expect(wrapper.vm.myDrives).toHaveLength(2)
+    expect(wrapper.vm.toast.message).toContain('submitted for admin approval')
   })
 
-  it('shows sync note error without breaking page when silent refresh fails', async () => {
-    authApi.getMe.mockResolvedValueOnce({
-      data: {
-        data: {
-          user_id: 41,
-          username: 'acme_admin',
-          email: 'admin@acme.example'
-        }
-      }
-    })
-    companyApi.getDashboard.mockResolvedValueOnce(buildDashboardResponse())
-
-    authApi.getMe.mockRejectedValueOnce({
-      response: {
-        data: {
-          error: 'Background refresh failed'
-        }
-      }
-    })
-    companyApi.getDashboard.mockResolvedValueOnce(buildDashboardResponse())
-
+  it('updates application status from applications actions', async () => {
     const wrapper = makeWrapper()
     await flushPromises()
     await flushPromises()
 
-    await wrapper.get('.to-drives').trigger('click')
-    await wrapper.get('.drive-updated').trigger('click')
+    await wrapper.get('.to-applications').trigger('click')
+    expect(wrapper.vm.activeView).toBe('applications')
+
+    await wrapper.get('.shortlist-first').trigger('click')
     await flushPromises()
     await flushPromises()
 
-    expect(wrapper.vm.loadError).toBe('')
-    expect(wrapper.vm.syncTone).toBe('error')
-    expect(wrapper.text()).toContain('Background refresh failed')
+    expect(companyApi.updateApplicationStatus).toHaveBeenCalledWith(501, { status: 'shortlisted' })
+    expect(wrapper.vm.allApplications[0].status).toBe('shortlisted')
+    expect(wrapper.vm.toast.message).toContain('shortlisted')
   })
 
-  it('switches to notifications view and refreshes on notifications-updated event', async () => {
-    authApi.getMe.mockResolvedValue({
-      data: {
-        data: {
-          user_id: 41,
-          username: 'acme_admin',
-          email: 'admin@acme.example'
-        }
-      }
-    })
-    companyApi.getDashboard.mockResolvedValue(buildDashboardResponse())
-
-    const wrapper = makeWrapper()
-    await flushPromises()
-    await flushPromises()
-
-    await wrapper.get('.to-notifications').trigger('click')
-    expect(wrapper.vm.activeView).toBe('notifications')
-    expect(wrapper.find('.notifications-updated').exists()).toBe(true)
-
-    await wrapper.get('.notifications-updated').trigger('click')
-    await flushPromises()
-    await flushPromises()
-
-    expect(authApi.getMe).toHaveBeenCalledTimes(2)
-    expect(companyApi.getDashboard).toHaveBeenCalledTimes(2)
-    expect(wrapper.text()).toContain('Notifications synced')
-  })
-
-  it('clears auth storage and routes to login on logout event', async () => {
+  it('routes to login when an API call returns 401', async () => {
     const push = vi.fn()
 
-    localStorage.setItem('token', 'sample-token')
-    localStorage.setItem('role', 'company')
-    localStorage.setItem('user_id', '41')
-
-    authApi.getMe.mockResolvedValue({
-      data: {
+    companyApi.getProfile.mockRejectedValue({
+      response: {
+        status: 401,
         data: {
-          user_id: 41,
-          username: 'acme_admin',
-          email: 'admin@acme.example'
+          error: 'Session expired. Login again.'
         }
       }
     })
-    companyApi.getDashboard.mockResolvedValue(buildDashboardResponse())
 
     const wrapper = makeWrapper(push)
     await flushPromises()
     await flushPromises()
 
-    await wrapper.get('.topbar-logout').trigger('click')
-
-    expect(localStorage.getItem('token')).toBeNull()
-    expect(localStorage.getItem('role')).toBeNull()
-    expect(localStorage.getItem('user_id')).toBeNull()
     expect(push).toHaveBeenCalledWith('/login')
+    expect(wrapper.vm.loadError).toBe('Session expired. Login again.')
+  })
+
+  it('opens and closes notification panel and marks all as read', async () => {
+    const wrapper = makeWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.vm.showNotifPanel).toBe(false)
+
+    await wrapper.get('.topbar-toggle-notifications').trigger('click')
+    expect(wrapper.vm.showNotifPanel).toBe(true)
+
+    await wrapper.get('.mark-all-read').trigger('click')
+    await flushPromises()
+
+    expect(companyApi.markAllNotificationsRead).toHaveBeenCalledTimes(1)
+    expect(wrapper.vm.notifications.every((entry) => entry.read)).toBe(true)
+
+    await wrapper.get('.close-notifications').trigger('click')
+    expect(wrapper.vm.showNotifPanel).toBe(false)
+  })
+
+  it('keeps actions blocked for pending companies', async () => {
+    configureBootstrapMocks({ approvalStatus: 'pending' })
+
+    const wrapper = makeWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    await wrapper.get('.to-applications').trigger('click')
+    expect(wrapper.vm.activeView).toBe('applications')
+
+    await wrapper.get('.shortlist-first').trigger('click')
+    expect(companyApi.updateApplicationStatus).not.toHaveBeenCalled()
+    expect(wrapper.vm.toast.message).toContain('enabled only after admin approval')
+    expect(wrapper.vm.toast.type).toBe('warning')
   })
 })
