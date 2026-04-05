@@ -47,6 +47,27 @@ def _current_user_id():
 	except (TypeError, ValueError):
 		return None
 
+
+def _create_admin_notifications(title, message, sender_id=None, resource_type=None, resource_id=None):
+	admin_users = User.query.filter(
+		User.role == "admin",
+		User.is_active.is_(True),
+	).all()
+
+	for admin_user in admin_users:
+		db.session.add(
+			Notification(
+				recipient_id=admin_user.user_id,
+				sender_id=sender_id,
+				notification_type="in_app",
+				title=(title or "Update").strip()[:200],
+				message=(message or "").strip() or "You have a new update.",
+				related_resource_type=(resource_type or "system").strip()[:100],
+				related_resource_id=resource_id,
+				delivery_status="sent",
+			)
+		)
+
 @auth_bp.post("/register/student")
 def register_student():
 	data = _normalized_json_payload()
@@ -172,6 +193,15 @@ def register_company():
 			approval_status="pending",
 		)
 		db.session.add(company)
+		db.session.flush()
+
+		_create_admin_notifications(
+			"New Company Registration",
+			f"{company.company_name} registered and is awaiting approval.",
+			sender_id=user.user_id,
+			resource_type="company",
+			resource_id=company.company_id,
+		)
 		db.session.commit()
 	except IntegrityError:
 		db.session.rollback()

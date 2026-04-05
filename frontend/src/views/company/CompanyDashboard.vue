@@ -1,5 +1,5 @@
 <template>
-  <div class="rq-app" :class="{ 'is-collapsed': sidebarCollapsed }" @click="closeAllPanels">
+  <div class="rq-app rq-company-app" :class="{ 'is-collapsed': sidebarCollapsed }" @click="closeAllPanels">
     <Sidebar
       :sidebar-collapsed="sidebarCollapsed"
       :nav-items="navItems"
@@ -7,6 +7,7 @@
       :company-profile="companyProfile"
       @toggle-sidebar="sidebarCollapsed = !sidebarCollapsed"
       @select-view="handleNavClick"
+      @request-logout="handleLogout"
     />
 
     <div class="rq-main">
@@ -14,20 +15,26 @@
         :current-page-title="currentPageTitle"
         :company-profile="companyProfile"
         :unread-notif-count="unreadNotifCount"
-        @toggle-notifications="showNotifPanel = !showNotifPanel"
+        @toggle-notifications="toggleNotificationsPanel"
         @open-profile="activeView = 'profile'"
+        @request-logout="handleLogout"
       />
 
       <Transition name="rq-slide">
         <NotificationPanel
           v-if="showNotifPanel"
           :notifications="notifications"
-          @close="showNotifPanel = false"
+          :unread-count="unreadNotifCount"
+          :error-message="notificationsError"
+          :is-loading="isLoadingNotifications"
+          :is-marking="isMarkingNotification"
+          :is-marking-all="isMarkingAllNotifications"
+          @close="closeNotificationsPanel"
           @mark-all-read="markAllRead"
           @mark-read="markNotificationRead"
         />
       </Transition>
-      <div v-if="showNotifPanel" class="rq-notif-backdrop" @click="showNotifPanel = false"></div>
+      <div v-if="showNotifPanel" class="rq-notif-backdrop" @click="closeNotificationsPanel"></div>
 
       <main class="rq-page" role="main">
         <section v-if="isLoading" class="rq-card">
@@ -288,6 +295,10 @@ export default {
       myDrives: [],
       allApplications: [],
       notifications: [],
+      notificationsError: '',
+      isLoadingNotifications: false,
+      isMarkingNotification: {},
+      isMarkingAllNotifications: false,
 
       driveFilter: '',
       appSearch: '',
@@ -514,7 +525,25 @@ export default {
       }
     },
     closeAllPanels() {
+      this.closeNotificationsPanel()
+    },
+    closeNotificationsPanel() {
       this.showNotifPanel = false
+    },
+    toggleNotificationsPanel() {
+      if (this.showNotifPanel) {
+        this.closeNotificationsPanel()
+        return
+      }
+
+      this.showNotifPanel = true
+      this.loadNotifications({ silent: true })
+    },
+    handleLogout() {
+      localStorage.removeItem('token')
+      localStorage.removeItem('role')
+      localStorage.removeItem('user_id')
+      this.$router.push('/login')
     },
     handleNavClick(item) {
       if (item.locked && this.companyProfile.status !== 'approved') {
@@ -813,6 +842,7 @@ export default {
     async bootstrapDashboard() {
       this.isLoading = true
       this.loadError = ''
+      this.notificationsError = ''
 
       const [dashboardResult, profileResult, drivesResult, applicationsResult, notificationsResult] = await Promise.allSettled([
         companyApi.getDashboardData(),
@@ -861,8 +891,11 @@ export default {
       if (notificationsResult.status === 'fulfilled') {
         const items = notificationsResult.value?.data?.data?.items || []
         this.notifications = Array.isArray(items) ? items.map((item) => this.normalizeNotification(item)) : []
+        this.notificationsError = ''
       } else {
-        nonBlockingErrors.push(this.handleApiError(notificationsResult.reason, 'Failed to load notifications.'))
+        const message = this.handleApiError(notificationsResult.reason, 'Failed to load notifications.')
+        this.notificationsError = message
+        nonBlockingErrors.push(message)
         shouldDeriveSummary = true
       }
 
@@ -887,6 +920,29 @@ export default {
       }
 
       this.isLoading = false
+    },
+    async loadNotifications(options = {}) {
+      const silent = Boolean(options.silent)
+      this.isLoadingNotifications = true
+
+      if (!silent) {
+        this.notificationsError = ''
+      }
+
+      try {
+        const response = await companyApi.getNotifications({ page: 1, limit: 100, is_read: 'all' })
+        const items = response?.data?.data?.items || []
+        this.notifications = Array.isArray(items) ? items.map((item) => this.normalizeNotification(item)) : []
+        this.notificationsError = ''
+      } catch (error) {
+        const message = this.handleApiError(error, 'Failed to load notifications.')
+        this.notificationsError = message
+        if (!silent) {
+          this.toast_show(message, 'danger')
+        }
+      } finally {
+        this.isLoadingNotifications = false
+      }
     },
     async updateApplicationStatus(application, payload, successMessage) {
       if (!this.canManageApplications) {
@@ -1102,29 +1158,57 @@ export default {
       }
     },
     async markNotificationRead(notificationId) {
-      const target = this.notifications.find((notification) => Number(notification.id) === Number(notificationId))
+      const targetId = Number(notificationId)
+      if (!targetId || this.isMarkingNotification[targetId]) {
+        return
+      }
+
+      const target = this.notifications.find((notification) => Number(notification.id) === targetId)
       if (!target || target.read) {
         return
       }
 
+      this.isMarkingNotification = {
+        ...this.isMarkingNotification,
+        [targetId]: true
+      }
+
       target.read = true
       try {
-        await companyApi.markNotificationRead(notificationId)
+        await companyApi.markNotificationRead(targetId)
+        this.notificationsError = ''
       } catch (error) {
         target.read = false
-        this.handleApiError(error, 'Unable to mark notification as read.', { showToast: true })
+        this.notificationsError = this.handleApiError(error, 'Unable to mark notification as read.', { showToast: true })
+      } finally {
+        this.isMarkingNotification = {
+          ...this.isMarkingNotification,
+          [targetId]: false
+        }
       }
     },
     async markAllRead() {
+      if (this.isMarkingAllNotifications || this.unreadNotifCount === 0) {
+        return
+      }
+
+      this.isMarkingAllNotifications = true
+      const previous = this.notifications.map((notification) => ({ ...notification }))
+
       try {
-        await companyApi.markAllNotificationsRead()
         this.notifications = this.notifications.map((notification) => ({
           ...notification,
           read: true
         }))
+
+        await companyApi.markAllNotificationsRead()
+        this.notificationsError = ''
         this.toast_show('All notifications marked as read.', 'success')
       } catch (error) {
-        this.handleApiError(error, 'Unable to mark all notifications as read.', { showToast: true })
+        this.notifications = previous
+        this.notificationsError = this.handleApiError(error, 'Unable to mark all notifications as read.', { showToast: true })
+      } finally {
+        this.isMarkingAllNotifications = false
       }
     },
     doExport(scope) {

@@ -33,6 +33,24 @@ def _parse_pagination_and_sort():
     return page, limit, sort_by, order, None
 
 
+def _parse_pagination():
+    page_raw = request.args.get("page", "1")
+    limit_raw = request.args.get("limit", "10")
+
+    try:
+        page = int(page_raw)
+        limit = int(limit_raw)
+    except (TypeError, ValueError):
+        return None, None, ("page and limit must be integers", 400)
+
+    if page < 1:
+        return None, None, ("page must be greater than 0", 400)
+    if limit < 1:
+        return None, None, ("limit must be greater than 0", 400)
+
+    return page, min(limit, MAX_LIMIT), None
+
+
 def _json_result(service_result):
     payload, status_code = service_result
     return jsonify(payload), status_code
@@ -67,6 +85,49 @@ def list_activity_logs():
         return jsonify({"success": False, "error": "limit must be greater than 0"}), 400
 
     return _json_result(services.list_activity_logs(limit))
+
+
+@admin_bp.get("/notifications")
+@jwt_required()
+@role_required("admin")
+def list_notifications():
+    admin_user_id = _current_user_id()
+    if admin_user_id is None:
+        return jsonify({"success": False, "error": "Invalid token identity"}), 401
+
+    page, limit, error = _parse_pagination()
+    if error:
+        message, status_code = error
+        return jsonify({"success": False, "error": message}), status_code
+
+    read_filter = (request.args.get("is_read") or "all").strip().lower()
+    return _json_result(
+        services.list_notifications(admin_user_id, page, limit, read_filter)
+    )
+
+
+@admin_bp.put("/notifications/<int:notification_id>/read")
+@jwt_required()
+@role_required("admin")
+def mark_notification_read(notification_id):
+    admin_user_id = _current_user_id()
+    if admin_user_id is None:
+        return jsonify({"success": False, "error": "Invalid token identity"}), 401
+
+    return _json_result(
+        services.mark_notification_read(admin_user_id, notification_id)
+    )
+
+
+@admin_bp.put("/notifications/read-all")
+@jwt_required()
+@role_required("admin")
+def mark_all_notifications_read():
+    admin_user_id = _current_user_id()
+    if admin_user_id is None:
+        return jsonify({"success": False, "error": "Invalid token identity"}), 401
+
+    return _json_result(services.mark_all_notifications_read(admin_user_id))
 
 
 @admin_bp.get("/companies")

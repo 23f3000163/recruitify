@@ -162,6 +162,7 @@ const makeWrapper = (routerPush = vi.fn()) =>
               <button class="to-applications" @click="$emit('select-view', { id: 'applications', locked: false })">Applications</button>
               <button class="to-profile" @click="$emit('select-view', { id: 'profile', locked: false })">Profile</button>
               <button class="to-locked" @click="$emit('select-view', { id: 'drives', locked: true })">Locked</button>
+              <button class="sidebar-logout" @click="$emit('request-logout')">Sidebar logout</button>
             </div>
           `
         },
@@ -171,6 +172,7 @@ const makeWrapper = (routerPush = vi.fn()) =>
             <div class="topbar-stub" @click.stop>
               <button class="topbar-toggle-notifications" @click="$emit('toggle-notifications')">Toggle Notifications</button>
               <button class="topbar-open-profile" @click="$emit('open-profile')">Open Profile</button>
+              <button class="topbar-logout" @click="$emit('request-logout')">Topbar logout</button>
             </div>
           `
         },
@@ -428,6 +430,36 @@ describe('CompanyDashboard phase 6 integration', () => {
 
     expect(push).toHaveBeenCalledWith('/login')
     expect(wrapper.vm.loadError).toBe('Session expired. Login again.')
+  })
+
+  it('handles logout events from sidebar and topbar user menus', async () => {
+    const push = vi.fn()
+
+    localStorage.setItem('token', 'sample-token')
+    localStorage.setItem('role', 'company')
+    localStorage.setItem('user_id', '41')
+
+    const wrapper = makeWrapper(push)
+    await flushPromises()
+    await flushPromises()
+
+    await wrapper.get('.sidebar-logout').trigger('click')
+
+    expect(localStorage.getItem('token')).toBeNull()
+    expect(localStorage.getItem('role')).toBeNull()
+    expect(localStorage.getItem('user_id')).toBeNull()
+    expect(push).toHaveBeenCalledWith('/login')
+
+    localStorage.setItem('token', 'sample-token')
+    localStorage.setItem('role', 'company')
+    localStorage.setItem('user_id', '41')
+
+    await wrapper.get('.topbar-logout').trigger('click')
+
+    expect(localStorage.getItem('token')).toBeNull()
+    expect(localStorage.getItem('role')).toBeNull()
+    expect(localStorage.getItem('user_id')).toBeNull()
+    expect(push).toHaveBeenCalledTimes(2)
   })
 
   it('opens and closes notification panel and marks all as read', async () => {

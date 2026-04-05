@@ -1,11 +1,21 @@
 """Service layer for admin dashboard and management operations."""
 
+from datetime import datetime, timezone
 from math import ceil
 
 from sqlalchemy import func, or_
 from sqlalchemy.orm import selectinload
 
-from app.models import ActivityLog, Application, Company, PlacementDrive, Student, User, db
+from app.models import (
+    ActivityLog,
+    Application,
+    Company,
+    Notification,
+    PlacementDrive,
+    Student,
+    User,
+    db,
+)
 
 
 ALLOWED_ORDER_VALUES = {"asc", "desc"}
@@ -18,6 +28,7 @@ ALLOWED_APPLICATION_STATUSES = {
     "waitlisted",
 }
 ALLOWED_ACTIVITY_STATUSES = {"success", "danger", "warning", "info"}
+ALLOWED_NOTIFICATION_READ_FILTERS = {"all", "true", "false"}
 
 
 def _ok(data, status_code=200):
@@ -143,6 +154,106 @@ def _activity_log_to_dict(log):
         "time": log.timestamp.isoformat() if log.timestamp else None,
         "timestamp": log.timestamp.isoformat() if log.timestamp else None,
     }
+
+
+def _notification_query_for_admin(admin_user_id):
+    return Notification.query.filter(
+        Notification.recipient_id == admin_user_id,
+        Notification.notification_type == "in_app",
+    )
+
+
+def _notification_to_dict(notification):
+    return notification.to_dict()
+
+
+def list_notifications(admin_user_id, page, limit, is_read="all"):
+    read_filter = (is_read or "all").strip().lower()
+    if read_filter not in ALLOWED_NOTIFICATION_READ_FILTERS:
+        return _error("is_read must be one of all, true, or false", 400)
+
+    query = _notification_query_for_admin(admin_user_id)
+    if read_filter == "true":
+        query = query.filter(Notification.is_read.is_(True))
+    elif read_filter == "false":
+        query = query.filter(Notification.is_read.is_(False))
+
+    ordered_query = query.order_by(
+        Notification.created_at.desc(),
+        Notification.notification_id.desc(),
+    )
+    items, total, pages = _paginate_query(ordered_query, page, limit)
+
+    unread_count = _notification_query_for_admin(admin_user_id).filter(
+        Notification.is_read.is_(False)
+    ).count()
+
+    return _ok(
+        {
+            "items": [_notification_to_dict(item) for item in items],
+            "total": total,
+            "page": page,
+            "pages": pages,
+            "limit": limit,
+            "unread_count": unread_count,
+        }
+    )
+
+
+def mark_notification_read(admin_user_id, notification_id):
+    notification = _notification_query_for_admin(admin_user_id).filter(
+        Notification.notification_id == notification_id
+    ).first()
+    if not notification:
+        return _error("Notification not found", 404)
+
+    if not notification.is_read:
+        notification.is_read = True
+        notification.read_at = datetime.now(timezone.utc)
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return _error("Unable to update notification", 500)
+
+    unread_count = _notification_query_for_admin(admin_user_id).filter(
+        Notification.is_read.is_(False)
+    ).count()
+
+    return _ok(
+        {
+            "notification": _notification_to_dict(notification),
+            "unread_count": unread_count,
+        }
+    )
+
+
+def mark_all_notifications_read(admin_user_id):
+    unread_notifications = _notification_query_for_admin(admin_user_id).filter(
+        Notification.is_read.is_(False)
+    ).all()
+
+    if not unread_notifications:
+        return _ok({"updated_count": 0, "unread_count": 0})
+
+    read_time = datetime.now(timezone.utc)
+    for notification in unread_notifications:
+        notification.is_read = True
+        notification.read_at = read_time
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return _error("Unable to update notifications", 500)
+
+    return _ok(
+        {
+            "updated_count": len(unread_notifications),
+            "unread_count": 0,
+        }
+    )
 
 
 def get_dashboard_stats():

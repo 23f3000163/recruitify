@@ -438,6 +438,15 @@ export const adminApi = {
   },
   searchStudents(query, params = {}) {
     return apiClient.get('/admin/search/students', { params: { q: query, ...params } })
+  },
+  getNotifications(params = {}) {
+    return apiClient.get('/admin/notifications', { params })
+  },
+  markNotificationRead(notificationId) {
+    return apiClient.put(`/admin/notifications/${notificationId}/read`)
+  },
+  markAllNotificationsRead() {
+    return apiClient.put('/admin/notifications/read-all')
   }
 }
 

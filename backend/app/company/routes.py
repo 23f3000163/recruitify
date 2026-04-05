@@ -190,6 +190,33 @@ def _create_student_notification(
     )
 
 
+def _create_admin_notifications(
+    title,
+    message,
+    sender_id=None,
+    resource_type="drive",
+    resource_id=None,
+):
+    admin_users = User.query.filter(
+        User.role == "admin",
+        User.is_active.is_(True),
+    ).all()
+
+    for admin_user in admin_users:
+        db.session.add(
+            Notification(
+                recipient_id=admin_user.user_id,
+                sender_id=sender_id,
+                notification_type="in_app",
+                title=(title or "Update").strip()[:200],
+                message=(message or "").strip() or "You have a new update.",
+                related_resource_type=(resource_type or "drive").strip()[:100],
+                related_resource_id=resource_id,
+                delivery_status="sent",
+            )
+        )
+
+
 def _parse_pagination():
     page_raw = request.args.get("page", "1")
     limit_raw = request.args.get("limit", "10")
@@ -678,6 +705,16 @@ def create_drive():
 
     try:
         db.session.add(drive)
+        db.session.flush()
+
+        _create_admin_notifications(
+            "New Drive Submitted",
+            f"{company.company_name} submitted {drive.job_title} for review.",
+            sender_id=user_id,
+            resource_type="drive",
+            resource_id=drive.drive_id,
+        )
+
         _append_company_activity(user_id, "Drive Created", drive.job_title, "info")
         db.session.commit()
     except Exception:

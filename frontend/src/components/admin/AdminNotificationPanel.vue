@@ -1,8 +1,8 @@
 <template>
-  <aside class="rq-notif-panel" role="complementary" aria-label="Notifications" @click.stop>
-    <div class="rq-notif-hd">
+  <aside class="rq-admin-notif-panel" role="complementary" aria-label="Admin notifications" @click.stop>
+    <div class="rq-admin-notif-hd">
       <span class="rq-card-title">Notifications</span>
-      <div class="rq-notif-actions">
+      <div class="rq-admin-notif-actions">
         <button
           class="rq-ghost rq-ghost-xs"
           type="button"
@@ -11,7 +11,7 @@
         >
           {{ isMarkingAll ? 'Saving...' : 'Mark all read' }}
         </button>
-        <button class="rq-modal-close" type="button" @click="$emit('close')" aria-label="Close notifications">
+        <button class="rq-modal-close" type="button" aria-label="Close notifications" @click="$emit('close')">
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
             <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
           </svg>
@@ -19,26 +19,26 @@
       </div>
     </div>
 
-    <p v-if="errorMessage" class="rq-notif-error" role="alert">{{ errorMessage }}</p>
+    <p v-if="errorMessage" class="rq-admin-notif-error" role="alert">{{ errorMessage }}</p>
 
-    <div class="rq-notif-list" :aria-busy="isLoading ? 'true' : 'false'">
-      <article v-if="isLoading" class="rq-notif-item">
+    <div class="rq-admin-notif-list" :aria-busy="isLoading ? 'true' : 'false'">
+      <article v-if="isLoading" class="rq-admin-notif-item">
         <div class="rq-notif-body">
           <div class="rq-notif-title">Loading notifications...</div>
         </div>
       </article>
 
-      <article v-else-if="!notifications.length" class="rq-notif-item">
+      <article v-else-if="!notifications.length" class="rq-admin-notif-item">
         <div class="rq-notif-body">
           <div class="rq-notif-title">No notifications yet</div>
-          <div class="rq-notif-sub">You will see company alerts here.</div>
+          <div class="rq-notif-sub">You will see admin alerts here.</div>
         </div>
       </article>
 
       <article
         v-for="notification in notifications"
         :key="notification.id"
-        class="rq-notif-item"
+        class="rq-admin-notif-item"
         :class="{ unread: !notification.read }"
         @click="markRead(notification)"
       >
@@ -55,11 +55,15 @@
 
 <script>
 export default {
-  name: 'NotificationPanel',
+  name: 'AdminNotificationPanel',
   props: {
     notifications: {
       type: Array,
       default: () => []
+    },
+    isLoading: {
+      type: Boolean,
+      default: false
     },
     unreadCount: {
       type: Number,
@@ -68,10 +72,6 @@ export default {
     errorMessage: {
       type: String,
       default: ''
-    },
-    isLoading: {
-      type: Boolean,
-      default: false
     },
     isMarking: {
       type: Object,
@@ -82,7 +82,7 @@ export default {
       default: false
     }
   },
-  emits: ['close', 'mark-all-read', 'mark-read'],
+  emits: ['close', 'mark-read', 'mark-all-read'],
   methods: {
     markRead(notification) {
       if (!notification || notification.read || this.isMarking[notification.id]) {

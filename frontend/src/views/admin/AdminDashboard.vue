@@ -16,7 +16,7 @@
         :search-focused="searchFocused"
         :search-dropdown-open="searchDropdownOpen"
         :search-results="searchResults"
-        :pending-count="pendingCount"
+        :pending-count="unreadNotificationsCount"
         :show-notifications="showNotifications"
         @set-search-focused="searchFocused = $event"
         @set-search-dropdown-open="searchDropdownOpen = $event"
@@ -25,9 +25,29 @@
         @clear-search="clearSearch"
         @commit-search="commitSearch"
         @go-to-result="goToResult"
-        @toggle-notifications="showNotifications = !showNotifications"
+        @toggle-notifications="toggleNotificationsPanel"
         @request-logout="handleLogout"
       />
+
+      <Transition name="rq-slide">
+        <AdminNotificationPanel
+          v-if="showNotifications"
+          :notifications="notifications"
+          :is-loading="isLoadingNotifications"
+          :unread-count="unreadNotificationsCount"
+          :error-message="notificationsError"
+          :is-marking="isMarkingNotification"
+          :is-marking-all="isMarkingAllNotifications"
+          @close="closeNotificationsPanel"
+          @mark-read="markNotificationRead"
+          @mark-all-read="markAllNotificationsRead"
+        />
+      </Transition>
+      <div
+        v-if="showNotifications"
+        class="rq-admin-notif-backdrop"
+        @click="closeNotificationsPanel"
+      ></div>
 
       <main class="rq-page" role="main" @click="searchDropdownOpen = false">
         <DashboardOverview
@@ -168,6 +188,7 @@
 <script>
 import { adminApi } from '../../api/api'
 import AnalyticsPanel from '../../components/admin/AnalyticsPanel.vue'
+import AdminNotificationPanel from '../../components/admin/AdminNotificationPanel.vue'
 import CompaniesTable from '../../components/admin/CompaniesTable.vue'
 import DashboardOverview from '../../components/admin/DashboardOverview.vue'
 import DrivesPanel from '../../components/admin/DrivesPanel.vue'
@@ -182,6 +203,7 @@ export default {
   components: {
     Sidebar,
     Topbar,
+    AdminNotificationPanel,
     DashboardOverview,
     CompaniesTable,
     StudentsTable,
@@ -236,6 +258,12 @@ export default {
       driveOrder: 'desc',
       selectedStudent: null,
       showNotifications: false,
+      notifications: [],
+      unreadNotificationsCount: 0,
+      notificationsError: '',
+      isLoadingNotifications: false,
+      isMarkingNotification: {},
+      isMarkingAllNotifications: false,
       toast: { show: false, message: '', icon: '', type: 'success' },
       _toastTimer: null,
       loading: {
@@ -298,7 +326,7 @@ export default {
       return labels[this.activeView] || ''
     },
     pendingCount() {
-      return this.pendingApprovals.length
+      return Number(this.unreadNotificationsCount || 0)
     },
     navItems() {
       const pendingCompanies = this.companies.filter((c) => c.status === 'pending').length
@@ -562,6 +590,7 @@ export default {
     clearTimeout(this.searchDebounceTimer)
     clearTimeout(this.coSearchDebounceTimer)
     clearTimeout(this.stuSearchDebounceTimer)
+    clearTimeout(this._toastTimer)
   },
   watch: {
     coSearch(value) {
@@ -597,7 +626,8 @@ export default {
         this.fetchStudents(),
         this.fetchDrives(),
         this.fetchApplications(),
-        this.fetchAuditLog()
+        this.fetchAuditLog(),
+        this.loadNotifications({ silent: true })
       ])
     },
     pct(a, b) {
@@ -639,6 +669,156 @@ export default {
       const date = new Date(value)
       if (Number.isNaN(date.getTime())) return '—'
       return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+    },
+    formatRelativeTime(value) {
+      if (!value) return 'recently'
+
+      const parsed = new Date(value)
+      if (Number.isNaN(parsed.getTime())) return 'recently'
+
+      const deltaMs = Date.now() - parsed.getTime()
+      const deltaMinutes = Math.max(1, Math.floor(deltaMs / 60000))
+
+      if (deltaMinutes < 60) return `${deltaMinutes} min ago`
+
+      const deltaHours = Math.floor(deltaMinutes / 60)
+      if (deltaHours < 24) return `${deltaHours} hr ago`
+
+      const deltaDays = Math.floor(deltaHours / 24)
+      return deltaDays === 1 ? 'Yesterday' : `${deltaDays} days ago`
+    },
+    normalizeNotificationType(notification) {
+      const text = `${notification.title || ''} ${notification.message || ''}`.toLowerCase()
+
+      if (text.includes('reject') || text.includes('failed')) return 'danger'
+      if (text.includes('approve') || text.includes('accepted') || text.includes('success')) return 'success'
+      if (text.includes('pending') || text.includes('review')) return 'warning'
+      return 'info'
+    },
+    normalizeNotification(item) {
+      const id = Number(item.notification_id || item.id || 0)
+      return {
+        id,
+        title: item.title || 'Notification',
+        sub: item.message || '-',
+        time: this.formatRelativeTime(item.created_at || item.sent_at),
+        type: this.normalizeNotificationType(item),
+        read: Boolean(item.is_read)
+      }
+    },
+    closeNotificationsPanel() {
+      this.showNotifications = false
+    },
+    async toggleNotificationsPanel() {
+      if (this.showNotifications) {
+        this.closeNotificationsPanel()
+        return
+      }
+
+      this.showNotifications = true
+      await this.loadNotifications({ silent: true })
+    },
+    async loadNotifications(options = {}) {
+      const page = Number(options.page || 1)
+      const limit = Number(options.limit || 25)
+      const silent = Boolean(options.silent)
+
+      this.isLoadingNotifications = true
+      if (!silent) {
+        this.notificationsError = ''
+      }
+
+      try {
+        const response = await adminApi.getNotifications({ page, limit, is_read: 'all' })
+        const payload = response?.data?.data || {}
+        const items = Array.isArray(payload.items) ? payload.items : []
+
+        this.notifications = items.map((item) => this.normalizeNotification(item)).filter((item) => item.id)
+
+        if (typeof payload.unread_count === 'number') {
+          this.unreadNotificationsCount = payload.unread_count
+        } else {
+          this.unreadNotificationsCount = this.notifications.filter((item) => !item.read).length
+        }
+        this.notificationsError = ''
+      } catch (error) {
+        const message = error.response?.data?.error || 'Unable to load notifications.'
+        this.notificationsError = message
+        if (!silent) {
+          this.toast_show(message, 'danger')
+        }
+      } finally {
+        this.isLoadingNotifications = false
+      }
+    },
+    async markNotificationRead(notificationId) {
+      const targetId = Number(notificationId)
+      if (!targetId || this.isMarkingNotification[targetId]) {
+        return
+      }
+
+      const target = this.notifications.find((item) => item.id === targetId)
+      if (!target || target.read) {
+        return
+      }
+
+      const previousUnread = this.unreadNotificationsCount
+      target.read = true
+      this.unreadNotificationsCount = Math.max(0, previousUnread - 1)
+      this.isMarkingNotification = {
+        ...this.isMarkingNotification,
+        [targetId]: true
+      }
+
+      try {
+        const response = await adminApi.markNotificationRead(targetId)
+        const payload = response?.data?.data || {}
+        if (typeof payload.unread_count === 'number') {
+          this.unreadNotificationsCount = payload.unread_count
+        }
+      } catch (error) {
+        target.read = false
+        this.unreadNotificationsCount = previousUnread
+        const message = error.response?.data?.error || 'Unable to update notification.'
+        this.notificationsError = message
+        this.toast_show(message, 'danger')
+      } finally {
+        this.isMarkingNotification = {
+          ...this.isMarkingNotification,
+          [targetId]: false
+        }
+      }
+    },
+    async markAllNotificationsRead() {
+      if (this.isMarkingAllNotifications || this.unreadNotificationsCount === 0) {
+        return
+      }
+
+      const previousNotifications = this.notifications.map((item) => ({ ...item }))
+      const previousUnread = this.unreadNotificationsCount
+
+      this.isMarkingAllNotifications = true
+      this.notifications = this.notifications.map((item) => ({
+        ...item,
+        read: true
+      }))
+      this.unreadNotificationsCount = 0
+
+      try {
+        const response = await adminApi.markAllNotificationsRead()
+        const payload = response?.data?.data || {}
+        this.unreadNotificationsCount = typeof payload.unread_count === 'number' ? payload.unread_count : 0
+        this.notificationsError = ''
+        this.toast_show('All notifications marked as read.', 'success')
+      } catch (error) {
+        this.notifications = previousNotifications
+        this.unreadNotificationsCount = previousUnread
+        const message = error.response?.data?.error || 'Unable to update notifications.'
+        this.notificationsError = message
+        this.toast_show(message, 'danger')
+      } finally {
+        this.isMarkingAllNotifications = false
+      }
     },
     normalizeDriveStatus(status) {
       if (status === 'approved') return 'approved'
