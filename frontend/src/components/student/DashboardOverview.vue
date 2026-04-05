@@ -54,7 +54,13 @@
                 <span class="rq-status-pill" :class="driveStateClass(drive)">{{ driveStateLabel(drive) }}</span>
               </div>
             </div>
-            <p v-else class="rq-empty-text">No eligible drives yet.</p>
+            <div v-else class="rq-drive-empty" role="status" aria-live="polite">
+              <div class="rq-drive-empty-icon" aria-hidden="true">
+                <Briefcase :size="16" class="rq-drive-empty-symbol" />
+              </div>
+              <p class="rq-drive-empty-title">No eligible drives yet.</p>
+              <p class="rq-drive-empty-sub">New drives will appear here.</p>
+            </div>
           </div>
         </article>
 
@@ -68,7 +74,17 @@
               View all
             </button>
           </header>
-          <div class="rq-table-wrap">
+          <div v-if="isLoading" class="rq-apps-empty" role="status" aria-live="polite">
+            <p class="rq-empty-text">Loading recent applications...</p>
+          </div>
+          <div v-else-if="!applications.length" class="rq-apps-empty" role="status" aria-live="polite">
+            <div class="rq-apps-empty-icon" aria-hidden="true">
+              <FileText :size="16" class="rq-apps-empty-symbol" />
+            </div>
+            <p class="rq-apps-empty-title">No applications yet.</p>
+            <p class="rq-apps-empty-sub">Apply to an eligible drive to get started.</p>
+          </div>
+          <div v-else class="rq-table-wrap">
             <table class="rq-table rq-dashboard-table" aria-label="Recent applications">
               <thead>
                 <tr>
@@ -80,12 +96,6 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-if="isLoading">
-                  <td colspan="5" class="rq-empty-row">Loading recent applications...</td>
-                </tr>
-                <tr v-else-if="!applications.length">
-                  <td colspan="5" class="rq-empty-row">No applications yet.</td>
-                </tr>
                 <tr v-for="row in applications.slice(0, 5)" :key="row.id">
                   <td>
                     <p class="rq-row-title">{{ row.role }}</p>
@@ -196,7 +206,7 @@
 </template>
 
 <script>
-import { CircleCheck } from 'lucide-vue-next'
+import { Briefcase, CircleCheck, FileText } from 'lucide-vue-next'
 
 const STATUS_RANK = Object.freeze({
   rejected: 0,
@@ -210,7 +220,9 @@ const STATUS_RANK = Object.freeze({
 export default {
   name: 'StudentDashboardOverview',
   components: {
-    CircleCheck
+    Briefcase,
+    CircleCheck,
+    FileText
   },
   props: {
     studentFirstName: {
