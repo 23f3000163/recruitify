@@ -62,3 +62,45 @@ def test_expired_token_rejected_for_protected_endpoint(app, client):
     payload = response.get_json()
     assert payload["success"] is False
     assert payload["error"] == "Token has expired"
+
+
+def test_jobs_company_export_forbidden_for_student_role(app, client):
+    with app.app_context():
+        student_user = _make_user(
+            "student.jobs.security.negative",
+            "student.jobs.security.negative@example.com",
+            "student",
+        )
+        db.session.commit()
+
+        headers = _auth_headers(student_user.user_id, "student")
+
+    response = client.post("/jobs/exports/company/applications", headers=headers)
+
+    assert response.status_code == 403
+    payload = response.get_json()
+    assert payload["success"] is False
+    assert payload["error"] == "Forbidden: insufficient permissions"
+
+
+def test_expired_token_rejected_for_jobs_company_export(app, client):
+    with app.app_context():
+        company_user = _make_user(
+            "company.jobs.security.expired",
+            "company.jobs.security.expired@example.com",
+            "company",
+        )
+        db.session.commit()
+
+        expired_headers = _auth_headers(
+            company_user.user_id,
+            "company",
+            expires_delta=timedelta(seconds=-1),
+        )
+
+    response = client.post("/jobs/exports/company/applications", headers=expired_headers)
+
+    assert response.status_code == 401
+    payload = response.get_json()
+    assert payload["success"] is False
+    assert payload["error"] == "Token has expired"
