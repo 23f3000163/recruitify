@@ -16,3 +16,10 @@ dist/
 
 # Redis
 dump.rdb
+
+# Celery runtime state
+backend/celerybeat-schedule*
+
+# Job runtime artifacts
+backend/instance/exports/
+backend/instance/reports/

@@ -6,6 +6,29 @@ from flask_jwt_extended import JWTManager
 from .models import db
 
 
+def _env_int(name, default_value):
+    raw_value = os.environ.get(name)
+    if raw_value is None:
+        return default_value
+    try:
+        return int(raw_value)
+    except (TypeError, ValueError):
+        return default_value
+
+
+def _env_bool(name, default_value=False):
+    raw_value = os.environ.get(name)
+    if raw_value is None:
+        return bool(default_value)
+
+    normalized = str(raw_value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return bool(default_value)
+
+
 def create_app(config_object=None):
     """Application factory for the Recruitify backend."""
 
@@ -26,6 +49,42 @@ def create_app(config_object=None):
         # 🔐 JWT Configuration
         JWT_SECRET_KEY=os.environ.get("JWT_SECRET_KEY", "dev-jwt-secret-change-me"),
         JWT_ACCESS_TOKEN_EXPIRES=3600,  # 1 hour
+
+        # ⚙️ Background Jobs (Celery + Redis) configuration contracts
+        CELERY_BROKER_URL=os.environ.get(
+            "CELERY_BROKER_URL",
+            os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"),
+        ),
+        CELERY_RESULT_BACKEND=os.environ.get(
+            "CELERY_RESULT_BACKEND",
+            os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/1"),
+        ),
+        CELERY_TIMEZONE=os.environ.get("CELERY_TIMEZONE", "Asia/Kolkata"),
+        JOBS_DAILY_REMINDER_CRON=os.environ.get("JOBS_DAILY_REMINDER_CRON", "0 9 * * *"),
+        JOBS_MONTHLY_REPORT_CRON=os.environ.get("JOBS_MONTHLY_REPORT_CRON", "0 9 1 * *"),
+        JOBS_EXPORT_ARTIFACT_TTL_HOURS=_env_int("JOBS_EXPORT_ARTIFACT_TTL_HOURS", 24),
+        JOBS_RETRY_LIMIT=_env_int("JOBS_RETRY_LIMIT", 3),
+        JOBS_RETRY_BACKOFF_SECONDS=_env_int("JOBS_RETRY_BACKOFF_SECONDS", 60),
+        JOBS_REMINDER_LOOKAHEAD_DAYS=_env_int("JOBS_REMINDER_LOOKAHEAD_DAYS", 3),
+        JOBS_REMINDER_CHANNELS=os.environ.get(
+            "JOBS_REMINDER_CHANNELS",
+            "email,sms,webhook",
+        ),
+        JOBS_WEBHOOK_URL=os.environ.get("JOBS_WEBHOOK_URL"),
+        JOBS_REPORT_CHANNELS=os.environ.get("JOBS_REPORT_CHANNELS", "email"),
+        JOBS_FAILURE_ALERT_CHANNELS=os.environ.get(
+            "JOBS_FAILURE_ALERT_CHANNELS",
+            os.environ.get("JOBS_REPORT_CHANNELS", "email"),
+        ),
+        JOBS_REPORT_OUTPUT_DIR=os.environ.get(
+            "JOBS_REPORT_OUTPUT_DIR",
+            os.path.join(app.instance_path, "reports"),
+        ),
+        JOBS_EXPORT_OUTPUT_DIR=os.environ.get(
+            "JOBS_EXPORT_OUTPUT_DIR",
+            os.path.join(app.instance_path, "exports"),
+        ),
+        JOBS_EAGER_EXECUTION=_env_bool("JOBS_EAGER_EXECUTION", False),
     )
 
     # Optional external config override
@@ -114,6 +173,14 @@ def create_app(config_object=None):
                     conn.exec_driver_sql(
                         "UPDATE activity_log SET status='info' WHERE status IS NULL OR TRIM(status) = ''"
                     )
+
+            from .models import BackgroundJob, ExportArtifact
+
+            db.metadata.create_all(
+                bind=db.engine,
+                tables=[BackgroundJob.__table__, ExportArtifact.__table__],
+                checkfirst=True,
+            )
         except Exception as exc:
             app.logger.warning("Schema update check failed: %s", exc)
 
@@ -161,6 +228,23 @@ def create_app(config_object=None):
 
     from app.applications import applications_bp
     app.register_blueprint(applications_bp)
+
+    from app.jobs import jobs_bp
+    app.register_blueprint(jobs_bp)
+
+    try:
+        from app.jobs.celery_app import init_celery
+
+        init_celery(app)
+    except ModuleNotFoundError as exc:
+        missing = str(getattr(exc, "name", ""))
+        if missing in {"celery", "redis"}:
+            app.logger.warning(
+                "Background job extensions unavailable because '%s' is not installed.",
+                missing,
+            )
+        else:
+            raise
 
     # =====================================================================
     # Health Check

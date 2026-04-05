@@ -7,6 +7,11 @@ from flask import Blueprint, jsonify, make_response, request
 from flask_jwt_extended import get_jwt_identity
 from sqlalchemy import func, or_
 
+from app.applications.status_engine import (
+    ATS_TO_LEGACY_STATUS,
+    ATS_TRANSITIONS,
+    application_ats_status,
+)
 from app.auth.utils import role_required
 from app.auth.validators import validate_required_fields
 from app.models import (
@@ -966,16 +971,27 @@ def respond_to_offer(offer_id):
         return _json_error("Offer response already submitted", 400)
 
     try:
-        offer.status = target_status
-
         application = db.session.get(Application, offer.application_id)
         if application:
-            if target_status == "accepted":
-                application.status = "selected"
-            else:
-                application.status = "rejected"
+            target_ats_status = "placed" if target_status == "accepted" else "rejected"
+            current_ats_status = application_ats_status(application)
+            if target_ats_status != current_ats_status:
+                allowed_targets = ATS_TRANSITIONS.get(current_ats_status, set())
+                if target_ats_status not in allowed_targets:
+                    return _json_error(
+                        f"Invalid status transition: {current_ats_status} -> {target_ats_status}",
+                        400,
+                    )
+
+        offer.status = target_status
+
+        if application:
+            application.status = ATS_TO_LEGACY_STATUS[target_ats_status]
+            if target_ats_status == "rejected":
                 if not application.rejection_reason:
                     application.rejection_reason = "Offer declined by student."
+            else:
+                application.rejection_reason = None
             application.updated_at = datetime.now(timezone.utc)
 
         placement_payload = None

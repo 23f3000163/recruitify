@@ -15,6 +15,7 @@ Key design decisions:
 """
 
 from datetime import date, datetime, timezone
+from uuid import uuid4
 
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import UniqueConstraint, event
@@ -42,6 +43,11 @@ def _enable_sqlite_fks(dbapi_connection, connection_record):
 def _utcnow():
     """Return the current UTC time as a timezone-aware datetime."""
     return datetime.now(timezone.utc)
+
+
+def _new_job_id():
+    """Return a UUID string used as background job primary key."""
+    return str(uuid4())
 
 
 # =========================================================================
@@ -821,3 +827,140 @@ class Notification(db.Model):
 
     def __repr__(self) -> str:
         return f"<Notification {self.notification_id} to={self.recipient_id}>"
+
+
+# =========================================================================
+# 12. BACKGROUND_JOB
+# =========================================================================
+class BackgroundJob(db.Model):
+    __tablename__ = "background_job"
+
+    job_id = db.Column(db.String(36), primary_key=True, default=_new_job_id)
+    job_type = db.Column(
+        db.Enum(
+            "daily_reminder",
+            "monthly_report",
+            "export_csv",
+            "maintenance",
+            name="job_type_enum",
+        ),
+        nullable=False,
+    )
+    status = db.Column(
+        db.Enum(
+            "queued",
+            "running",
+            "completed",
+            "failed",
+            "cancelled",
+            name="job_status_enum",
+        ),
+        default="queued",
+        nullable=False,
+    )
+    requested_by_user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("user.user_id"),
+        nullable=True,
+    )
+    idempotency_key = db.Column(db.String(120), unique=True, nullable=True)
+    payload = db.Column(db.JSON, nullable=True)
+    result_meta = db.Column(db.JSON, nullable=True)
+    error_message = db.Column(db.Text, nullable=True)
+    retry_count = db.Column(db.Integer, default=0, nullable=False)
+    started_at = db.Column(db.DateTime, nullable=True)
+    finished_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=_utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime,
+        default=_utcnow,
+        onupdate=_utcnow,
+        nullable=False,
+    )
+
+    requested_by = db.relationship("User", lazy="joined")
+    export_artifacts = db.relationship(
+        "ExportArtifact",
+        back_populates="job",
+        lazy="dynamic",
+        cascade="all, delete-orphan",
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "job_id": self.job_id,
+            "job_type": self.job_type,
+            "status": self.status,
+            "requested_by_user_id": self.requested_by_user_id,
+            "idempotency_key": self.idempotency_key,
+            "payload": self.payload,
+            "result_meta": self.result_meta,
+            "error_message": self.error_message,
+            "retry_count": self.retry_count,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "finished_at": self.finished_at.isoformat() if self.finished_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+    def __repr__(self):
+        return f"<BackgroundJob {self.job_id} type={self.job_type} status={self.status}>"
+
+
+# =========================================================================
+# 13. EXPORT_ARTIFACT
+# =========================================================================
+class ExportArtifact(db.Model):
+    __tablename__ = "export_artifact"
+
+    artifact_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    job_id = db.Column(
+        db.String(36),
+        db.ForeignKey("background_job.job_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    requested_by_user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("user.user_id"),
+        nullable=False,
+    )
+    filename = db.Column(db.String(255), nullable=False)
+    storage_path = db.Column(db.String(500), nullable=False)
+    content_type = db.Column(db.String(120), nullable=False, default="text/csv")
+    file_size_bytes = db.Column(db.Integer, nullable=True)
+    status = db.Column(
+        db.Enum("pending", "ready", "failed", "expired", name="artifact_status_enum"),
+        default="pending",
+        nullable=False,
+    )
+    checksum = db.Column(db.String(128), nullable=True)
+    expires_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=_utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime,
+        default=_utcnow,
+        onupdate=_utcnow,
+        nullable=False,
+    )
+
+    job = db.relationship("BackgroundJob", back_populates="export_artifacts", lazy="joined")
+    requested_by = db.relationship("User", lazy="joined")
+
+    def to_dict(self) -> dict:
+        return {
+            "artifact_id": self.artifact_id,
+            "job_id": self.job_id,
+            "requested_by_user_id": self.requested_by_user_id,
+            "filename": self.filename,
+            "storage_path": self.storage_path,
+            "content_type": self.content_type,
+            "file_size_bytes": self.file_size_bytes,
+            "status": self.status,
+            "checksum": self.checksum,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+    def __repr__(self):
+        return f"<ExportArtifact {self.artifact_id} job={self.job_id} status={self.status}>"

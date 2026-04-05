@@ -1,0 +1,11 @@
+"""Celery beat scheduler entrypoint.
+
+Run:
+    celery -A celery_beat.celery beat --loglevel=info
+"""
+
+from app import create_app
+from app.jobs.celery_app import init_celery
+
+flask_app = create_app()
+celery = init_celery(flask_app)

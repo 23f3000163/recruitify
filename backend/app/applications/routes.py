@@ -19,42 +19,20 @@ from app.models import (
     User,
     db,
 )
+from app.applications.status_engine import (
+    ATS_STATUSES,
+    ATS_TO_LEGACY_STATUS,
+    ATS_TRANSITIONS,
+    application_ats_status,
+    normalize_status_input,
+    status_label,
+)
 
 applications_bp = Blueprint("applications", __name__)
 
 MAX_LIMIT = 100
 MAX_NOTES_LENGTH = 500
 MAX_REJECTION_REASON_LENGTH = 300
-
-ATS_STATUSES = {
-    "applied",
-    "shortlisted",
-    "interview",
-    "offered",
-    "rejected",
-    "placed",
-}
-STATUS_ALIASES = {
-    "interviewed": "interview",
-    "selected": "offered",
-    "waitlisted": "shortlisted",
-}
-ATS_TO_LEGACY_STATUS = {
-    "applied": "applied",
-    "shortlisted": "shortlisted",
-    "interview": "interviewed",
-    "offered": "selected",
-    "rejected": "rejected",
-    "placed": "selected",
-}
-ATS_TRANSITIONS = {
-    "applied": {"shortlisted", "rejected"},
-    "shortlisted": {"interview", "rejected"},
-    "interview": {"offered", "rejected"},
-    "offered": {"placed", "rejected"},
-    "rejected": set(),
-    "placed": set(),
-}
 
 
 def _json_error(message, status_code=400):
@@ -117,24 +95,11 @@ def _parse_pagination():
 
 
 def _normalize_status_input(raw_status):
-    normalized = str(raw_status or "").strip().lower()
-    normalized = STATUS_ALIASES.get(normalized, normalized)
-    if normalized not in ATS_STATUSES:
-        return None
-    return normalized
+    return normalize_status_input(raw_status)
 
 
 def _status_label(status):
-    labels = {
-        "applied": "Applied",
-        "shortlisted": "Shortlisted",
-        "interview": "Interview",
-        "offered": "Offered",
-        "rejected": "Rejected",
-        "placed": "Placed",
-    }
-    normalized = str(status or "").strip().lower()
-    return labels.get(normalized, normalized.capitalize() if normalized else "Updated")
+    return status_label(status)
 
 
 def _normalize_optional_text(raw_value, field_name, max_length):
@@ -151,28 +116,7 @@ def _normalize_optional_text(raw_value, field_name, max_length):
 
 
 def _application_ats_status(application):
-    legacy_status = str(application.status or "").strip().lower()
-
-    if legacy_status == "selected":
-        offer = application.placement_offer
-        if offer:
-            offer_status = str(offer.status or "").strip().lower()
-            if offer_status == "accepted":
-                return "placed"
-            if offer_status == "rejected":
-                return "rejected"
-        return "offered"
-
-    if legacy_status == "interviewed":
-        return "interview"
-
-    if legacy_status == "waitlisted":
-        return "shortlisted"
-
-    if legacy_status in {"applied", "shortlisted", "rejected"}:
-        return legacy_status
-
-    return "applied"
+    return application_ats_status(application)
 
 
 def _apply_ats_status_filter(query, status_filter):

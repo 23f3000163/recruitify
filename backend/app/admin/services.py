@@ -6,6 +6,12 @@ from math import ceil
 from sqlalchemy import func, or_
 from sqlalchemy.orm import selectinload
 
+from app.applications.status_engine import (
+    ATS_TO_LEGACY_STATUS,
+    ATS_TRANSITIONS,
+    application_ats_status,
+    normalize_status_input,
+)
 from app.models import (
     ActivityLog,
     Application,
@@ -619,22 +625,37 @@ def update_application_status(
     if not application:
         return _error("Application not found", 404)
 
-    target_status = (status or "").strip().lower()
-    if target_status not in ALLOWED_APPLICATION_STATUSES:
+    target_ats_status = normalize_status_input(status)
+    if not target_ats_status:
         return _error("Invalid application status", 400)
 
-    try:
-        application.status = target_status
+    current_ats_status = application_ats_status(application)
+    if target_ats_status != current_ats_status:
+        allowed_targets = ATS_TRANSITIONS.get(current_ats_status, set())
+        if target_ats_status not in allowed_targets:
+            # Admin moderation is allowed to perform corrective jump transitions.
+            pass
 
-        if target_status == "rejected":
+    if target_ats_status == "placed" and not application.placement_offer:
+        return _error("Cannot mark as placed before an offer is created", 400)
+
+    try:
+        application.status = ATS_TO_LEGACY_STATUS[target_ats_status]
+
+        if target_ats_status == "rejected":
             cleaned_reason = (
                 rejection_reason.strip()
                 if isinstance(rejection_reason, str)
                 else rejection_reason
             )
             application.rejection_reason = cleaned_reason or application.rejection_reason
+            if application.placement_offer and application.placement_offer.status == "offered":
+                application.placement_offer.status = "rejected"
         else:
             application.rejection_reason = None
+
+        if target_ats_status == "placed" and application.placement_offer:
+            application.placement_offer.status = "accepted"
 
         if notes is not None:
             cleaned_notes = notes.strip() if isinstance(notes, str) else notes
@@ -643,7 +664,7 @@ def update_application_status(
         _append_activity_log(
             actor_user_id,
             "Application Updated",
-            f"#{application.application_id} -> {target_status}",
+            f"#{application.application_id} -> {ATS_TO_LEGACY_STATUS[target_ats_status]}",
             "success",
         )
 

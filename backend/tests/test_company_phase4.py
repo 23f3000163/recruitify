@@ -194,6 +194,51 @@ def test_company_rejection_requires_reason_and_saves_feedback(app, client):
         assert refreshed.notes == "Interview rubric mismatch."
 
 
+def test_company_status_transition_rules_are_enforced(app, client):
+    with app.app_context():
+        company_user = _make_user(
+            "company.transition.guard",
+            "company.transition.guard@example.com",
+            "company",
+        )
+        company = _make_company_profile(
+            company_user.user_id,
+            "Transition Guard Labs",
+            "hr.transition.guard@example.com",
+        )
+        drive = _make_drive(company.company_id, title="Cloud Engineer", status="approved")
+
+        student_user = _make_user(
+            "student.transition.guard",
+            "student.transition.guard@example.com",
+            "student",
+        )
+        student = _make_student_profile(student_user.user_id, "CS21B9199")
+
+        application = Application(
+            student_id=student.student_id,
+            drive_id=drive.drive_id,
+            status="applied",
+        )
+        db.session.add(application)
+        db.session.commit()
+
+        headers = _auth_headers(company_user.user_id, "company")
+        application_id = application.application_id
+
+    invalid_transition_response = client.put(
+        f"/company/applications/{application_id}/status",
+        json={"status": "selected"},
+        headers=headers,
+    )
+
+    assert invalid_transition_response.status_code == 400
+    assert (
+        invalid_transition_response.get_json()["error"]
+        == "Invalid status transition: applied -> offered"
+    )
+
+
 def test_company_can_schedule_interview_and_update_result(app, client):
     with app.app_context():
         company_user = _make_user("company.interview", "company.interview@example.com", "company")

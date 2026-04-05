@@ -7,6 +7,12 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity
 from sqlalchemy import func, or_
 
+from app.applications.status_engine import (
+    ATS_TO_LEGACY_STATUS,
+    ATS_TRANSITIONS,
+    application_ats_status,
+    normalize_status_input,
+)
 from app.auth.utils import role_required
 from app.auth.validators import validate_email
 from app.models import (
@@ -159,6 +165,18 @@ def _status_label(status):
     if not normalized:
         return "Updated"
     return status_map.get(normalized, normalized.capitalize())
+
+
+def _validate_transition(application, target_ats_status):
+    current_ats_status = application_ats_status(application)
+    if target_ats_status == current_ats_status:
+        return None
+
+    allowed_targets = ATS_TRANSITIONS.get(current_ats_status, set())
+    if target_ats_status in allowed_targets:
+        return None
+
+    return f"Invalid status transition: {current_ats_status} -> {target_ats_status}"
 
 
 def _create_student_notification(
@@ -867,9 +885,20 @@ def update_application_status(application_id):
         return _json_error("Application not found", 404)
 
     payload = request.get_json(silent=True) or {}
-    target_status = (payload.get("status") or "").strip().lower()
-    if target_status not in ALLOWED_APPLICATION_STATUSES:
+    target_ats_status = normalize_status_input(payload.get("status"))
+    if not target_ats_status:
         return _json_error("Invalid application status", 400)
+
+    current_ats_status = application_ats_status(application)
+    if target_ats_status != current_ats_status:
+        allowed_targets = ATS_TRANSITIONS.get(current_ats_status, set())
+        if target_ats_status not in allowed_targets:
+            return _json_error(
+                f"Invalid status transition: {current_ats_status} -> {target_ats_status}",
+                400,
+            )
+
+    target_status = ATS_TO_LEGACY_STATUS[target_ats_status]
 
     notes, notes_error = _parse_optional_text(
         payload.get("notes"),
@@ -887,7 +916,7 @@ def update_application_status(application_id):
     if rejection_reason_error:
         return _json_error(rejection_reason_error, 400)
 
-    if target_status == "rejected" and not rejection_reason:
+    if target_ats_status == "rejected" and not rejection_reason:
         return _json_error("rejection_reason is required when status is rejected", 400)
 
     try:
@@ -897,7 +926,7 @@ def update_application_status(application_id):
         if "notes" in payload:
             application.notes = notes
 
-        if target_status == "rejected":
+        if target_ats_status == "rejected":
             application.rejection_reason = rejection_reason
         else:
             application.rejection_reason = None
@@ -907,14 +936,14 @@ def update_application_status(application_id):
         should_notify = (
             previous_status != target_status
             or ("notes" in payload and bool(notes))
-            or (target_status == "rejected" and bool(rejection_reason))
+            or (target_ats_status == "rejected" and bool(rejection_reason))
         )
         if should_notify:
             update_message = (
                 f"Your application for {drive_title} is now "
                 f"{_status_label(target_status).lower()}."
             )
-            if target_status == "rejected" and rejection_reason:
+            if target_ats_status == "rejected" and rejection_reason:
                 update_message = f"{update_message} Reason: {rejection_reason}"
             elif notes:
                 update_message = f"{update_message} Note: {notes}"
@@ -1057,6 +1086,10 @@ def schedule_interview():
     if interview_mode not in ALLOWED_INTERVIEW_RECORD_MODES:
         return _json_error("interview_mode must be online or offline", 400)
 
+    transition_error = _validate_transition(application, "interview")
+    if transition_error:
+        return _json_error(transition_error, 400)
+
     interview = Interview(
         application_id=application.application_id,
         company_id=company.company_id,
@@ -1071,7 +1104,7 @@ def schedule_interview():
 
     try:
         db.session.add(interview)
-        application.status = "interviewed"
+        application.status = ATS_TO_LEGACY_STATUS["interview"]
         db.session.flush()
 
         drive = db.session.get(PlacementDrive, application.drive_id)
@@ -1126,6 +1159,18 @@ def update_interview_result(interview_id):
     if target_result not in ALLOWED_INTERVIEW_RESULTS:
         return _json_error("Invalid interview result", 400)
 
+    target_ats_status = {
+        "pending": "interview",
+        "pass": "offered",
+        "fail": "rejected",
+    }[target_result]
+
+    application = db.session.get(Application, interview.application_id)
+    if application:
+        transition_error = _validate_transition(application, target_ats_status)
+        if transition_error:
+            return _json_error(transition_error, 400)
+
     try:
         interview.result = target_result
         cleaned_feedback = None
@@ -1142,17 +1187,14 @@ def update_interview_result(interview_id):
             except (TypeError, ValueError):
                 return _json_error("rating must be a number", 400)
 
-        application = db.session.get(Application, interview.application_id)
         if application:
-            if target_result == "pass":
-                application.status = "selected"
-            elif target_result == "fail":
-                application.status = "rejected"
+            application.status = ATS_TO_LEGACY_STATUS[target_ats_status]
+            if target_ats_status == "rejected":
                 application.rejection_reason = (
                     application.rejection_reason or "Rejected after interview"
                 )
             else:
-                application.status = "interviewed"
+                application.rejection_reason = None
 
             drive = db.session.get(PlacementDrive, application.drive_id)
             drive_title = drive.job_title if drive else "the selected drive"
@@ -1322,6 +1364,10 @@ def create_offer():
     if date_error:
         return _json_error(date_error, 400)
 
+    transition_error = _validate_transition(application, "offered")
+    if transition_error:
+        return _json_error(transition_error, 400)
+
     offer = PlacementOffer(
         application_id=application.application_id,
         student_id=application.student_id,
@@ -1335,7 +1381,7 @@ def create_offer():
 
     try:
         db.session.add(offer)
-        application.status = "selected"
+        application.status = ATS_TO_LEGACY_STATUS["offered"]
         db.session.flush()
 
         drive = db.session.get(PlacementDrive, application.drive_id)
