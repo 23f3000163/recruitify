@@ -6,6 +6,7 @@ from app.models import (
     Application,
     Company,
     ExportArtifact,
+    Placement,
     PlacementDrive,
     Student,
     User,
@@ -186,3 +187,83 @@ def test_expired_export_artifact_returns_410(app, client, tmp_path):
     expired_response = client.get(f"/jobs/exports/{job_id}/download", headers=headers)
     assert expired_response.status_code == 410
     assert expired_response.get_json()["error"] == "Export artifact has expired"
+
+
+def test_company_exports_applications_and_placements(app, client, tmp_path):
+    with app.app_context():
+        app.config.update(
+            JOBS_EAGER_EXECUTION=True,
+            JOBS_EXPORT_OUTPUT_DIR=str(tmp_path / "exports-company"),
+            JOBS_EXPORT_ARTIFACT_TTL_HOURS=24,
+            JOBS_COMPANY_EXPORT_ENABLED=True,
+            JOBS_EXPORT_ALLOW_PLACEMENT_HISTORY=True,
+        )
+
+        company_user = _make_user("company.export.5", "company.export.5@example.com", "company")
+        company = _make_company_profile(
+            company_user.user_id,
+            "Company Export Labs",
+            "hr.export.5@example.com",
+        )
+
+        student_user = _make_user("student.export.5", "student.export.5@example.com", "student")
+        student = _make_student_profile(student_user.user_id, "CS21E1005")
+
+        drive = _make_drive(company.company_id, title="Company Export Engineer")
+        application = Application(
+            student_id=student.student_id,
+            drive_id=drive.drive_id,
+            status="selected",
+        )
+        db.session.add(application)
+        db.session.flush()
+
+        placement = Placement(
+            student_id=student.student_id,
+            company_id=company.company_id,
+            drive_id=drive.drive_id,
+            position="Software Engineer",
+            salary=17.5,
+            joining_date=datetime.now(timezone.utc).date(),
+        )
+        db.session.add(placement)
+        db.session.commit()
+
+        company_headers = _auth_headers(company_user.user_id, "company")
+        student_headers = _auth_headers(student_user.user_id, "student")
+
+    applications_trigger = client.post("/jobs/exports/company/applications", headers=company_headers)
+    assert applications_trigger.status_code in {200, 202}
+
+    applications_job_id = applications_trigger.get_json()["data"]["job_id"]
+    applications_status = client.get(
+        f"/jobs/exports/company/{applications_job_id}",
+        headers=company_headers,
+    )
+    assert applications_status.status_code == 200
+    assert applications_status.get_json()["data"]["job"]["status"] == "completed"
+
+    applications_download = client.get(
+        f"/jobs/exports/company/{applications_job_id}/download",
+        headers=company_headers,
+    )
+    assert applications_download.status_code == 200
+    applications_csv = applications_download.data.decode("utf-8")
+    assert "Student ID,Student Name,Student Email,Drive Title,Application Status,Applied Date,Updated Date" in applications_csv
+    assert "student.export.5" in applications_csv
+
+    placements_trigger = client.post("/jobs/exports/company/placements", headers=company_headers)
+    assert placements_trigger.status_code in {200, 202}
+
+    placements_job_id = placements_trigger.get_json()["data"]["job_id"]
+    placements_download = client.get(
+        f"/jobs/exports/company/{placements_job_id}/download",
+        headers=company_headers,
+    )
+    assert placements_download.status_code == 200
+    placements_csv = placements_download.data.decode("utf-8")
+    assert "Student ID,Student Name,Student Email,Drive Title,Position,Salary,Joining Date,Placement Date" in placements_csv
+    assert "Software Engineer" in placements_csv
+
+    forbidden_student_access = client.post("/jobs/exports/company/applications", headers=student_headers)
+    assert forbidden_student_access.status_code == 403

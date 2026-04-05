@@ -8,7 +8,7 @@ from app.models import User, db
 
 from .celery_app import celery
 from .channels import parse_channels, send_channel_notification
-from .exports import execute_student_applications_export
+from .exports import execute_export_job
 from .monthly_report import execute_monthly_activity_report
 from .reminders import execute_daily_deadline_reminders, execute_daily_interview_reminders
 
@@ -155,8 +155,8 @@ def run_monthly_report(self, task_request_id=None, audience=None, report_format=
 
 @celery.task(bind=True, name="jobs.export_applications_csv.run")
 def run_export_applications_csv(self, job_id):
-    """Generate student applications CSV export for a queued job."""
-    result = execute_student_applications_export(job_id)
+    """Generate CSV export for a queued student/company export job."""
+    result = execute_export_job(job_id)
     return _retry_or_alert(
         self,
         "jobs.export_applications_csv.run",

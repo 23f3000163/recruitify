@@ -8,7 +8,13 @@ from flask import Blueprint, current_app, jsonify, request, send_file
 from flask_jwt_extended import get_jwt_identity
 
 from app.auth.utils import role_required
-from app.jobs.exports import create_student_export_job, dispatch_export_job
+from app.jobs.exports import (
+    EXPORT_SCOPE_COMPANY_APPLICATIONS,
+    EXPORT_SCOPE_COMPANY_PLACEMENTS,
+    create_company_export_job,
+    create_student_export_job,
+    dispatch_export_job,
+)
 from app.jobs.monthly_report import execute_monthly_activity_report
 from app.models import BackgroundJob, Company, ExportArtifact, Student, db
 
@@ -76,6 +82,11 @@ def _company_for_user(user_id):
     return Company.query.filter_by(user_id=user_id).first()
 
 
+def _job_matches_owner(job, owner_key):
+    payload = (job.payload or {}) if job else {}
+    return payload.get("export_owner") == owner_key
+
+
 def _expire_if_needed(artifact):
     if not artifact or not artifact.expires_at:
         return False
@@ -135,6 +146,12 @@ def jobs_health_check():
             "reports": {
                 "audience": current_app.config.get("JOBS_MONTHLY_REPORT_AUDIENCE"),
                 "format": current_app.config.get("JOBS_MONTHLY_REPORT_FORMAT"),
+            },
+            "exports": {
+                "company_enabled": current_app.config.get("JOBS_COMPANY_EXPORT_ENABLED"),
+                "placement_history_enabled": current_app.config.get(
+                    "JOBS_EXPORT_ALLOW_PLACEMENT_HISTORY"
+                ),
             },
         },
     }
@@ -294,7 +311,7 @@ def get_export_status(job_id):
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
 
     job = _job_for_user(job_id, user_id)
-    if not job:
+    if not job or not _job_matches_owner(job, "student"):
         return jsonify({"success": False, "error": "Export job not found"}), 404
 
     artifact = _latest_export_artifact(job.job_id)
@@ -316,7 +333,139 @@ def download_export_artifact(job_id):
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
 
     job = _job_for_user(job_id, user_id)
-    if not job:
+    if not job or not _job_matches_owner(job, "student"):
+        return jsonify({"success": False, "error": "Export job not found"}), 404
+
+    artifact = _latest_export_artifact(job.job_id)
+    if not artifact:
+        return jsonify({"success": False, "error": "Export artifact not ready"}), 404
+
+    if _expire_if_needed(artifact) or artifact.status == "expired":
+        return jsonify({"success": False, "error": "Export artifact has expired"}), 410
+
+    if artifact.status != "ready":
+        return jsonify({"success": False, "error": "Export artifact not ready"}), 409
+
+    if not Path(artifact.storage_path).exists():
+        artifact.status = "failed"
+        db.session.commit()
+        return jsonify({"success": False, "error": "Export artifact is unavailable"}), 410
+
+    return send_file(
+        artifact.storage_path,
+        mimetype=artifact.content_type or "text/csv",
+        as_attachment=True,
+        download_name=artifact.filename,
+    )
+
+
+@jobs_bp.post("/exports/company/applications")
+@role_required("company")
+def trigger_company_applications_export():
+    if not current_app.config.get("JOBS_COMPANY_EXPORT_ENABLED", False):
+        return jsonify({"success": False, "error": "Company export feature is disabled"}), 403
+
+    user_id = _current_user_id()
+    if user_id is None:
+        return jsonify({"success": False, "error": "Invalid token identity"}), 401
+
+    company = _company_for_user(user_id)
+    if not company:
+        return jsonify({"success": False, "error": "Company profile not found"}), 404
+
+    job, error_message, reused_existing = create_company_export_job(
+        user_id,
+        EXPORT_SCOPE_COMPANY_APPLICATIONS,
+    )
+    if error_message:
+        return jsonify({"success": False, "error": error_message}), 400
+
+    dispatch_result = {"status": job.status}
+    if not reused_existing:
+        dispatch_result = dispatch_export_job(job.job_id)
+
+    latest_job = db.session.get(BackgroundJob, job.job_id)
+    payload = {
+        "job_id": job.job_id,
+        "status": latest_job.status if latest_job else job.status,
+        "requested_by_user_id": user_id,
+        "dispatched": dispatch_result.get("status") in {"queued", "running", "completed"},
+        "active_job_reused": bool(reused_existing),
+    }
+    status_code = 200 if payload["active_job_reused"] else 202
+    return jsonify({"success": True, "data": payload}), status_code
+
+
+@jobs_bp.post("/exports/company/placements")
+@role_required("company")
+def trigger_company_placements_export():
+    if not current_app.config.get("JOBS_COMPANY_EXPORT_ENABLED", False):
+        return jsonify({"success": False, "error": "Company export feature is disabled"}), 403
+    if not current_app.config.get("JOBS_EXPORT_ALLOW_PLACEMENT_HISTORY", False):
+        return jsonify({"success": False, "error": "Placement history export is disabled"}), 403
+
+    user_id = _current_user_id()
+    if user_id is None:
+        return jsonify({"success": False, "error": "Invalid token identity"}), 401
+
+    company = _company_for_user(user_id)
+    if not company:
+        return jsonify({"success": False, "error": "Company profile not found"}), 404
+
+    job, error_message, reused_existing = create_company_export_job(
+        user_id,
+        EXPORT_SCOPE_COMPANY_PLACEMENTS,
+    )
+    if error_message:
+        return jsonify({"success": False, "error": error_message}), 400
+
+    dispatch_result = {"status": job.status}
+    if not reused_existing:
+        dispatch_result = dispatch_export_job(job.job_id)
+
+    latest_job = db.session.get(BackgroundJob, job.job_id)
+    payload = {
+        "job_id": job.job_id,
+        "status": latest_job.status if latest_job else job.status,
+        "requested_by_user_id": user_id,
+        "dispatched": dispatch_result.get("status") in {"queued", "running", "completed"},
+        "active_job_reused": bool(reused_existing),
+    }
+    status_code = 200 if payload["active_job_reused"] else 202
+    return jsonify({"success": True, "data": payload}), status_code
+
+
+@jobs_bp.get("/exports/company/<string:job_id>")
+@role_required("company")
+def get_company_export_status(job_id):
+    user_id = _current_user_id()
+    if user_id is None:
+        return jsonify({"success": False, "error": "Invalid token identity"}), 401
+
+    job = _job_for_user(job_id, user_id)
+    if not job or not _job_matches_owner(job, "company"):
+        return jsonify({"success": False, "error": "Export job not found"}), 404
+
+    artifact = _latest_export_artifact(job.job_id)
+    if artifact:
+        _expire_if_needed(artifact)
+
+    payload = {
+        "job": job.to_dict(),
+        "artifact": artifact.to_dict() if artifact else None,
+    }
+    return jsonify({"success": True, "data": payload}), 200
+
+
+@jobs_bp.get("/exports/company/<string:job_id>/download")
+@role_required("company")
+def download_company_export_artifact(job_id):
+    user_id = _current_user_id()
+    if user_id is None:
+        return jsonify({"success": False, "error": "Invalid token identity"}), 401
+
+    job = _job_for_user(job_id, user_id)
+    if not job or not _job_matches_owner(job, "company"):
         return jsonify({"success": False, "error": "Export job not found"}), 404
 
     artifact = _latest_export_artifact(job.job_id)
