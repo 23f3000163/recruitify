@@ -66,12 +66,32 @@ def create_app(config_object=None):
         JOBS_RETRY_LIMIT=_env_int("JOBS_RETRY_LIMIT", 3),
         JOBS_RETRY_BACKOFF_SECONDS=_env_int("JOBS_RETRY_BACKOFF_SECONDS", 60),
         JOBS_REMINDER_LOOKAHEAD_DAYS=_env_int("JOBS_REMINDER_LOOKAHEAD_DAYS", 3),
+        JOBS_INTERVIEW_REMINDER_ENABLED=_env_bool("JOBS_INTERVIEW_REMINDER_ENABLED", False),
+        JOBS_INTERVIEW_REMINDER_CRON=os.environ.get(
+            "JOBS_INTERVIEW_REMINDER_CRON",
+            "30 9 * * *",
+        ),
+        JOBS_INTERVIEW_REMINDER_WINDOW_HOURS=_env_int(
+            "JOBS_INTERVIEW_REMINDER_WINDOW_HOURS",
+            24,
+        ),
         JOBS_REMINDER_CHANNELS=os.environ.get(
             "JOBS_REMINDER_CHANNELS",
             "email,sms,webhook",
         ),
+        JOBS_INTERVIEW_REMINDER_CHANNELS=os.environ.get(
+            "JOBS_INTERVIEW_REMINDER_CHANNELS",
+            os.environ.get("JOBS_REMINDER_CHANNELS", "email,sms,webhook"),
+        ),
         JOBS_WEBHOOK_URL=os.environ.get("JOBS_WEBHOOK_URL"),
         JOBS_REPORT_CHANNELS=os.environ.get("JOBS_REPORT_CHANNELS", "email"),
+        JOBS_MONTHLY_REPORT_AUDIENCE=os.environ.get("JOBS_MONTHLY_REPORT_AUDIENCE", "admin"),
+        JOBS_MONTHLY_REPORT_FORMAT=os.environ.get("JOBS_MONTHLY_REPORT_FORMAT", "html"),
+        JOBS_COMPANY_EXPORT_ENABLED=_env_bool("JOBS_COMPANY_EXPORT_ENABLED", False),
+        JOBS_EXPORT_ALLOW_PLACEMENT_HISTORY=_env_bool(
+            "JOBS_EXPORT_ALLOW_PLACEMENT_HISTORY",
+            False,
+        ),
         JOBS_FAILURE_ALERT_CHANNELS=os.environ.get(
             "JOBS_FAILURE_ALERT_CHANNELS",
             os.environ.get("JOBS_REPORT_CHANNELS", "email"),
