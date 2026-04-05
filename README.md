@@ -17,7 +17,7 @@ Set these in your environment when running job features.
 | JOBS_INTERVIEW_REMINDER_ENABLED | false | Enable interview reminder job |
 | JOBS_INTERVIEW_REMINDER_CRON | 30 9 * * * | Interview reminder schedule |
 | JOBS_INTERVIEW_REMINDER_WINDOW_HOURS | 24 | Look-ahead window for interviews |
-| JOBS_REMINDER_CHANNELS | email,sms | Default reminder channels |
+| JOBS_REMINDER_CHANNELS | email | Default reminder channels |
 | JOBS_INTERVIEW_REMINDER_CHANNELS | falls back to JOBS_REMINDER_CHANNELS | Interview reminder channels |
 | JOBS_WEBHOOK_URL | empty | Optional webhook target URL |
 | JOBS_MONTHLY_REPORT_CRON | 0 9 1 * * | Monthly report schedule |
@@ -27,7 +27,7 @@ Set these in your environment when running job features.
 | JOBS_EXPORT_ALLOW_PLACEMENT_HISTORY | false | Enable company placement export |
 | JOBS_EXPORT_ARTIFACT_TTL_HOURS | 24 | Export download expiry |
 
-Note: webhook is optional. Core project flows work with email and sms channels.
+Note: sms and webhook are optional. Core project submission flow works with email only.
 
 ## Production-Like Runbook (Non-Eager)
 

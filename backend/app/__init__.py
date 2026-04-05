@@ -77,11 +77,11 @@ def create_app(config_object=None):
         ),
         JOBS_REMINDER_CHANNELS=os.environ.get(
             "JOBS_REMINDER_CHANNELS",
-            "email,sms",
+            "email",
         ),
         JOBS_INTERVIEW_REMINDER_CHANNELS=os.environ.get(
             "JOBS_INTERVIEW_REMINDER_CHANNELS",
-            os.environ.get("JOBS_REMINDER_CHANNELS", "email,sms"),
+            os.environ.get("JOBS_REMINDER_CHANNELS", "email"),
         ),
         JOBS_WEBHOOK_URL=os.environ.get("JOBS_WEBHOOK_URL"),
         JOBS_REPORT_CHANNELS=os.environ.get("JOBS_REPORT_CHANNELS", "email"),
