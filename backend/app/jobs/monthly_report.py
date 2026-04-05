@@ -1,4 +1,4 @@
-"""Monthly admin activity report generation and delivery workflow."""
+"""Monthly activity report generation and delivery workflow."""
 
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,6 +10,7 @@ from app.jobs.channels import parse_channels, send_channel_notification
 from app.models import (
     Application,
     BackgroundJob,
+    Company,
     Placement,
     PlacementDrive,
     PlacementOffer,
@@ -40,6 +41,20 @@ def _month_label(month_start):
 
 def _month_key(month_start):
     return month_start.strftime("%Y-%m")
+
+
+def _normalize_report_audience(raw_audience):
+    value = str(raw_audience or "").strip().lower()
+    if value in {"admin", "company", "both"}:
+        return value
+    return "admin"
+
+
+def _normalize_report_format(raw_format):
+    value = str(raw_format or "").strip().lower()
+    if value in {"html", "pdf"}:
+        return value
+    return "html"
 
 
 def _render_monthly_report_html(month_label, metrics):
@@ -84,12 +99,12 @@ def _render_monthly_report_html(month_label, metrics):
 """
 
 
-def _save_report(report_html, month_key):
+def _save_report_html(report_html, month_key, suffix):
     output_root = current_app.config.get("JOBS_REPORT_OUTPUT_DIR")
     output_path = Path(output_root)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    filename = f"monthly-activity-report-{month_key}.html"
+    filename = f"monthly-activity-report-{month_key}-{suffix}.html"
     report_path = output_path / filename
     report_path.write_text(report_html, encoding="utf-8")
 
@@ -97,76 +112,207 @@ def _save_report(report_html, month_key):
         "filename": filename,
         "path": str(report_path),
         "size_bytes": report_path.stat().st_size,
+        "format": "html",
     }
 
 
-def _monthly_metrics(period_start, period_end):
+def _save_report_pdf(month_label, metrics, month_key, suffix):
+    output_root = current_app.config.get("JOBS_REPORT_OUTPUT_DIR")
+    output_path = Path(output_root)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    filename = f"monthly-activity-report-{month_key}-{suffix}.pdf"
+    report_path = output_path / filename
+
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.pdfgen import canvas
+    except ModuleNotFoundError as exc:
+        raise RuntimeError("reportlab is required for PDF report generation") from exc
+
+    generated_at = _utcnow().strftime("%d %b %Y %H:%M UTC")
+    lines = [
+        "Monthly Placement Activity Report",
+        f"Month: {month_label}",
+        f"Generated at: {generated_at}",
+        "",
+        f"Drives Conducted: {metrics['drives_conducted']}",
+        f"Students Applied: {metrics['students_applied']}",
+        f"Students Selected: {metrics['students_selected']}",
+        f"Total Applications: {metrics['total_applications']}",
+        f"Offers Released: {metrics['offers_released']}",
+        f"Placements Confirmed: {metrics['placements_confirmed']}",
+    ]
+
+    report_canvas = canvas.Canvas(str(report_path), pagesize=A4)
+    width, height = A4
+
+    y = height - 52
+    report_canvas.setFont("Helvetica-Bold", 16)
+    report_canvas.drawString(40, y, lines[0])
+
+    y -= 26
+    report_canvas.setFont("Helvetica", 11)
+    for line in lines[1:]:
+        report_canvas.drawString(40, y, line)
+        y -= 16
+
+    report_canvas.save()
+
     return {
-        "drives_conducted": (
-            db.session.query(func.count(PlacementDrive.drive_id))
-            .filter(
-                PlacementDrive.created_at >= period_start,
-                PlacementDrive.created_at < period_end,
-            )
-            .scalar()
-            or 0
-        ),
-        "students_applied": (
-            db.session.query(func.count(func.distinct(Application.student_id)))
-            .filter(
-                Application.application_date >= period_start,
-                Application.application_date < period_end,
-            )
-            .scalar()
-            or 0
-        ),
-        "students_selected": (
-            db.session.query(func.count(func.distinct(Application.student_id)))
-            .filter(
-                Application.updated_at >= period_start,
-                Application.updated_at < period_end,
-                Application.status == "selected",
-            )
-            .scalar()
-            or 0
-        ),
-        "total_applications": (
-            db.session.query(func.count(Application.application_id))
-            .filter(
-                Application.application_date >= period_start,
-                Application.application_date < period_end,
-            )
-            .scalar()
-            or 0
-        ),
-        "offers_released": (
-            db.session.query(func.count(PlacementOffer.offer_id))
-            .filter(
-                PlacementOffer.created_at >= period_start,
-                PlacementOffer.created_at < period_end,
-            )
-            .scalar()
-            or 0
-        ),
-        "placements_confirmed": (
-            db.session.query(func.count(Placement.placement_id))
-            .filter(
-                Placement.created_at >= period_start,
-                Placement.created_at < period_end,
-            )
-            .scalar()
-            or 0
-        ),
+        "filename": filename,
+        "path": str(report_path),
+        "size_bytes": report_path.stat().st_size,
+        "format": "pdf",
     }
 
 
-def execute_monthly_activity_report(task_request_id=None):
-    """Generate, persist, and deliver monthly admin report."""
+def _save_report(month_label, month_key, suffix, report_format, metrics):
+    if report_format == "pdf":
+        return _save_report_pdf(month_label, metrics, month_key, suffix)
+
+    report_html = _render_monthly_report_html(month_label, metrics)
+    return _save_report_html(report_html, month_key, suffix)
+
+
+def _monthly_metrics(period_start, period_end, company_id=None):
+    drives_query = db.session.query(func.count(PlacementDrive.drive_id)).filter(
+        PlacementDrive.created_at >= period_start,
+        PlacementDrive.created_at < period_end,
+    )
+    if company_id is not None:
+        drives_query = drives_query.filter(PlacementDrive.company_id == company_id)
+
+    students_applied_query = (
+        db.session.query(func.count(func.distinct(Application.student_id)))
+        .join(PlacementDrive, Application.drive_id == PlacementDrive.drive_id)
+        .filter(
+            Application.application_date >= period_start,
+            Application.application_date < period_end,
+        )
+    )
+    if company_id is not None:
+        students_applied_query = students_applied_query.filter(PlacementDrive.company_id == company_id)
+
+    students_selected_query = (
+        db.session.query(func.count(func.distinct(Application.student_id)))
+        .join(PlacementDrive, Application.drive_id == PlacementDrive.drive_id)
+        .filter(
+            Application.updated_at >= period_start,
+            Application.updated_at < period_end,
+            Application.status == "selected",
+        )
+    )
+    if company_id is not None:
+        students_selected_query = students_selected_query.filter(PlacementDrive.company_id == company_id)
+
+    total_applications_query = (
+        db.session.query(func.count(Application.application_id))
+        .join(PlacementDrive, Application.drive_id == PlacementDrive.drive_id)
+        .filter(
+            Application.application_date >= period_start,
+            Application.application_date < period_end,
+        )
+    )
+    if company_id is not None:
+        total_applications_query = total_applications_query.filter(PlacementDrive.company_id == company_id)
+
+    offers_query = db.session.query(func.count(PlacementOffer.offer_id)).filter(
+        PlacementOffer.created_at >= period_start,
+        PlacementOffer.created_at < period_end,
+    )
+    if company_id is not None:
+        offers_query = offers_query.filter(PlacementOffer.company_id == company_id)
+
+    placements_query = db.session.query(func.count(Placement.placement_id)).filter(
+        Placement.created_at >= period_start,
+        Placement.created_at < period_end,
+    )
+    if company_id is not None:
+        placements_query = placements_query.filter(Placement.company_id == company_id)
+
+    return {
+        "drives_conducted": drives_query.scalar() or 0,
+        "students_applied": students_applied_query.scalar() or 0,
+        "students_selected": students_selected_query.scalar() or 0,
+        "total_applications": total_applications_query.scalar() or 0,
+        "offers_released": offers_query.scalar() or 0,
+        "placements_confirmed": placements_query.scalar() or 0,
+    }
+
+
+def _admin_recipients():
+    users = User.query.filter(User.role == "admin", User.is_active.is_(True)).all()
+    return [
+        {
+            "user_id": user.user_id,
+            "audience": "admin",
+            "company_id": None,
+            "company_name": None,
+            "label": "Admin",
+        }
+        for user in users
+    ]
+
+
+def _company_recipients():
+    rows = (
+        db.session.query(User.user_id, Company.company_id, Company.company_name)
+        .join(Company, Company.user_id == User.user_id)
+        .filter(
+            User.role == "company",
+            User.is_active.is_(True),
+            Company.approval_status == "approved",
+            Company.is_blacklisted.is_(False),
+        )
+        .all()
+    )
+
+    return [
+        {
+            "user_id": row.user_id,
+            "audience": "company",
+            "company_id": row.company_id,
+            "company_name": row.company_name,
+            "label": row.company_name,
+        }
+        for row in rows
+    ]
+
+
+def _target_recipients(audience_key):
+    recipients = []
+    if audience_key in {"admin", "both"}:
+        recipients.extend(_admin_recipients())
+    if audience_key in {"company", "both"}:
+        recipients.extend(_company_recipients())
+
+    deduped = []
+    seen_user_ids = set()
+    for recipient in recipients:
+        user_id = recipient["user_id"]
+        if user_id in seen_user_ids:
+            continue
+        seen_user_ids.add(user_id)
+        deduped.append(recipient)
+    return deduped
+
+
+def execute_monthly_activity_report(task_request_id=None, audience=None, report_format=None):
+    """Generate, persist, and deliver monthly report to admins and/or companies."""
     now_utc = _utcnow()
     period_start, period_end = _month_window(now_utc)
     month_key = _month_key(period_start)
     month_label = _month_label(period_start)
-    run_key = f"monthly-report:{month_key}"
+
+    audience_key = _normalize_report_audience(
+        audience or current_app.config.get("JOBS_MONTHLY_REPORT_AUDIENCE", "admin")
+    )
+    report_format_key = _normalize_report_format(
+        report_format or current_app.config.get("JOBS_MONTHLY_REPORT_FORMAT", "html")
+    )
+
+    run_key = f"monthly-report:{month_key}:{audience_key}:{report_format_key}"
 
     job = BackgroundJob.query.filter_by(idempotency_key=run_key).first()
     if job and job.status in {"running", "completed"}:
@@ -182,7 +328,11 @@ def execute_monthly_activity_report(task_request_id=None):
             job_type="monthly_report",
             status="running",
             idempotency_key=run_key,
-            payload={"task_request_id": task_request_id},
+            payload={
+                "task_request_id": task_request_id,
+                "audience": audience_key,
+                "format": report_format_key,
+            },
             started_at=now_utc,
         )
         db.session.add(job)
@@ -191,41 +341,83 @@ def execute_monthly_activity_report(task_request_id=None):
         job.started_at = now_utc
         job.finished_at = None
         job.error_message = None
-        job.payload = {"task_request_id": task_request_id}
+        job.payload = {
+            "task_request_id": task_request_id,
+            "audience": audience_key,
+            "format": report_format_key,
+        }
 
     db.session.commit()
 
     channels = parse_channels(current_app.config.get("JOBS_REPORT_CHANNELS", "email"))
     webhook_url = current_app.config.get("JOBS_WEBHOOK_URL")
+    recipients = _target_recipients(audience_key)
 
-    metrics = _monthly_metrics(period_start, period_end)
-    report_html = _render_monthly_report_html(month_label, metrics)
-    report_file = _save_report(report_html, month_key)
-
-    admins = User.query.filter(User.role == "admin", User.is_active.is_(True)).all()
-    delivery = {"sent": 0, "failed": 0, "channels": {channel: 0 for channel in channels}}
+    delivery = {
+        "sent": 0,
+        "failed": 0,
+        "channels": {channel: 0 for channel in channels},
+        "recipient_count": len(recipients),
+    }
+    metrics_cache = {}
+    report_cache = {}
 
     try:
-        for admin in admins:
+        for recipient in recipients:
+            company_id = recipient.get("company_id")
+            metrics_key = f"company:{company_id}" if company_id is not None else "global"
+            metrics = metrics_cache.get(metrics_key)
+            if metrics is None:
+                metrics = _monthly_metrics(period_start, period_end, company_id=company_id)
+                metrics_cache[metrics_key] = metrics
+
+            report_suffix = "admin" if company_id is None else f"company-{company_id}"
+            report_key = f"{report_suffix}:{report_format_key}"
+            report_file = report_cache.get(report_key)
+            if report_file is None:
+                report_file = _save_report(
+                    month_label,
+                    month_key,
+                    report_suffix,
+                    report_format_key,
+                    metrics,
+                )
+                report_cache[report_key] = report_file
+
+            if recipient["audience"] == "company":
+                title = f"Monthly Placement Report - {month_label}"
+                message = (
+                    f"Monthly placement report for {recipient['company_name']} is ready. "
+                    f"Applications: {metrics['total_applications']}, "
+                    f"Selected: {metrics['students_selected']}."
+                )
+            else:
+                title = f"Monthly Activity Report - {month_label}"
+                message = (
+                    "Monthly report is generated. "
+                    f"Drives: {metrics['drives_conducted']}, "
+                    f"Applied: {metrics['students_applied']}, "
+                    f"Selected: {metrics['students_selected']}."
+                )
+
             for channel in channels:
                 delivery_result = send_channel_notification(
                     channel=channel,
-                    recipient_id=admin.user_id,
-                    title=f"Monthly Activity Report - {month_label}",
-                    message=(
-                        "Monthly report is generated. "
-                        f"Drives: {metrics['drives_conducted']}, "
-                        f"Applied: {metrics['students_applied']}, "
-                        f"Selected: {metrics['students_selected']}."
-                    ),
+                    recipient_id=recipient["user_id"],
+                    title=title,
+                    message=message,
                     resource_type="monthly_report",
                     resource_id=None,
                     webhook_url=webhook_url,
                     webhook_payload={
                         "event": "monthly_activity_report",
                         "month": month_key,
-                        "admin_user_id": admin.user_id,
+                        "recipient_user_id": recipient["user_id"],
+                        "recipient_audience": recipient["audience"],
+                        "company_id": company_id,
+                        "company_name": recipient.get("company_name"),
                         "report_file": report_file["filename"],
+                        "report_format": report_format_key,
                         "metrics": metrics,
                     },
                 )
@@ -236,6 +428,10 @@ def execute_monthly_activity_report(task_request_id=None):
                 else:
                     delivery["failed"] += 1
 
+        primary_metrics = metrics_cache.get("global")
+        if primary_metrics is None and metrics_cache:
+            primary_metrics = next(iter(metrics_cache.values()))
+
         job.status = "completed"
         job.finished_at = _utcnow()
         job.result_meta = {
@@ -243,9 +439,13 @@ def execute_monthly_activity_report(task_request_id=None):
             "month_label": month_label,
             "period_start": period_start.isoformat(),
             "period_end": period_end.isoformat(),
-            "metrics": metrics,
+            "audience": audience_key,
+            "report_format": report_format_key,
+            "metrics": primary_metrics,
             "delivery": delivery,
-            "report": report_file,
+            "report": list(report_cache.values())[0] if report_cache else None,
+            "reports": list(report_cache.values()),
+            "metrics_by_scope": metrics_cache,
         }
         db.session.commit()
 
@@ -253,9 +453,13 @@ def execute_monthly_activity_report(task_request_id=None):
             "job_id": job.job_id,
             "status": "completed",
             "month": month_key,
-            "metrics": metrics,
+            "audience": audience_key,
+            "report_format": report_format_key,
+            "metrics": primary_metrics,
             "delivery": delivery,
-            "report": report_file,
+            "report": list(report_cache.values())[0] if report_cache else None,
+            "reports": list(report_cache.values()),
+            "metrics_by_scope": metrics_cache,
         }
     except Exception as exc:
         db.session.rollback()

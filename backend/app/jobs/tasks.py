@@ -131,10 +131,14 @@ def run_interview_reminders(self):
 
 
 @celery.task(bind=True, name="jobs.monthly_report.run")
-def run_monthly_report(self, task_request_id=None):
+def run_monthly_report(self, task_request_id=None, audience=None, report_format=None):
     """Generate monthly HTML activity report for admins."""
     request_id = task_request_id or getattr(self.request, "id", None)
-    result = execute_monthly_activity_report(task_request_id=request_id)
+    result = execute_monthly_activity_report(
+        task_request_id=request_id,
+        audience=audience,
+        report_format=report_format,
+    )
     return _retry_or_alert(
         self,
         "jobs.monthly_report.run",
@@ -143,6 +147,8 @@ def run_monthly_report(self, task_request_id=None):
             "task_id": getattr(self.request, "id", None),
             "request_id": request_id,
             "job_id": result.get("job_id"),
+            "audience": audience,
+            "report_format": report_format,
         },
     )
 

@@ -168,3 +168,45 @@ def test_admin_can_trigger_monthly_report_endpoint(app, client, tmp_path):
     assert response.status_code == 200
     payload = response.get_json()["data"]
     assert payload["status"] in {"completed", "running", "queued", "failed"}
+
+
+def test_company_can_trigger_pdf_monthly_report_endpoint(app, client, tmp_path):
+    with app.app_context():
+        app.config.update(
+            JOBS_EAGER_EXECUTION=True,
+            JOBS_REPORT_CHANNELS="email",
+            JOBS_REPORT_OUTPUT_DIR=str(tmp_path / "reports-company-pdf"),
+            JOBS_MONTHLY_REPORT_FORMAT="pdf",
+            JOBS_MONTHLY_REPORT_AUDIENCE="company",
+            JOBS_WEBHOOK_URL=None,
+        )
+
+        company_user = _make_user("company.monthly.3", "company.monthly.3@example.com", "company")
+        _make_company_profile(
+            company_user.user_id,
+            "Monthly Company Labs",
+            "hr.monthly.3@example.com",
+        )
+        db.session.commit()
+
+        headers = _auth_headers(company_user.user_id, "company")
+
+    response = client.post("/jobs/reports/monthly/company/run?format=pdf", headers=headers)
+
+    assert response.status_code == 200
+    payload = response.get_json()["data"]
+    assert payload["status"] == "completed"
+    assert payload["audience"] == "company"
+    assert payload["report_format"] == "pdf"
+
+    report_path = Path(payload["report"]["path"])
+    assert report_path.exists()
+    assert report_path.suffix == ".pdf"
+
+    with app.app_context():
+        sent_to_company = Notification.query.filter(
+            Notification.recipient_id == company_user.user_id,
+            Notification.notification_type == "email",
+            Notification.related_resource_type == "monthly_report",
+        ).count()
+        assert sent_to_company == 1

@@ -4,13 +4,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
-from flask import Blueprint, current_app, jsonify, send_file
+from flask import Blueprint, current_app, jsonify, request, send_file
 from flask_jwt_extended import get_jwt_identity
 
 from app.auth.utils import role_required
 from app.jobs.exports import create_student_export_job, dispatch_export_job
 from app.jobs.monthly_report import execute_monthly_activity_report
-from app.models import BackgroundJob, ExportArtifact, Student, db
+from app.models import BackgroundJob, Company, ExportArtifact, Student, db
 
 jobs_bp = Blueprint("jobs", __name__, url_prefix="/jobs")
 
@@ -72,6 +72,10 @@ def _job_for_user(job_id, user_id):
     ).first()
 
 
+def _company_for_user(user_id):
+    return Company.query.filter_by(user_id=user_id).first()
+
+
 def _expire_if_needed(artifact):
     if not artifact or not artifact.expires_at:
         return False
@@ -128,6 +132,10 @@ def jobs_health_check():
                 "interview_window_hours": current_app.config.get("JOBS_INTERVIEW_REMINDER_WINDOW_HOURS"),
                 "interview_channels": current_app.config.get("JOBS_INTERVIEW_REMINDER_CHANNELS"),
             },
+            "reports": {
+                "audience": current_app.config.get("JOBS_MONTHLY_REPORT_AUDIENCE"),
+                "format": current_app.config.get("JOBS_MONTHLY_REPORT_FORMAT"),
+            },
         },
     }
     return jsonify(payload), 200
@@ -140,16 +148,32 @@ def trigger_monthly_report_run():
     if user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
 
+    audience = (request.args.get("audience") or "").strip().lower() or None
+    if audience and audience not in {"admin", "company", "both"}:
+        return jsonify({"success": False, "error": "audience must be admin, company, or both"}), 400
+
+    report_format = (request.args.get("format") or "").strip().lower() or None
+    if report_format and report_format not in {"html", "pdf"}:
+        return jsonify({"success": False, "error": "format must be html or pdf"}), 400
+
     task_request_id = f"admin:{user_id}:{datetime.now(timezone.utc).isoformat()}"
     if current_app.config.get("JOBS_EAGER_EXECUTION"):
-        result = execute_monthly_activity_report(task_request_id=task_request_id)
+        result = execute_monthly_activity_report(
+            task_request_id=task_request_id,
+            audience=audience,
+            report_format=report_format,
+        )
         return jsonify({"success": True, "data": result}), 200
 
     celery_extension = current_app.extensions.get("celery")
     if celery_extension:
         celery_extension.send_task(
             "jobs.monthly_report.run",
-            kwargs={"task_request_id": task_request_id},
+            kwargs={
+                "task_request_id": task_request_id,
+                "audience": audience,
+                "report_format": report_format,
+            },
         )
         return (
             jsonify(
@@ -164,7 +188,70 @@ def trigger_monthly_report_run():
             202,
         )
 
-    result = execute_monthly_activity_report(task_request_id=task_request_id)
+    result = execute_monthly_activity_report(
+        task_request_id=task_request_id,
+        audience=audience,
+        report_format=report_format,
+    )
+    return jsonify({"success": True, "data": result}), 200
+
+
+@jobs_bp.post("/reports/monthly/company/run")
+@role_required("company")
+def trigger_company_monthly_report_run():
+    user_id = _current_user_id()
+    if user_id is None:
+        return jsonify({"success": False, "error": "Invalid token identity"}), 401
+
+    company = _company_for_user(user_id)
+    if not company:
+        return jsonify({"success": False, "error": "Company profile not found"}), 404
+
+    if company.approval_status != "approved" or company.is_blacklisted:
+        return jsonify({"success": False, "error": "Company is not allowed to run reports"}), 403
+
+    report_format = (request.args.get("format") or "").strip().lower() or None
+    if report_format and report_format not in {"html", "pdf"}:
+        return jsonify({"success": False, "error": "format must be html or pdf"}), 400
+
+    task_request_id = f"company:{company.company_id}:{datetime.now(timezone.utc).isoformat()}"
+
+    if current_app.config.get("JOBS_EAGER_EXECUTION"):
+        result = execute_monthly_activity_report(
+            task_request_id=task_request_id,
+            audience="company",
+            report_format=report_format,
+        )
+        return jsonify({"success": True, "data": result}), 200
+
+    celery_extension = current_app.extensions.get("celery")
+    if celery_extension:
+        celery_extension.send_task(
+            "jobs.monthly_report.run",
+            kwargs={
+                "task_request_id": task_request_id,
+                "audience": "company",
+                "report_format": report_format,
+            },
+        )
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "data": {
+                        "status": "queued",
+                        "message": "Company monthly report job queued",
+                    },
+                }
+            ),
+            202,
+        )
+
+    result = execute_monthly_activity_report(
+        task_request_id=task_request_id,
+        audience="company",
+        report_format=report_format,
+    )
     return jsonify({"success": True, "data": result}), 200
 
 
