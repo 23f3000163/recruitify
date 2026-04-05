@@ -10,7 +10,7 @@ from .celery_app import celery
 from .channels import parse_channels, send_channel_notification
 from .exports import execute_student_applications_export
 from .monthly_report import execute_monthly_activity_report
-from .reminders import execute_daily_deadline_reminders
+from .reminders import execute_daily_deadline_reminders, execute_daily_interview_reminders
 
 
 def _utc_iso_now():
@@ -107,6 +107,21 @@ def run_daily_reminders(self):
     return _retry_or_alert(
         self,
         "jobs.daily_reminders.run",
+        result,
+        context={
+            "task_id": getattr(self.request, "id", None),
+            "job_id": result.get("job_id"),
+        },
+    )
+
+
+@celery.task(bind=True, name="jobs.interview_reminders.run")
+def run_interview_reminders(self):
+    """Execute interview reminder dispatch for upcoming scheduled interviews."""
+    result = execute_daily_interview_reminders(task_request_id=getattr(self.request, "id", None))
+    return _retry_or_alert(
+        self,
+        "jobs.interview_reminders.run",
         result,
         context={
             "task_id": getattr(self.request, "id", None),

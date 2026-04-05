@@ -118,11 +118,15 @@ def jobs_health_check():
             },
             "schedules": {
                 "daily_reminder": current_app.config.get("JOBS_DAILY_REMINDER_CRON"),
+                "interview_reminder": current_app.config.get("JOBS_INTERVIEW_REMINDER_CRON"),
                 "monthly_report": current_app.config.get("JOBS_MONTHLY_REPORT_CRON"),
             },
             "reminders": {
                 "lookahead_days": current_app.config.get("JOBS_REMINDER_LOOKAHEAD_DAYS"),
                 "channels": current_app.config.get("JOBS_REMINDER_CHANNELS"),
+                "interview_enabled": current_app.config.get("JOBS_INTERVIEW_REMINDER_ENABLED"),
+                "interview_window_hours": current_app.config.get("JOBS_INTERVIEW_REMINDER_WINDOW_HOURS"),
+                "interview_channels": current_app.config.get("JOBS_INTERVIEW_REMINDER_CHANNELS"),
             },
         },
     }

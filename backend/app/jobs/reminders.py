@@ -9,6 +9,7 @@ from app.models import (
     Application,
     BackgroundJob,
     Company,
+    Interview,
     Notification,
     PlacementDrive,
     Student,
@@ -21,8 +22,8 @@ def _utcnow():
     return datetime.now(timezone.utc)
 
 
-def _daily_job_key(now_utc):
-    return f"daily-reminder:{now_utc.date().isoformat()}"
+def _daily_job_key(now_utc, prefix="daily-reminder"):
+    return f"{prefix}:{now_utc.date().isoformat()}"
 
 
 def _eligible_students_for_drive(drive):
@@ -72,13 +73,20 @@ def _eligible_students_for_drive(drive):
     return candidates
 
 
-def _already_sent_today(recipient_id, drive_id, channel, day_start, day_end):
+def _already_sent_today(
+    recipient_id,
+    resource_id,
+    channel,
+    day_start,
+    day_end,
+    resource_type="deadline_reminder",
+):
     reminder = (
         Notification.query.filter(
             Notification.recipient_id == recipient_id,
             Notification.notification_type == channel,
-            Notification.related_resource_type == "deadline_reminder",
-            Notification.related_resource_id == drive_id,
+            Notification.related_resource_type == resource_type,
+            Notification.related_resource_id == resource_id,
             Notification.sent_at >= day_start,
             Notification.sent_at < day_end,
         )
@@ -90,6 +98,26 @@ def _already_sent_today(recipient_id, drive_id, channel, day_start, day_end):
 
 def _channel_breakdown(channels):
     return {channel: {"sent": 0, "failed": 0} for channel in channels}
+
+
+def _interview_candidates(window_start, window_end):
+    return (
+        db.session.query(Interview, Application, Student, User, PlacementDrive, Company)
+        .join(Application, Interview.application_id == Application.application_id)
+        .join(Student, Application.student_id == Student.student_id)
+        .join(User, Student.user_id == User.user_id)
+        .join(PlacementDrive, Interview.drive_id == PlacementDrive.drive_id)
+        .join(Company, Interview.company_id == Company.company_id)
+        .filter(
+            Interview.interview_date >= window_start,
+            Interview.interview_date <= window_end,
+            Interview.result == "pending",
+            Student.is_blacklisted.is_(False),
+            User.is_active.is_(True),
+        )
+        .order_by(Interview.interview_date.asc(), Interview.interview_id.asc())
+        .all()
+    )
 
 
 def execute_daily_deadline_reminders(task_request_id=None):
@@ -177,6 +205,7 @@ def execute_daily_deadline_reminders(task_request_id=None):
                         channel,
                         day_start,
                         day_end,
+                        resource_type="deadline_reminder",
                     ):
                         metrics["skipped_duplicates"] += 1
                         continue
@@ -220,6 +249,161 @@ def execute_daily_deadline_reminders(task_request_id=None):
         return {
             "job_id": job.job_id,
             "status": job.status,
+            **metrics,
+        }
+    except Exception as exc:
+        db.session.rollback()
+
+        failed_job = db.session.get(BackgroundJob, job.job_id)
+        if failed_job:
+            failed_job.status = "failed"
+            failed_job.finished_at = _utcnow()
+            failed_job.retry_count = int(failed_job.retry_count or 0) + 1
+            failed_job.error_message = str(exc)[:1000]
+            db.session.commit()
+
+        return {
+            "job_id": job.job_id,
+            "status": "failed",
+            "error": str(exc),
+        }
+
+
+def execute_daily_interview_reminders(task_request_id=None):
+    """Run interview reminder dispatch for upcoming scheduled interviews."""
+    now_utc = _utcnow()
+
+    if not current_app.config.get("JOBS_INTERVIEW_REMINDER_ENABLED", False):
+        return {
+            "status": "skipped",
+            "reason": "interview-reminders-disabled",
+        }
+
+    run_key = _daily_job_key(now_utc, prefix="interview-reminder")
+
+    job = BackgroundJob.query.filter_by(idempotency_key=run_key).first()
+    if job and job.status in {"running", "completed"}:
+        return {
+            "job_id": job.job_id,
+            "status": job.status,
+            "skipped": True,
+            "reason": "already-ran-today",
+        }
+
+    if not job:
+        job = BackgroundJob(
+            job_type="daily_reminder",
+            status="running",
+            idempotency_key=run_key,
+            payload={"task_request_id": task_request_id, "kind": "interview_reminder"},
+            started_at=now_utc,
+        )
+        db.session.add(job)
+    else:
+        job.status = "running"
+        job.started_at = now_utc
+        job.finished_at = None
+        job.error_message = None
+        job.payload = {"task_request_id": task_request_id, "kind": "interview_reminder"}
+
+    db.session.commit()
+
+    window_hours = max(1, int(current_app.config.get("JOBS_INTERVIEW_REMINDER_WINDOW_HOURS", 24)))
+    channels = parse_channels(
+        current_app.config.get(
+            "JOBS_INTERVIEW_REMINDER_CHANNELS",
+            current_app.config.get("JOBS_REMINDER_CHANNELS", "email"),
+        )
+    )
+    webhook_url = current_app.config.get("JOBS_WEBHOOK_URL")
+
+    window_end = now_utc + timedelta(hours=window_hours)
+    day_start = datetime.combine(now_utc.date(), datetime.min.time(), tzinfo=timezone.utc)
+    day_end = day_start + timedelta(days=1)
+
+    interviews = _interview_candidates(now_utc, window_end)
+    metrics = {
+        "interviews_considered": len(interviews),
+        "students_notified": 0,
+        "sent": 0,
+        "failed": 0,
+        "skipped_duplicates": 0,
+        "channel_breakdown": _channel_breakdown(channels),
+    }
+    recipients_notified = set()
+
+    try:
+        for interview, _application, student, user, drive, company in interviews:
+            interview_at_text = interview.interview_date.strftime("%d %b %Y %H:%M UTC")
+            title = f"Interview Reminder: {drive.job_title if drive else 'Placement Interview'}"
+            mode = str(interview.interview_mode or "").strip().lower() or "online"
+
+            location_hint = ""
+            if mode == "online" and interview.interview_link:
+                location_hint = f" Join here: {interview.interview_link}"
+            elif mode == "offline" and interview.interview_location:
+                location_hint = f" Venue: {interview.interview_location}."
+
+            message = (
+                f"Reminder: your interview for {drive.job_title if drive else 'the selected role'} at "
+                f"{company.company_name if company else 'the company'} is scheduled on "
+                f"{interview_at_text} ({mode}).{location_hint}"
+            )
+
+            student_received_message = False
+            for channel in channels:
+                if channel in {"email", "sms"} and _already_sent_today(
+                    user.user_id,
+                    interview.interview_id,
+                    channel,
+                    day_start,
+                    day_end,
+                    resource_type="interview_reminder",
+                ):
+                    metrics["skipped_duplicates"] += 1
+                    continue
+
+                result = send_channel_notification(
+                    channel=channel,
+                    recipient_id=user.user_id,
+                    title=title,
+                    message=message,
+                    resource_type="interview_reminder",
+                    resource_id=interview.interview_id,
+                    webhook_url=webhook_url,
+                    webhook_payload={
+                        "event": "daily_interview_reminder",
+                        "student_id": student.student_id,
+                        "user_id": user.user_id,
+                        "interview_id": interview.interview_id,
+                        "company_name": company.company_name if company else None,
+                        "drive_title": drive.job_title if drive else None,
+                        "interview_at": interview.interview_date.isoformat(),
+                        "mode": mode,
+                    },
+                )
+
+                if result.get("status") == "sent":
+                    metrics["sent"] += 1
+                    metrics["channel_breakdown"][channel]["sent"] += 1
+                    student_received_message = True
+                else:
+                    metrics["failed"] += 1
+                    metrics["channel_breakdown"][channel]["failed"] += 1
+
+            if student_received_message:
+                recipients_notified.add(user.user_id)
+
+        metrics["students_notified"] = len(recipients_notified)
+
+        job.status = "completed"
+        job.finished_at = _utcnow()
+        job.result_meta = metrics
+        db.session.commit()
+
+        return {
+            "job_id": job.job_id,
+            "status": "completed",
             **metrics,
         }
     except Exception as exc:

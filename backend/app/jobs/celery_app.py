@@ -33,6 +33,7 @@ def init_celery(app):
                 return super().__call__(*args, **kwargs)
 
     daily_cron = app.config.get("JOBS_DAILY_REMINDER_CRON", "0 9 * * *")
+    interview_cron = app.config.get("JOBS_INTERVIEW_REMINDER_CRON", "30 9 * * *")
     monthly_cron = app.config.get("JOBS_MONTHLY_REPORT_CRON", "0 9 1 * *")
 
     celery.conf.update(
@@ -50,6 +51,10 @@ def init_celery(app):
             "daily-reminder-placeholder": {
                 "task": "jobs.daily_reminders.run",
                 "schedule": _cron_to_schedule(daily_cron, "0 9 * * *"),
+            },
+            "interview-reminder-placeholder": {
+                "task": "jobs.interview_reminders.run",
+                "schedule": _cron_to_schedule(interview_cron, "30 9 * * *"),
             },
             "monthly-report-placeholder": {
                 "task": "jobs.monthly_report.run",
