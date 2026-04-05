@@ -452,16 +452,26 @@ export const adminApi = {
 
 export const studentApi = {
   getDashboard() {
-    return apiClient.get('/student/dashboard')
+    return requestWithFallback([
+      () => apiClient.get('/student/dashboard')
+    ])
   },
   getProfile() {
-    return apiClient.get('/student/profile')
+    return requestWithFallback([
+      () => apiClient.get('/student/profile')
+    ])
   },
   getDrives(params = {}) {
-    return apiClient.get('/student/drives', { params })
+    return requestWithFallback([
+      () => apiClient.get('/student/drives', { params }),
+      () => apiClient.get('/drives', { params })
+    ])
   },
   applyToDrive(driveId) {
-    return apiClient.post(`/student/drives/${driveId}/apply`)
+    return requestWithFallback([
+      () => apiClient.post(`/student/drives/${driveId}/apply`),
+      () => applicationsApi.applyToJob({ job_id: driveId })
+    ])
   },
   getApplications(params = {}) {
     return applicationsApi.getStudentApplications(params)
@@ -476,10 +486,16 @@ export const studentApi = {
     return apiClient.get('/student/notifications', { params })
   },
   markNotificationRead(notificationId) {
-    return apiClient.put(`/student/notifications/${notificationId}/read`)
+    return requestWithFallback([
+      () => apiClient.patch(`/student/notifications/${notificationId}`),
+      () => apiClient.put(`/student/notifications/${notificationId}/read`)
+    ])
   },
   markAllNotificationsRead() {
-    return apiClient.put('/student/notifications/read-all')
+    return requestWithFallback([
+      () => apiClient.patch('/student/notifications/read-all'),
+      () => apiClient.put('/student/notifications/read-all')
+    ])
   },
   respondToOffer(offerId, payload) {
     return apiClient.put(`/student/offers/${offerId}/respond`, payload)
@@ -495,7 +511,10 @@ export const studentApi = {
     })
   },
   updateProfile(payload) {
-    return apiClient.put('/student/profile', payload)
+    return requestWithFallback([
+      () => apiClient.patch('/student/profile', payload),
+      () => apiClient.put('/student/profile', payload)
+    ])
   }
 }
 

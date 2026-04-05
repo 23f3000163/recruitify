@@ -1,5 +1,5 @@
 <template>
-  <div class="rq-app" :class="{ 'is-collapsed': sidebarCollapsed }">
+  <div class="rq-app rq-student-app" :class="{ 'is-collapsed': sidebarCollapsed }">
     <StudentSidebar
       :sidebar-collapsed="sidebarCollapsed"
       :active-view="activeView"
@@ -8,6 +8,7 @@
       :student="student"
       @toggle-sidebar="toggleSidebar"
       @navigate="navigate"
+      @request-logout="handleLogout"
     />
 
     <div class="rq-main">
@@ -20,17 +21,10 @@
         @update:search-query="searchQuery = $event"
         @update:search-focused="searchFocused = $event"
         @navigate="navigate"
+        @request-logout="handleLogout"
       />
 
-      <div
-        v-if="actionNote"
-        class="rq-action-note"
-        :class="`tone-${actionTone}`"
-        role="status"
-        aria-live="polite"
-      >
-        {{ actionNote }}
-      </div>
+      <StudentToast :message="actionNote" :tone="actionTone" />
 
       <main class="rq-page" role="main">
         <StudentDashboardHome
@@ -44,6 +38,8 @@
           :stat-cards="statCards"
           :drives="dashboardDrives"
           :applications="dashboardApplications"
+          :summary="summary"
+          @switch-view="navigate"
         />
 
         <StudentDrivesPanel
@@ -66,6 +62,7 @@
           @apply-filters="applyDriveFilters"
           @page-change="loadDrives"
           @apply-drive="applyToDrive"
+          @open-drive="openDriveDetails"
         />
 
         <StudentApplicationsPanel
@@ -82,6 +79,7 @@
           @apply-filters="applyApplicationFilters"
           @page-change="loadApplications"
           @respond-offer="respondToOffer"
+          @open-application="openApplicationDetails"
         />
 
         <StudentNotificationsPanel
@@ -127,21 +125,35 @@
           description="This section is not available in the current dashboard state."
         />
       </main>
+
+      <StudentDriveModal
+        :drive="selectedDrive"
+        @close="selectedDrive = null"
+        @apply="applyToDriveFromModal"
+      />
+
+      <StudentApplicationModal
+        :application="selectedApplication"
+        @close="selectedApplication = null"
+      />
     </div>
   </div>
 </template>
 
 <script>
 import { authApi, studentApi } from '../../api/api'
-import StudentApplicationsPanel from '../../components/student/v2/StudentApplicationsPanel.vue'
-import StudentDashboardHome from '../../components/student/v2/StudentDashboardHome.vue'
-import StudentDrivesPanel from '../../components/student/v2/StudentDrivesPanel.vue'
-import StudentHistoryPanel from '../../components/student/v2/StudentHistoryPanel.vue'
-import StudentNotificationsPanel from '../../components/student/v2/StudentNotificationsPanel.vue'
-import StudentProfilePanel from '../../components/student/v2/StudentProfilePanel.vue'
-import StudentSectionPlaceholder from '../../components/student/v2/StudentSectionPlaceholder.vue'
-import StudentSidebar from '../../components/student/v2/StudentSidebar.vue'
-import StudentTopbar from '../../components/student/v2/StudentTopbar.vue'
+import StudentApplicationModal from '../../components/student/ApplicationModal.vue'
+import StudentApplicationsPanel from '../../components/student/ApplicationsView.vue'
+import StudentDashboardHome from '../../components/student/DashboardOverview.vue'
+import StudentDrivesPanel from '../../components/student/DrivesView.vue'
+import StudentDriveModal from '../../components/student/DriveModal.vue'
+import StudentHistoryPanel from '../../components/student/HistoryView.vue'
+import StudentNotificationsPanel from '../../components/student/NotificationsView.vue'
+import StudentProfilePanel from '../../components/student/ProfileView.vue'
+import StudentSectionPlaceholder from '../../components/student/StudentSectionPlaceholder.vue'
+import StudentSidebar from '../../components/student/Sidebar.vue'
+import StudentToast from '../../components/student/Toast.vue'
+import StudentTopbar from '../../components/student/Topbar.vue'
 import './StudentDashboard.css'
 
 const STORAGE_KEYS = Object.freeze({
@@ -156,13 +168,16 @@ export default {
   components: {
     StudentSidebar,
     StudentTopbar,
+    StudentToast,
     StudentDashboardHome,
     StudentDrivesPanel,
     StudentHistoryPanel,
     StudentApplicationsPanel,
     StudentNotificationsPanel,
     StudentProfilePanel,
-    StudentSectionPlaceholder
+    StudentSectionPlaceholder,
+    StudentDriveModal,
+    StudentApplicationModal
   },
   data() {
     const now = new Date()
@@ -302,6 +317,8 @@ export default {
       },
       historyQuery: '',
       isDownloadingDocument: {},
+      selectedDrive: null,
+      selectedApplication: null,
       profileForm: {
         college_name: 'Institute of Technology',
         branch: 'CSE',
@@ -361,19 +378,27 @@ export default {
         }
       ]
     },
+    dashboardDriveSource() {
+      if (Array.isArray(this.drives) && this.drives.length > 0) {
+        return this.drives.map((drive) => this.mapDriveForDashboard(drive))
+      }
+
+      return this.drivesPreview
+    },
     liveOpenCount() {
-      return this.dashboardDrives.length
+      return this.dashboardDriveSource.length
     },
     unreadCount() {
       return Number(this.unreadNotificationsCount || 0)
     },
     dashboardDrives() {
+      const source = this.dashboardDriveSource
       const query = this.searchQuery.trim().toLowerCase()
       if (!query) {
-        return this.drivesPreview
+        return source
       }
 
-      return this.drivesPreview.filter(
+      return source.filter(
         (item) =>
           item.role.toLowerCase().includes(query) ||
           item.company.toLowerCase().includes(query)
@@ -416,14 +441,12 @@ export default {
       const bootTasks = [
         this.hydrateIdentity(),
         this.loadDashboard(),
+        this.loadDrives(1),
         this.loadApplications(1),
         this.loadNotifications(1),
         this.loadProfile()
       ]
 
-      if (this.activeView === 'drives') {
-        bootTasks.push(this.loadDrives(1))
-      }
       if (this.activeView === 'history') {
         bootTasks.push(this.loadHistory(1))
       }
@@ -487,8 +510,11 @@ export default {
           id: row.application_id || row.id,
           role: row.drive?.title || 'Role unavailable',
           company: row.company?.name || '-',
+          package: this.formatSalaryLpa(row.drive?.salary_lpa),
+          appliedOn: this.formatShortDate(row.application_date || row.applied_at || row.updated_at),
           status: row.status || 'applied',
-          statusLabel: row.status_label || this.statusLabel(row.status)
+          statusLabel: row.status_label || this.statusLabel(row.status),
+          nextStep: this.nextStepForStatus(row.status, row.latest_interview)
         }))
 
         this.drivesPreview = this.buildDrivesPreview(rows)
@@ -517,11 +543,31 @@ export default {
           role: row.drive?.title || 'Opportunity',
           company: row.company?.name || '-',
           salary: salaryLpa > 0 ? `${salaryLpa.toLocaleString()} LPA` : '-',
-          deadline: this.formatShortDate(row.drive?.application_deadline)
+          deadline: this.formatShortDate(row.drive?.application_deadline),
+          applied: true,
+          isOpen: true
         })
       })
 
       return Array.from(unique.values()).slice(0, 6)
+    },
+    mapDriveForDashboard(drive) {
+      const driveId = drive.drive_id || drive.id
+      const salaryLpa = Number(drive.salary_lpa || drive.drive?.salary_lpa || 0)
+
+      return {
+        id: driveId,
+        role: drive.job_title || drive.title || drive.role || 'Opportunity',
+        company:
+          drive.company?.name ||
+          drive.company?.company_name ||
+          drive.company_name ||
+          '-',
+        salary: salaryLpa > 0 ? `${salaryLpa.toLocaleString()} LPA` : '-',
+        deadline: this.formatShortDate(drive.application_deadline || drive.drive?.application_deadline),
+        applied: Boolean(drive.already_applied || drive.applied),
+        isOpen: drive.is_open !== false
+      }
     },
     async loadDrives(page = 1) {
       this.isLoadingDrives = true
@@ -908,6 +954,16 @@ export default {
         window.URL.revokeObjectURL(url)
       }
     },
+    openDriveDetails(drive) {
+      this.selectedDrive = drive || null
+    },
+    openApplicationDetails(application) {
+      this.selectedApplication = application || null
+    },
+    applyToDriveFromModal(driveId) {
+      this.applyToDrive(driveId)
+      this.selectedDrive = null
+    },
     updateProfileField(field, value) {
       this.profileForm = {
         ...this.profileForm,
@@ -982,6 +1038,37 @@ export default {
         day: 'numeric'
       })
     },
+    formatSalaryLpa(value) {
+      const parsed = Number(value)
+      if (Number.isNaN(parsed) || parsed <= 0) {
+        return '-'
+      }
+
+      return `${parsed.toLocaleString('en-IN')} LPA`
+    },
+    nextStepForStatus(status, latestInterview) {
+      const normalized = String(status || '').toLowerCase()
+
+      if (normalized === 'interviewed' || normalized === 'interview') {
+        const interviewDate = latestInterview?.interview_date
+        const formatted = this.formatShortDate(interviewDate)
+        return formatted !== '-' ? `Interview on ${formatted}` : 'Interview in progress'
+      }
+      if (normalized === 'shortlisted') {
+        return 'Awaiting interview schedule'
+      }
+      if (normalized === 'offered' || normalized === 'selected') {
+        return 'Review offer details'
+      }
+      if (normalized === 'accepted' || normalized === 'placed') {
+        return 'Offer accepted'
+      }
+      if (normalized === 'rejected') {
+        return 'Application closed'
+      }
+
+      return 'Awaiting update'
+    },
     statusLabel(status) {
       const normalized = String(status || '').trim().toLowerCase()
       const labels = {
@@ -1041,6 +1128,20 @@ export default {
     },
     toggleSidebar() {
       this.sidebarCollapsed = !this.sidebarCollapsed
+    },
+    handleLogout() {
+      localStorage.removeItem('token')
+      localStorage.removeItem('role')
+      localStorage.removeItem('user_id')
+
+      if (this.$router && typeof this.$router.push === 'function') {
+        this.$router.push('/login')
+        return
+      }
+
+      if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+        window.location.assign('/login')
+      }
     },
     navigate(viewId) {
       this.activeView = viewId

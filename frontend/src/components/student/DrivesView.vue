@@ -90,7 +90,7 @@
                 <td colspan="7" class="rq-empty-row">No drives found for this filter.</td>
               </tr>
 
-              <tr v-for="row in drives" :key="row.drive_id">
+              <tr v-for="row in drives" :key="row.drive_id" @click="$emit('open-drive', row)">
                 <td>
                   <p class="rq-row-title">{{ row.job_title || 'Role unavailable' }}</p>
                   <p class="rq-row-sub">{{ row.job_location || '-' }}</p>
@@ -121,7 +121,7 @@
                     type="button"
                     :disabled="isApplying[row.drive_id]"
                     :aria-label="`Apply for ${row.job_title || 'drive'}`"
-                    @click="$emit('apply-drive', row.drive_id)"
+                    @click.stop="$emit('apply-drive', row.drive_id)"
                   >
                     {{ isApplying[row.drive_id] ? 'Applying...' : 'Apply Now' }}
                   </button>
@@ -216,7 +216,7 @@
 
 <script>
 export default {
-  name: 'StudentDrivesPanelV2',
+  name: 'StudentDrivesView',
   props: {
     drives: {
       type: Array,
@@ -267,7 +267,8 @@ export default {
     'update:include-expired',
     'apply-filters',
     'page-change',
-    'apply-drive'
+    'apply-drive',
+    'open-drive'
   ],
   methods: {
     canApply(row) {

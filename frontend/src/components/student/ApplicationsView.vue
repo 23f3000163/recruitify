@@ -60,7 +60,7 @@
                 <td colspan="6" class="rq-empty-row">No applications found for this filter.</td>
               </tr>
 
-              <tr v-for="row in applications" :key="row.application_id">
+              <tr v-for="row in applications" :key="row.application_id" @click="$emit('open-application', row)">
                 <td>
                   <p class="rq-row-title">{{ row.drive?.title || 'Role unavailable' }}</p>
                   <p class="rq-row-sub">{{ row.drive?.location || '-' }}</p>
@@ -105,7 +105,7 @@
                       type="button"
                       :disabled="isResponding[row.offer.offer_id]"
                       :aria-label="`Accept offer for ${row.drive?.title || 'selected role'}`"
-                      @click="$emit('respond-offer', row.offer.offer_id, 'accepted')"
+                      @click.stop="$emit('respond-offer', row.offer.offer_id, 'accepted')"
                     >
                       {{ isResponding[row.offer.offer_id] ? 'Saving...' : 'Accept' }}
                     </button>
@@ -114,7 +114,7 @@
                       type="button"
                       :disabled="isResponding[row.offer.offer_id]"
                       :aria-label="`Reject offer for ${row.drive?.title || 'selected role'}`"
-                      @click="$emit('respond-offer', row.offer.offer_id, 'rejected')"
+                      @click.stop="$emit('respond-offer', row.offer.offer_id, 'rejected')"
                     >
                       {{ isResponding[row.offer.offer_id] ? 'Saving...' : 'Reject' }}
                     </button>
@@ -240,7 +240,7 @@
 
 <script>
 export default {
-  name: 'StudentApplicationsPanelV2',
+  name: 'StudentApplicationsView',
   props: {
     applications: {
       type: Array,
@@ -276,7 +276,8 @@ export default {
     'update:query-text',
     'apply-filters',
     'page-change',
-    'respond-offer'
+    'respond-offer',
+    'open-application'
   ],
   methods: {
     canRespondToOffer(offer) {

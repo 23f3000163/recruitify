@@ -125,7 +125,7 @@
 
 <script>
 export default {
-  name: 'StudentProfilePanelV2',
+  name: 'StudentProfileView',
   props: {
     profileForm: {
       type: Object,

@@ -53,7 +53,7 @@
 
 <script>
 export default {
-  name: 'StudentNotificationsPanelV2',
+  name: 'StudentNotificationsView',
   props: {
     notifications: {
       type: Array,

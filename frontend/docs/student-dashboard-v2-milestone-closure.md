@@ -36,7 +36,7 @@ Remaining work is operational only (PR creation, review approval, merge).
 - GET /student/dashboard
 - GET /student/profile
 - PUT /student/profile
-- GET /student/applications
+- GET /student/applicationsin hewe
 - GET /student/notifications
 - PUT /student/notifications/{notification_id}/read
 - PUT /student/notifications/read-all

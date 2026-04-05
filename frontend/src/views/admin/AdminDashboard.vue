@@ -389,6 +389,7 @@ export default {
           value: totalStudents.toLocaleString(),
           link: 'students',
           delta: `${this.inProgressCount} in progress`,
+          badgeClass: 'badge-blue',
           up: true,
           pct: Math.min(100, Math.round((placed / studentDen) * 100)),
           color: '#2563EB',
@@ -401,6 +402,7 @@ export default {
           value: totalCompanies.toLocaleString(),
           link: 'companies',
           delta: `${this.companies.filter((co) => co.status === 'pending').length} pending`,
+          badgeClass: 'badge-green',
           up: true,
           pct: Math.min(100, Math.round(((totalCompanies - this.pendingCount) / companyDen) * 100)),
           color: '#059669',
@@ -413,6 +415,7 @@ export default {
           value: totalDrives.toLocaleString(),
           link: 'drives',
           delta: `${this.allDrives.filter((d) => d.status === 'pending').length} pending approval`,
+          badgeClass: 'badge-amber',
           up: false,
           pct: Math.min(100, Math.round((this.allDrives.filter((d) => d.status === 'approved').length / driveDen) * 100)),
           color: '#D97706',
@@ -425,6 +428,7 @@ export default {
           value: totalApplications.toLocaleString(),
           link: null,
           delta: `${processedApplications} processed`,
+          badgeClass: 'badge-purple',
           up: true,
           pct: Math.min(100, Math.round((processedApplications / applicationDen) * 100)),
           color: '#7C3AED',
@@ -510,6 +514,7 @@ export default {
         student: application.studentName,
         roll: application.studentRoll,
         drive: application.driveTitle,
+        company: application.companyName,
         status: application.status,
         initials: application.initials,
         color: application.color
@@ -520,7 +525,7 @@ export default {
       this.studentsWithMetrics.forEach((student) => {
         const branchKey = student.branch || 'OTHER'
         if (!groups[branchKey]) {
-          groups[branchKey] = { name: branchKey, placed: 0, total: 0, color: this.colorFromKey(branchKey) }
+          groups[branchKey] = { name: branchKey, placed: 0, total: 0, color: this.branchColor(branchKey) }
         }
         groups[branchKey].total += 1
         const approved = student.appList.some((application) => application.status === 'approved')
@@ -633,6 +638,17 @@ export default {
     pct(a, b) {
       if (!b) return 0
       return Math.round((a / b) * 100)
+    },
+    branchColor(name) {
+      const key = String(name || 'OTHER').trim().toUpperCase()
+      const map = {
+        CSE: '#3b82f6',
+        OTHER: '#8b5cf6',
+        IT: '#22c55e',
+        MECH: '#f59e0b',
+        ECE: '#06b6d4'
+      }
+      return map[key] || '#6b7280'
     },
     colorFromKey(key) {
       const colors = [
@@ -862,12 +878,14 @@ export default {
         const items = response.data?.data?.items || []
         this.auditLog = items.slice(0, 20).map((log) => {
           const status = String(log.status || 'info').toLowerCase()
+          const rawTimestamp = log.timestamp || log.time || ''
           return {
             id: log.id || log.log_id || `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
             action: log.action || 'Activity',
             actor: log.actor || 'Admin',
             target: log.target || '-',
-            time: this.formatDateLabel(log.timestamp || log.time),
+            time: this.formatDateLabel(rawTimestamp),
+            timestamp: rawTimestamp,
             status: ['success', 'danger', 'warning', 'info'].includes(status) ? status : 'info'
           }
         })

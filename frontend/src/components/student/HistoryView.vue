@@ -216,7 +216,7 @@
 
 <script>
 export default {
-  name: 'StudentHistoryPanelV2',
+  name: 'StudentHistoryView',
   props: {
     historyItems: {
       type: Array,
