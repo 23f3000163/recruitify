@@ -1,11 +1,11 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
-import Landing from '../views/Landing.vue'
-import Login from '../views/Login.vue'
-import Register from '../views/Register.vue'
-import AdminDashboard from '../views/admin/AdminDashboard.vue'
-import StudentDashboard from '../views/student/StudentDashboard.vue'
-import CompanyDashboard from '../views/company/CompanyDashboard.vue'
+const Landing = () => import('../views/Landing.vue')
+const Login = () => import('../views/Login.vue')
+const Register = () => import('../views/Register.vue')
+const AdminDashboard = () => import('../views/admin/AdminDashboard.vue')
+const StudentDashboard = () => import('../views/student/StudentDashboard.vue')
+const CompanyDashboard = () => import('../views/company/CompanyDashboard.vue')
 
 const routes = [
   { path: '/', component: Landing },

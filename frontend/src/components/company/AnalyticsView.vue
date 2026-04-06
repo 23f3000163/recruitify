@@ -86,7 +86,8 @@ export default {
     return {
       pipelineChartInstance: null,
       driveChartInstance: null,
-      branchChartInstance: null
+      branchChartInstance: null,
+      renderQueued: false
     }
   },
   computed: {
@@ -94,26 +95,50 @@ export default {
       return [...this.myDrives]
         .sort((left, right) => Number(right.applicants || 0) - Number(left.applicants || 0))
         .slice(0, 8)
+    },
+    chartRenderKey() {
+      const analytics = this.analytics || {}
+      const pipelineKey = [
+        Number(analytics.applied || 0),
+        Number(analytics.shortlisted || 0),
+        Number(analytics.interview || 0),
+        Number(analytics.offered || 0),
+        Number(analytics.rejected || 0)
+      ].join('|')
+
+      const driveKey = this.topDriveRows
+        .map((drive) => `${drive.id || drive.title || 'drive'}:${Number(drive.applicants || 0)}:${Number(this.stageCount(drive, 3) || 0)}`)
+        .join(';')
+
+      const branchKey = this.branchApplicants
+        .map((branch) => `${branch.name || 'OTHER'}:${Number(branch.count || 0)}`)
+        .join(';')
+
+      return `${pipelineKey}__${driveKey}__${branchKey}`
+    },
+    hasPipelineData() {
+      const analytics = this.analytics || {}
+      return [
+        analytics.applied,
+        analytics.shortlisted,
+        analytics.interview,
+        analytics.offered,
+        analytics.rejected
+      ].some((value) => Number(value || 0) > 0)
+    },
+    hasDriveData() {
+      return this.topDriveRows.some((drive) => (
+        Number(drive.applicants || 0) > 0 ||
+        Number(this.stageCount(drive, 3) || 0) > 0
+      ))
+    },
+    hasBranchData() {
+      return this.branchApplicants.some((branch) => Number(branch.count || 0) > 0)
     }
   },
   watch: {
-    analytics: {
-      deep: true,
-      handler() {
-        this.queueRenderCharts()
-      }
-    },
-    myDrives: {
-      deep: true,
-      handler() {
-        this.queueRenderCharts()
-      }
-    },
-    branchApplicants: {
-      deep: true,
-      handler() {
-        this.queueRenderCharts()
-      }
+    chartRenderKey() {
+      this.queueRenderCharts()
     }
   },
   mounted() {
@@ -138,7 +163,13 @@ export default {
       return Number(drive.stages[index].count || 0)
     },
     queueRenderCharts() {
+      if (this.renderQueued) {
+        return
+      }
+
+      this.renderQueued = true
       this.$nextTick(() => {
+        this.renderQueued = false
         this.renderCharts()
       })
     },
@@ -158,9 +189,15 @@ export default {
     },
     renderCharts() {
       this.destroyCharts()
-      this.renderPipelineChart()
-      this.renderDriveChart()
-      this.renderBranchChart()
+      if (this.hasPipelineData) {
+        this.renderPipelineChart()
+      }
+      if (this.hasDriveData) {
+        this.renderDriveChart()
+      }
+      if (this.hasBranchData) {
+        this.renderBranchChart()
+      }
     },
     renderPipelineChart() {
       const canvas = this.$refs.pipelineChart

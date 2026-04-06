@@ -162,7 +162,8 @@ export default {
     return {
       trendChartInstance: null,
       funnelChartInstance: null,
-      skillsChartInstance: null
+      skillsChartInstance: null,
+      renderQueued: false
     }
   },
   computed: {
@@ -273,7 +274,13 @@ export default {
       return Number.isFinite(parsed) ? parsed.toLocaleString() : '0'
     },
     queueRenderCharts() {
+      if (this.renderQueued) {
+        return
+      }
+
+      this.renderQueued = true
       this.$nextTick(() => {
+        this.renderQueued = false
         this.renderCharts()
       })
     },

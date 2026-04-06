@@ -637,6 +637,7 @@ export default {
       publicDashboard: createEmptyPublicDashboard(),
       publicDashboardError: '',
       publicTrendChartInstance: null,
+      scrollRafId: null,
       counterObserver: null,
       pipelineObserver: null,
       onScroll: null,
@@ -692,11 +693,18 @@ export default {
     }
 
     this.onScroll = () => {
-      const scrolled = window.scrollY
-      const maxScroll = document.documentElement.scrollHeight - window.innerHeight
-      this.scrollProgress = maxScroll > 0 ? (scrolled / maxScroll) * 100 : 0
-      this.showScrollTop = scrolled > 450
-      this.isNavbarScrolled = scrolled > 30
+      if (this.scrollRafId !== null) {
+        return
+      }
+
+      this.scrollRafId = requestAnimationFrame(() => {
+        this.scrollRafId = null
+        const scrolled = window.scrollY
+        const maxScroll = document.documentElement.scrollHeight - window.innerHeight
+        this.scrollProgress = maxScroll > 0 ? (scrolled / maxScroll) * 100 : 0
+        this.showScrollTop = scrolled > 450
+        this.isNavbarScrolled = scrolled > 30
+      })
     }
 
     window.addEventListener('mousemove', this.onMouseMove, { passive: true })
@@ -739,6 +747,10 @@ export default {
     }
     if (this.onScroll) {
       window.removeEventListener('scroll', this.onScroll)
+    }
+    if (this.scrollRafId !== null) {
+      cancelAnimationFrame(this.scrollRafId)
+      this.scrollRafId = null
     }
     this.counterObserver?.disconnect()
     this.pipelineObserver?.disconnect()

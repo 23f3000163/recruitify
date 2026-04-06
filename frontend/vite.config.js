@@ -4,4 +4,29 @@ import vue from '@vitejs/plugin-vue'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [vue()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) {
+            return undefined
+          }
+
+          if (id.includes('chart.js')) {
+            return 'chart-vendor'
+          }
+
+          if (id.includes('vue-router') || id.includes('/vue/')) {
+            return 'vue-vendor'
+          }
+
+          if (id.includes('axios')) {
+            return 'http-vendor'
+          }
+
+          return 'vendor'
+        }
+      }
+    }
+  }
 })
