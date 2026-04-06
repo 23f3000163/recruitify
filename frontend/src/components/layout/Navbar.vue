@@ -62,6 +62,18 @@
 
   <!-- Nav actions -->
   <div class="nav-right">
+    <span class="net-pill" :class="{ offline: !isOnline }" :title="isOnline ? 'Connected to internet' : 'Offline mode'">
+      <span class="net-dot"></span>
+      {{ isOnline ? 'Online' : 'Offline' }}
+    </span>
+    <button
+      v-if="canInstall"
+      type="button"
+      class="btn-ghost btn-install"
+      @click="installApp"
+    >
+      Install
+    </button>
     <a href="/login" class="btn-ghost" @click.prevent="go('/login')">Sign in</a>
     <a href="/register/student" class="btn-cta-nav" @click.prevent="go('/register/student')">
       Get Started
@@ -85,8 +97,27 @@ export default {
   },
   data() {
     return {
-      activePill: 'Student'
+      activePill: 'Student',
+      deferredInstallPrompt: null,
+      canInstall: false,
+      isOnline: true
     }
+  },
+  mounted() {
+    if (typeof navigator !== 'undefined') {
+      this.isOnline = navigator.onLine
+    }
+
+    window.addEventListener('beforeinstallprompt', this.handleBeforeInstallPrompt)
+    window.addEventListener('appinstalled', this.handleAppInstalled)
+    window.addEventListener('online', this.handleOnline)
+    window.addEventListener('offline', this.handleOffline)
+  },
+  beforeUnmount() {
+    window.removeEventListener('beforeinstallprompt', this.handleBeforeInstallPrompt)
+    window.removeEventListener('appinstalled', this.handleAppInstalled)
+    window.removeEventListener('online', this.handleOnline)
+    window.removeEventListener('offline', this.handleOffline)
   },
   methods: {
     go(path) {
@@ -100,6 +131,34 @@ export default {
     },
     setActivePill(pill) {
       this.activePill = pill
+    },
+    handleBeforeInstallPrompt(event) {
+      event.preventDefault()
+      this.deferredInstallPrompt = event
+      this.canInstall = true
+    },
+    handleAppInstalled() {
+      this.deferredInstallPrompt = null
+      this.canInstall = false
+    },
+    handleOnline() {
+      this.isOnline = true
+    },
+    handleOffline() {
+      this.isOnline = false
+    },
+    async installApp() {
+      if (!this.deferredInstallPrompt) {
+        return
+      }
+
+      this.deferredInstallPrompt.prompt()
+      try {
+        await this.deferredInstallPrompt.userChoice
+      } finally {
+        this.deferredInstallPrompt = null
+        this.canInstall = false
+      }
     }
   }
 }
