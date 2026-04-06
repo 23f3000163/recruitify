@@ -7,6 +7,7 @@ import { adminApi } from '../../src/api/api'
 vi.mock('../../src/api/api', () => ({
   adminApi: {
     getDashboard: vi.fn(),
+    getAnalyticsOverview: vi.fn(),
     getActivityLogs: vi.fn(),
     getCompanies: vi.fn(),
     getStudents: vi.fn(),
@@ -109,6 +110,46 @@ describe('AdminDashboard notifications integration', () => {
     adminApi.getJobs.mockResolvedValue(buildCollection([]))
     adminApi.getApplications.mockResolvedValue(buildCollection([]))
     adminApi.getActivityLogs.mockResolvedValue(buildCollection([]))
+    adminApi.getAnalyticsOverview.mockResolvedValue({
+      data: {
+        data: {
+          summary: {
+            total_students: 120,
+            total_companies: 18,
+            total_jobs: 40,
+            total_applications: 300,
+            offers_released: 40,
+            offers_accepted: 33,
+            total_placements: 31
+          },
+          placement_trends: [
+            {
+              month_key: '2026-03',
+              month_label: 'Mar 2026',
+              applications: 52,
+              offers: 8,
+              placements: 7
+            }
+          ],
+          application_funnel: {
+            total: 300,
+            applied: 300,
+            shortlisted: 180,
+            interview: 120,
+            offered: 40,
+            placed: 31,
+            rejected: 140
+          },
+          job_demand_by_skills: [
+            { skill: 'Python', demand_count: 14 },
+            { skill: 'SQL', demand_count: 11 }
+          ],
+          meta: {
+            months: 6
+          }
+        }
+      }
+    })
     adminApi.getNotifications.mockResolvedValue({
       data: {
         data: {
@@ -178,5 +219,50 @@ describe('AdminDashboard notifications integration', () => {
     expect(adminApi.markAllNotificationsRead).toHaveBeenCalledTimes(1)
     expect(wrapper.vm.unreadNotificationsCount).toBe(0)
     expect(wrapper.vm.notifications.every((item) => item.read)).toBe(true)
+  })
+
+  it('loads analytics overview during bootstrap', async () => {
+    const wrapper = mountDashboard()
+    await flushPromises()
+    await flushPromises()
+
+    expect(adminApi.getAnalyticsOverview).toHaveBeenCalledWith({ months: 6 })
+    expect(wrapper.vm.analyticsOverview.summary.total_students).toBe(120)
+    expect(wrapper.vm.analyticsOverview.placement_trends).toHaveLength(1)
+    expect(wrapper.vm.loadErrors.analytics).toBe('')
+  })
+
+  it('captures analytics load failure and recovers on retry', async () => {
+    adminApi.getAnalyticsOverview
+      .mockRejectedValueOnce({
+        response: {
+          data: {
+            error: 'Analytics temporarily unavailable'
+          }
+        }
+      })
+      .mockResolvedValueOnce({
+        data: {
+          data: {
+            summary: { total_students: 88 },
+            placement_trends: [],
+            application_funnel: {},
+            job_demand_by_skills: [],
+            meta: { months: 3 }
+          }
+        }
+      })
+
+    const wrapper = mountDashboard()
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.vm.loadErrors.analytics).toBe('Analytics temporarily unavailable')
+
+    await wrapper.vm.fetchAnalyticsOverview()
+    await flushPromises()
+
+    expect(wrapper.vm.loadErrors.analytics).toBe('')
+    expect(wrapper.vm.analyticsOverview.summary.total_students).toBe(88)
   })
 })

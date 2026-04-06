@@ -14,6 +14,7 @@ vi.mock('../../src/api/api', () => ({
     getDrives: vi.fn(),
     applyToDrive: vi.fn(),
     getApplications: vi.fn(),
+    scoreResumeForJob: vi.fn(),
     getHistory: vi.fn(),
     getNotifications: vi.fn(),
     markNotificationRead: vi.fn(),
@@ -70,10 +71,12 @@ const applicationsPayload = {
       items: [
         {
           application_id: 501,
+          drive_id: 51,
           status: 'selected',
           status_label: 'Selected',
           updated_at: '2030-06-02T10:00:00+00:00',
           drive: {
+            id: 51,
             title: 'Backend Engineer',
             location: 'Remote'
           },
@@ -254,6 +257,23 @@ describe('StudentDashboard step 3B wiring', () => {
       }
     })
     studentApi.getApplications.mockResolvedValue(applicationsPayload)
+    studentApi.scoreResumeForJob.mockResolvedValue({
+      data: {
+        data: {
+          analysis: {
+            score: 87,
+            matched_count: 5,
+            recommendation: 'Strong fit',
+            matched_keywords: ['python', 'sql', 'api', 'flask', 'backend'],
+            missing_keywords: ['redis']
+          },
+          job: {
+            id: 51,
+            title: 'Backend Engineer'
+          }
+        }
+      }
+    })
     studentApi.getHistory.mockResolvedValue(historyPayload)
     studentApi.getNotifications.mockResolvedValue(notificationsPayload)
     studentApi.respondToOffer.mockResolvedValue({ data: { success: true } })
@@ -437,5 +457,40 @@ describe('StudentDashboard step 3B wiring', () => {
 
     expect(studentApi.updateProfile).not.toHaveBeenCalled()
     expect(wrapper.vm.profileError).toContain('CGPA must be between 0 and 10')
+  })
+
+  it('scores ATS match for an application and stores result', async () => {
+    const wrapper = mountWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    await wrapper.vm.scoreApplicationMatch(wrapper.vm.applications[0])
+    await flushPromises()
+
+    expect(studentApi.scoreResumeForJob).toHaveBeenCalledWith(51)
+    expect(wrapper.vm.atsScoresByApplication[501]?.analysis?.score).toBe(87)
+    expect(wrapper.vm.selectedApplication?.application_id).toBe(501)
+    expect(wrapper.vm.isScoringMatch[501]).toBe(false)
+  })
+
+  it('shows ATS scoring errors when screener API fails', async () => {
+    studentApi.scoreResumeForJob.mockRejectedValueOnce({
+      response: {
+        data: {
+          error: 'ATS scoring failed'
+        }
+      }
+    })
+
+    const wrapper = mountWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    await wrapper.vm.scoreApplicationMatch(wrapper.vm.applications[0])
+    await flushPromises()
+
+    expect(studentApi.scoreResumeForJob).toHaveBeenCalledWith(51)
+    expect(wrapper.vm.applicationsError).toContain('ATS scoring failed')
+    expect(wrapper.vm.isScoringMatch[501]).toBe(false)
   })
 })

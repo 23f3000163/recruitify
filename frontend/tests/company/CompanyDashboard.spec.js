@@ -17,6 +17,7 @@ vi.mock('../../src/api/api', () => ({
     getProfile: vi.fn(),
     getDrives: vi.fn(),
     getApplications: vi.fn(),
+    scoreApplicationResume: vi.fn(),
     getNotifications: vi.fn(),
     createDrive: vi.fn(),
     updateDrive: vi.fn(),
@@ -136,6 +137,23 @@ const configureBootstrapMocks = ({ approvalStatus = 'approved' } = {}) => {
     }
   })
 
+  companyApi.scoreApplicationResume.mockResolvedValue({
+    data: {
+      data: {
+        analysis: {
+          score: 84,
+          matched_count: 4,
+          recommendation: 'Strong fit',
+          matched_keywords: ['python', 'sql', 'flask', 'api'],
+          missing_keywords: ['redis']
+        },
+        job: {
+          title: 'Backend Engineer'
+        }
+      }
+    }
+  })
+
   companyApi.createDrive.mockResolvedValue({ data: { success: true } })
   companyApi.updateDrive.mockResolvedValue({ data: { success: true } })
   companyApi.updateProfile.mockResolvedValue({ data: { data: {} } })
@@ -203,6 +221,10 @@ const makeWrapper = (routerPush = vi.fn()) =>
           props: ['filteredApplications'],
           template: `
             <div class="applications-view-stub">
+              <button
+                class="screen-first"
+                @click="$emit('screen-application', filteredApplications[0])"
+              >Screen first</button>
               <button
                 class="shortlist-first"
                 @click="$emit('shortlist', filteredApplications[0])"
@@ -453,6 +475,45 @@ describe('CompanyDashboard phase 6 integration', () => {
     expect(companyApi.updateApplicationStatus).toHaveBeenCalledWith(501, { status: 'shortlisted' })
     expect(wrapper.vm.allApplications[0].status).toBe('shortlisted')
     expect(wrapper.vm.toast.message).toContain('shortlisted')
+  })
+
+  it('runs ATS screening for an application and opens the screening modal', async () => {
+    const wrapper = makeWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    await wrapper.get('.to-applications').trigger('click')
+    await wrapper.get('.screen-first').trigger('click')
+    await flushPromises()
+
+    expect(companyApi.scoreApplicationResume).toHaveBeenCalledWith(501)
+    expect(wrapper.vm.screeningResult?.analysis?.score).toBe(84)
+    expect(wrapper.vm.screeningError).toBe('')
+    expect(wrapper.vm.showScreeningModal).toBe(true)
+    expect(wrapper.vm.isScoringResume[501]).toBe(false)
+  })
+
+  it('surfaces ATS screening errors and keeps modal closed', async () => {
+    companyApi.scoreApplicationResume.mockRejectedValueOnce({
+      response: {
+        data: {
+          error: 'ATS service unavailable'
+        }
+      }
+    })
+
+    const wrapper = makeWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    await wrapper.get('.to-applications').trigger('click')
+    await wrapper.get('.screen-first').trigger('click')
+    await flushPromises()
+
+    expect(companyApi.scoreApplicationResume).toHaveBeenCalledWith(501)
+    expect(wrapper.vm.showScreeningModal).toBe(false)
+    expect(wrapper.vm.screeningError).toContain('ATS service unavailable')
+    expect(wrapper.vm.toast.type).toBe('danger')
   })
 
   it('routes to login when an API call returns 401', async () => {
