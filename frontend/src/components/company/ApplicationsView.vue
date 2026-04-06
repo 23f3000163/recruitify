@@ -130,6 +130,9 @@
               <td>
                 <div class="rq-acts">
                   <template v-if="application.status === 'applied' || application.status === 'pending'">
+                    <button class="rq-ghost rq-ghost-xs" @click="$emit('screen-application', application)" :disabled="actionsDisabled || isScoring[application.id]">
+                      {{ isScoring[application.id] ? 'Scoring...' : 'ATS Score' }}
+                    </button>
                     <button class="rq-btn-ok" @click="$emit('shortlist', application)" :disabled="actionsDisabled">
                       <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
                         <path d="M1.5 5.5l3 3 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
@@ -143,6 +146,9 @@
                     </button>
                   </template>
                   <template v-if="application.status === 'shortlisted'">
+                    <button class="rq-ghost rq-ghost-xs" @click="$emit('screen-application', application)" :disabled="actionsDisabled || isScoring[application.id]">
+                      {{ isScoring[application.id] ? 'Scoring...' : 'ATS Score' }}
+                    </button>
                     <button class="rq-btn-purple" @click="$emit('advance', application, 'interview')" :disabled="actionsDisabled">
                       <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
                         <rect x="1" y="2" width="9" height="8" rx="1" stroke="currentColor" stroke-width="1.3" />
@@ -157,6 +163,9 @@
                     </button>
                   </template>
                   <template v-if="application.status === 'interview'">
+                    <button class="rq-ghost rq-ghost-xs" @click="$emit('screen-application', application)" :disabled="actionsDisabled || isScoring[application.id]">
+                      {{ isScoring[application.id] ? 'Scoring...' : 'ATS Score' }}
+                    </button>
                     <button class="rq-btn-ok" @click="$emit('advance', application, 'offered')" :disabled="actionsDisabled">Offer</button>
                     <button class="rq-btn-no" @click="$emit('reject', application)" title="Reject" :disabled="actionsDisabled">
                       <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
@@ -164,7 +173,11 @@
                       </svg>
                     </button>
                   </template>
-                  <span v-if="['offered', 'rejected'].includes(application.status)" class="rq-dim rq-sm">—</span>
+                  <template v-if="['offered', 'rejected'].includes(application.status)">
+                    <button class="rq-ghost rq-ghost-xs" @click="$emit('screen-application', application)" :disabled="actionsDisabled || isScoring[application.id]">
+                      {{ isScoring[application.id] ? 'Scoring...' : 'ATS Score' }}
+                    </button>
+                  </template>
                 </div>
               </td>
             </tr>
@@ -220,6 +233,10 @@ export default {
       type: Array,
       required: true
     },
+    isScoring: {
+      type: Object,
+      default: () => ({})
+    },
     allPageSelected: {
       type: Boolean,
       required: true
@@ -242,7 +259,8 @@ export default {
     'export-applications',
     'shortlist',
     'reject',
-    'advance'
+    'advance',
+    'screen-application'
   ],
   computed: {
     actionsDisabled() {

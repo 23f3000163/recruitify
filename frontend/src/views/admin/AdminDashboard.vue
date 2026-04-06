@@ -154,6 +154,9 @@
 
         <AnalyticsPanel
           v-if="activeView === 'analytics'"
+          :analytics-overview="analyticsOverview"
+          :is-loading="loading.analytics"
+          :error-message="loadErrors.analytics"
           :top-companies="topCompanies"
           :branch-stats="branchStats"
           :placed-count="placedCount"
@@ -163,6 +166,7 @@
           :donut-circ="donutCirc"
           :donut-placed-offset="donutPlacedOffset"
           :pct="pct"
+          @retry="fetchAnalyticsOverview()"
           @export="doExport"
         />
       </main>
@@ -270,7 +274,8 @@ export default {
         students: false,
         drives: false,
         applications: false,
-        activity: false
+        activity: false,
+        analytics: false
       },
       loadErrors: {
         dashboard: '',
@@ -278,7 +283,8 @@ export default {
         students: '',
         drives: '',
         applications: '',
-        activity: ''
+        activity: '',
+        analytics: ''
       },
       pendingActions: {
         company: {},
@@ -297,6 +303,13 @@ export default {
       allDrives: [],
       applications: [],
       auditLog: [],
+      analyticsOverview: {
+        summary: {},
+        placement_trends: [],
+        application_funnel: {},
+        job_demand_by_skills: [],
+        meta: {}
+      },
       coFilters: [
         { l: 'All', v: '' },
         { l: 'Approved', v: 'approved' },
@@ -630,6 +643,7 @@ export default {
         this.fetchDrives(),
         this.fetchApplications(),
         this.fetchAuditLog(),
+        this.fetchAnalyticsOverview(),
         this.loadNotifications({ silent: true })
       ])
     },
@@ -866,6 +880,28 @@ export default {
         this.toast_show(message, 'danger')
       } finally {
         this.loading.dashboard = false
+      }
+    },
+    async fetchAnalyticsOverview(months = 6) {
+      this.loading.analytics = true
+      this.loadErrors.analytics = ''
+      try {
+        const response = await adminApi.getAnalyticsOverview({ months })
+        const payload = response?.data?.data || {}
+        this.analyticsOverview = {
+          summary: payload.summary || {},
+          placement_trends: Array.isArray(payload.placement_trends) ? payload.placement_trends : [],
+          application_funnel: payload.application_funnel || {},
+          job_demand_by_skills: Array.isArray(payload.job_demand_by_skills)
+            ? payload.job_demand_by_skills
+            : [],
+          meta: payload.meta || {}
+        }
+      } catch (error) {
+        const message = error.response?.data?.error || 'Failed to load analytics overview'
+        this.loadErrors.analytics = message
+      } finally {
+        this.loading.analytics = false
       }
     },
     async fetchAuditLog(limit = 20) {

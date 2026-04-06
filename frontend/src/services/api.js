@@ -209,6 +209,9 @@ export const applicationsApi = {
   },
   updateStatus(applicationId, payload) {
     return apiClient.patch(`/applications/${applicationId}`, payload)
+  },
+  scoreResumeKeywords(payload) {
+    return apiClient.post('/applications/screener', payload)
   }
 }
 
@@ -346,6 +349,16 @@ export const companyApi = {
     ])
   },
 
+  scoreApplicationResume(applicationId, keywords = null) {
+    const payload = {
+      application_id: applicationId
+    }
+    if (keywords) {
+      payload.keywords = keywords
+    }
+    return applicationsApi.scoreResumeKeywords(payload)
+  },
+
   getInterviews(params = {}) {
     return apiClient.get('/company/interviews', { params })
   },
@@ -384,6 +397,12 @@ export const companyApi = {
 export const adminApi = {
   getDashboard(params = {}) {
     return apiClient.get('/admin/dashboard', { params })
+  },
+  getAnalyticsOverview(params = {}) {
+    return apiClient.get('/admin/analytics/overview', { params })
+  },
+  getPublicLandingDashboard(params = {}) {
+    return apiClient.get('/admin/public/landing-dashboard', { params })
   },
   getActivityLogs(params = {}) {
     return apiClient.get('/admin/activity-logs', { params })
@@ -475,6 +494,15 @@ export const studentApi = {
   },
   getApplications(params = {}) {
     return applicationsApi.getStudentApplications(params)
+  },
+  scoreResumeForJob(jobId, keywords = null) {
+    const payload = {
+      job_id: jobId
+    }
+    if (keywords) {
+      payload.keywords = keywords
+    }
+    return applicationsApi.scoreResumeKeywords(payload)
   },
   applyToJob(jobId) {
     return applicationsApi.applyToJob({ job_id: jobId })

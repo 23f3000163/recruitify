@@ -71,26 +71,75 @@
   <div class="stats-grid">
     <div class="stat-cell">
       <div class="stat-num s-green"><span class="counter">{{ counters[0].value }}</span><span class="stat-suf">+</span></div>
-      <div class="stat-label">Students Placed</div>
-      <div class="stat-delta">↑ 34% vs last year</div>
+      <div class="stat-label">Placements Confirmed</div>
+      <div class="stat-delta">Across verified placement records</div>
     </div>
     <div class="stat-cell">
       <div class="stat-num s-blue"><span class="counter">{{ counters[1].value }}</span><span class="stat-suf">+</span></div>
-      <div class="stat-label">Verified Companies</div>
-      <div class="stat-delta">12 new this month</div>
+      <div class="stat-label">Approved Companies</div>
+      <div class="stat-delta">Actively hiring through Recruitify</div>
     </div>
     <div class="stat-cell">
       <div class="stat-num"><span class="counter">{{ counters[2].value }}</span><span class="stat-suf">+</span></div>
-      <div class="stat-label">Drives Conducted</div>
-      <div class="stat-delta">Across all departments</div>
+      <div class="stat-label">Approved Drives</div>
+      <div class="stat-delta">Open and recently completed opportunities</div>
     </div>
     <div class="stat-cell">
-      <div class="stat-num"><span class="counter">{{ counters[3].value }}</span><span class="stat-suf">%</span></div>
-      <div class="stat-label">Placement Rate</div>
-      <div class="stat-delta">Highest in 5 years</div>
+      <div class="stat-num"><span class="counter">{{ counters[3].value }}</span><span class="stat-suf">+</span></div>
+      <div class="stat-label">Latest Month Placements</div>
+      <div class="stat-delta">Generated from public monthly trend data</div>
     </div>
   </div>
 </div>
+
+<section class="section" id="public-dashboard">
+  <div class="s-inner">
+    <div class="s-eyebrow reveal" v-reveal>Public Dashboard</div>
+    <h2 class="s-h reveal" v-reveal>Live monthly trends and<br><em>in-demand skills.</em></h2>
+    <p class="s-p reveal" v-reveal>
+      This pre-login dashboard exposes non-sensitive placement momentum so students and recruiters can understand hiring activity before signing in.
+    </p>
+
+    <div class="public-dash-grid reveal" v-reveal>
+      <article class="public-card public-card-lg">
+        <div class="public-card-head">
+          <h3>Placement Trend (Public)</h3>
+          <span>{{ publicMetaLabel }}</span>
+        </div>
+        <div class="public-chart-wrap" v-if="!publicDashboardError">
+          <canvas ref="publicTrendChart" aria-label="Public placement trend chart" role="img"></canvas>
+        </div>
+        <p v-else class="public-error">{{ publicDashboardError }}</p>
+      </article>
+
+      <article class="public-card">
+        <div class="public-card-head">
+          <h3>Top Skills in Demand</h3>
+          <span>From approved and pending drives</span>
+        </div>
+        <div class="public-skill-list">
+          <div
+            v-for="skill in topPublicSkills"
+            :key="skill.skill"
+            class="public-skill-row"
+          >
+            <div class="public-skill-meta">
+              <span class="public-skill-name">{{ skill.skill }}</span>
+              <span class="public-skill-count">{{ skill.demand_count }}</span>
+            </div>
+            <div class="public-skill-track">
+              <div
+                class="public-skill-fill"
+                :style="{ width: `${publicSkillPct(skill.demand_count)}%` }"
+              ></div>
+            </div>
+          </div>
+          <p v-if="!topPublicSkills.length" class="public-empty">No skill-demand data available yet.</p>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
 
 <!-- ══════════════════════════════════════════════
      WHO IS THIS FOR
@@ -391,27 +440,27 @@
         <div class="pipe-stage">
           <div class="pipe-icon done">📝</div>
           <div class="pipe-stage-label">Applied</div>
-          <div class="pipe-stage-count">1,312 students</div>
+          <div class="pipe-stage-count">{{ funnelCountLabel(publicFunnel.applied) }}</div>
         </div>
         <div class="pipe-stage">
           <div class="pipe-icon done">👁</div>
           <div class="pipe-stage-label">Under Review</div>
-          <div class="pipe-stage-count">847 students</div>
+          <div class="pipe-stage-count">{{ funnelCountLabel(publicFunnel.shortlisted) }}</div>
         </div>
         <div class="pipe-stage">
           <div class="pipe-icon active">⭐</div>
           <div class="pipe-stage-label">Shortlisted</div>
-          <div class="pipe-stage-count">312 students</div>
+          <div class="pipe-stage-count">{{ funnelCountLabel(publicFunnel.interview) }}</div>
         </div>
         <div class="pipe-stage">
           <div class="pipe-icon">🎤</div>
           <div class="pipe-stage-label">Interviewed</div>
-          <div class="pipe-stage-count">189 students</div>
+          <div class="pipe-stage-count">{{ funnelCountLabel(publicFunnel.offered) }}</div>
         </div>
         <div class="pipe-stage">
           <div class="pipe-icon">🎉</div>
           <div class="pipe-stage-label">Placed</div>
-          <div class="pipe-stage-count">500+ students</div>
+          <div class="pipe-stage-count">{{ funnelCountLabel(publicFunnel.placed) }}</div>
         </div>
       </div>
     </div>
@@ -529,9 +578,13 @@
 </template>
 
 <script>
+import { Chart, registerables } from 'chart.js'
 import Navbar from '../components/layout/Navbar.vue'
 import Footer from '../components/layout/Footer.vue'
 import HeroSection from '../components/landing/HeroSection.vue'
+import { adminApi } from '../api/api'
+
+Chart.register(...registerables)
 
 export default {
   name: 'LandingView',
@@ -555,10 +608,57 @@ export default {
         { target: 200, value: 0 },
         { target: 95, value: 0 }
       ],
+      publicDashboard: {
+        highlights: {
+          total_students: 0,
+          approved_companies: 0,
+          approved_drives: 0,
+          placements_confirmed: 0,
+          latest_month_placements: 0
+        },
+        placement_trends: [],
+        application_funnel: {
+          applied: 0,
+          shortlisted: 0,
+          interview: 0,
+          offered: 0,
+          placed: 0,
+          rejected: 0,
+          total: 0
+        },
+        job_demand_by_skills: [],
+        meta: {
+          months: 6
+        }
+      },
+      publicDashboardError: '',
+      publicTrendChartInstance: null,
       counterObserver: null,
       pipelineObserver: null,
       onScroll: null,
       onMouseMove: null
+    }
+  },
+  computed: {
+    publicFunnel() {
+      return this.publicDashboard?.application_funnel || {}
+    },
+    topPublicSkills() {
+      const rows = Array.isArray(this.publicDashboard?.job_demand_by_skills)
+        ? this.publicDashboard.job_demand_by_skills
+        : []
+      return rows.slice(0, 8)
+    },
+    maxPublicSkillDemand() {
+      const values = this.topPublicSkills.map((row) => Number(row.demand_count || 0))
+      return Math.max(...values, 1)
+    },
+    publicMetaLabel() {
+      const months = Number(this.publicDashboard?.meta?.months || 0)
+      if (!months) {
+        return 'Last 6 months'
+      }
+      return `Last ${months} months`
     }
   },
   directives: {
@@ -626,6 +726,8 @@ export default {
     if (this.$refs.pipelineTrack) {
       this.pipelineObserver.observe(this.$refs.pipelineTrack)
     }
+
+    this.fetchPublicDashboard()
   },
   beforeUnmount() {
     if (this.onMouseMove) {
@@ -636,12 +738,139 @@ export default {
     }
     this.counterObserver?.disconnect()
     this.pipelineObserver?.disconnect()
+    this.destroyPublicTrendChart()
   },
   methods: {
+    async fetchPublicDashboard(months = 6) {
+      this.publicDashboardError = ''
+      try {
+        const response = await adminApi.getPublicLandingDashboard({ months })
+        const payload = response?.data?.data || {}
+
+        this.publicDashboard = {
+          highlights: payload.highlights || this.publicDashboard.highlights,
+          placement_trends: Array.isArray(payload.placement_trends) ? payload.placement_trends : [],
+          application_funnel: payload.application_funnel || this.publicDashboard.application_funnel,
+          job_demand_by_skills: Array.isArray(payload.job_demand_by_skills)
+            ? payload.job_demand_by_skills
+            : [],
+          meta: payload.meta || this.publicDashboard.meta
+        }
+
+        this.syncCountersFromPublicData()
+        this.$nextTick(() => {
+          this.renderPublicTrendChart()
+        })
+      } catch (error) {
+        this.publicDashboardError =
+          error?.response?.data?.error ||
+          error?.response?.data?.message ||
+          'Unable to load public dashboard analytics.'
+      }
+    },
+    syncCountersFromPublicData() {
+      const highlights = this.publicDashboard?.highlights || {}
+      const targets = [
+        Number(highlights.placements_confirmed || 0),
+        Number(highlights.approved_companies || 0),
+        Number(highlights.approved_drives || 0),
+        Number(highlights.latest_month_placements || 0)
+      ]
+
+      this.counters = this.counters.map((counter, index) => ({
+        ...counter,
+        target: targets[index]
+      }))
+
+      const shouldAnimateImmediately = this.counters.some((counter) => Number(counter.value || 0) > 0)
+      if (shouldAnimateImmediately) {
+        this.counters.forEach((counter, index) => {
+          this.animateCounter(index, counter.target, 900, Number(counter.value || 0))
+        })
+      }
+    },
+    destroyPublicTrendChart() {
+      if (this.publicTrendChartInstance) {
+        this.publicTrendChartInstance.destroy()
+        this.publicTrendChartInstance = null
+      }
+    },
+    renderPublicTrendChart() {
+      const canvas = this.$refs.publicTrendChart
+      if (!canvas) {
+        return
+      }
+
+      this.destroyPublicTrendChart()
+
+      const rows = Array.isArray(this.publicDashboard?.placement_trends)
+        ? this.publicDashboard.placement_trends
+        : []
+      const labels = rows.map((row) => row.month_label || row.month_key || '-')
+
+      this.publicTrendChartInstance = new Chart(canvas, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Applications',
+              data: rows.map((row) => Number(row.applications || 0)),
+              borderColor: '#2563EB',
+              backgroundColor: 'rgba(37, 99, 235, 0.12)',
+              tension: 0.3,
+              fill: true
+            },
+            {
+              label: 'Offers',
+              data: rows.map((row) => Number(row.offers || 0)),
+              borderColor: '#D97706',
+              backgroundColor: 'rgba(217, 119, 6, 0.1)',
+              tension: 0.3,
+              fill: false
+            },
+            {
+              label: 'Placements',
+              data: rows.map((row) => Number(row.placements || 0)),
+              borderColor: '#059669',
+              backgroundColor: 'rgba(5, 150, 105, 0.1)',
+              tension: 0.3,
+              fill: false
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'bottom'
+            }
+          },
+          scales: {
+            x: {
+              grid: {
+                display: false
+              }
+            },
+            y: {
+              beginAtZero: true
+            }
+          }
+        }
+      })
+    },
+    publicSkillPct(value) {
+      const parsed = Number(value || 0)
+      return Math.max(6, Math.round((parsed / this.maxPublicSkillDemand) * 100))
+    },
+    funnelCountLabel(value) {
+      return `${Number(value || 0).toLocaleString()} students`
+    },
     go(path) {
       this.$router.push(path)
     },
-    animateCounter(index, target, duration = 2000) {
+    animateCounter(index, target, duration = 2000, fromValue = 0) {
       let start = null
       const step = (timestamp) => {
         if (!start) {
@@ -649,7 +878,8 @@ export default {
         }
         const progress = Math.min((timestamp - start) / duration, 1)
         const eased = 1 - Math.pow(1 - progress, 4)
-        this.counters[index].value = Math.floor(eased * target)
+        const nextValue = fromValue + ((target - fromValue) * eased)
+        this.counters[index].value = Math.floor(nextValue)
         if (progress < 1) {
           requestAnimationFrame(step)
         } else {

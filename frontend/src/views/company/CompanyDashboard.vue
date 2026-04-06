@@ -114,6 +114,7 @@
             :my-drives="myDrives"
             :selected-apps="selectedApps"
             :filtered-applications="filteredApplications"
+            :is-scoring="isScoringResume"
             :all-page-selected="allPageSelected"
             :company-status="companyProfile.status"
             @update:app-search="appSearch = $event"
@@ -129,6 +130,7 @@
             @shortlist="shortlistApp"
             @reject="rejectApp"
             @advance="advanceStage"
+            @screen-application="screenApplicationResume"
           />
 
           <ProfileView
@@ -165,6 +167,95 @@
         @submit="submitNewDrive"
         @update-field="setNewDriveField"
       />
+    </Transition>
+
+    <Transition name="rq-modal">
+      <div
+        v-if="showScreeningModal"
+        class="rq-modal-overlay"
+        @click.self="closeScreeningModal"
+      >
+        <div class="rq-modal rq-modal-lg">
+          <div class="rq-modal-hd">
+            <div>
+              <h3 class="rq-card-title">ATS Keyword Screening</h3>
+              <p class="rq-sm rq-dim">
+                {{ screeningResult?.job?.title || 'Application' }}
+              </p>
+            </div>
+            <button class="rq-modal-close" type="button" @click="closeScreeningModal">×</button>
+          </div>
+
+          <div class="rq-modal-body">
+            <p v-if="screeningError" class="rq-state rq-state-error">{{ screeningError }}</p>
+
+            <template v-else-if="screeningResult">
+              <div class="rq-app-stats-row">
+                <span class="rq-app-stat-item">
+                  <span class="rq-app-stat-n" style="color:var(--rq-blue)">{{ screeningResult.analysis?.score || 0 }}%</span>
+                  Match Score
+                </span>
+                <span class="rq-app-stat-sep">·</span>
+                <span class="rq-app-stat-item">
+                  <span class="rq-app-stat-n" style="color:var(--rq-green)">{{ screeningResult.analysis?.matched_count || 0 }}</span>
+                  Matched
+                </span>
+                <span class="rq-app-stat-sep">·</span>
+                <span class="rq-app-stat-item">
+                  <span class="rq-app-stat-n" style="color:var(--rq-red)">{{ (screeningResult.analysis?.missing_keywords || []).length }}</span>
+                  Missing
+                </span>
+              </div>
+
+              <div>
+                <p class="rq-sm rq-dim"><strong>Recommendation:</strong> {{ screeningResult.analysis?.recommendation || 'n/a' }}</p>
+              </div>
+
+              <div>
+                <p class="rq-sm" style="font-weight:700; margin-bottom:6px;">Matched Keywords</p>
+                <div class="rq-drive-chips">
+                  <span
+                    v-for="keyword in screeningResult.analysis?.matched_keywords || []"
+                    :key="`hit-${keyword}`"
+                    class="rq-status-pill pill-approved"
+                  >
+                    {{ keyword }}
+                  </span>
+                  <span
+                    v-if="!(screeningResult.analysis?.matched_keywords || []).length"
+                    class="rq-sm rq-dim"
+                  >
+                    No matched keywords found.
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <p class="rq-sm" style="font-weight:700; margin-bottom:6px;">Missing Keywords</p>
+                <div class="rq-drive-chips">
+                  <span
+                    v-for="keyword in screeningResult.analysis?.missing_keywords || []"
+                    :key="`miss-${keyword}`"
+                    class="rq-status-pill pill-rejected"
+                  >
+                    {{ keyword }}
+                  </span>
+                  <span
+                    v-if="!(screeningResult.analysis?.missing_keywords || []).length"
+                    class="rq-sm rq-dim"
+                  >
+                    No missing keywords. Candidate fully matches current keyword set.
+                  </span>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <div class="rq-modal-ft">
+            <button class="rq-ghost" type="button" @click="closeScreeningModal">Close</button>
+          </div>
+        </div>
+      </div>
     </Transition>
 
     <Transition name="rq-toast">
@@ -306,6 +397,10 @@ export default {
       appDriveFilter: '',
       appStatusFilter: '',
       selectedApps: [],
+      isScoringResume: {},
+      showScreeningModal: false,
+      screeningResult: null,
+      screeningError: '',
 
       newDrive: createDefaultNewDrive(),
 
@@ -526,6 +621,11 @@ export default {
     },
     closeAllPanels() {
       this.closeNotificationsPanel()
+    },
+    closeScreeningModal() {
+      this.showScreeningModal = false
+      this.screeningError = ''
+      this.screeningResult = null
     },
     closeNotificationsPanel() {
       this.showNotifPanel = false
@@ -1028,6 +1128,32 @@ export default {
       } catch (error) {
         this.handleApiError(error, 'Unable to update application status.', { showToast: true })
         return false
+      }
+    },
+    async screenApplicationResume(application) {
+      const applicationId = Number(application?.id || 0)
+      if (!applicationId || this.isScoringResume[applicationId]) {
+        return
+      }
+
+      this.isScoringResume = {
+        ...this.isScoringResume,
+        [applicationId]: true
+      }
+
+      try {
+        const response = await companyApi.scoreApplicationResume(applicationId)
+        this.screeningResult = response?.data?.data || null
+        this.screeningError = ''
+        this.showScreeningModal = true
+      } catch (error) {
+        this.screeningError = parseApiError(error, 'Unable to run ATS screening.')
+        this.toast_show(this.screeningError, 'danger')
+      } finally {
+        this.isScoringResume = {
+          ...this.isScoringResume,
+          [applicationId]: false
+        }
       }
     },
     async shortlistApp(application) {

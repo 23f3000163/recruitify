@@ -10,6 +10,59 @@
         <p class="rq-row-sub">{{ application.company?.name || application.company?.company_name || '-' }}</p>
         <p class="rq-row-sub">Status: {{ application.status_label || statusLabel(application.status) }}</p>
         <p class="rq-row-sub">Updated: {{ formatDateTime(application.updated_at) }}</p>
+
+        <div v-if="screeningResult" class="rq-screening-block">
+          <div class="rq-screening-kpis">
+            <div class="rq-screening-kpi">
+              <span class="rq-screening-kpi-label">ATS Score</span>
+              <span class="rq-screening-kpi-value">{{ Number(screeningResult.analysis?.score || 0) }}%</span>
+            </div>
+            <div class="rq-screening-kpi">
+              <span class="rq-screening-kpi-label">Matched</span>
+              <span class="rq-screening-kpi-value">{{ Number(screeningResult.analysis?.matched_count || 0) }}</span>
+            </div>
+            <div class="rq-screening-kpi">
+              <span class="rq-screening-kpi-label">Missing</span>
+              <span class="rq-screening-kpi-value">{{ (screeningResult.analysis?.missing_keywords || []).length }}</span>
+            </div>
+          </div>
+
+          <p class="rq-row-sub">
+            Recommendation: {{ screeningResult.analysis?.recommendation || 'n/a' }}
+          </p>
+
+          <div class="rq-screening-tags-wrap">
+            <p class="rq-row-sub">Matched keywords</p>
+            <div class="rq-screening-tags">
+              <span
+                v-for="keyword in screeningResult.analysis?.matched_keywords || []"
+                :key="`screen-hit-${keyword}`"
+                class="rq-status-pill pill-shortlisted"
+              >
+                {{ keyword }}
+              </span>
+              <span v-if="!(screeningResult.analysis?.matched_keywords || []).length" class="rq-row-sub">
+                No matched keywords.
+              </span>
+            </div>
+          </div>
+
+          <div class="rq-screening-tags-wrap">
+            <p class="rq-row-sub">Missing keywords</p>
+            <div class="rq-screening-tags">
+              <span
+                v-for="keyword in screeningResult.analysis?.missing_keywords || []"
+                :key="`screen-miss-${keyword}`"
+                class="rq-status-pill pill-rejected"
+              >
+                {{ keyword }}
+              </span>
+              <span v-if="!(screeningResult.analysis?.missing_keywords || []).length" class="rq-row-sub">
+                Full keyword match achieved.
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
     </article>
   </section>
@@ -20,6 +73,10 @@ export default {
   name: 'StudentApplicationModal',
   props: {
     application: {
+      type: Object,
+      default: null
+    },
+    screeningResult: {
       type: Object,
       default: null
     }

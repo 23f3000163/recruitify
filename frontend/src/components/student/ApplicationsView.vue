@@ -48,16 +48,17 @@
                 <th scope="col">Status</th>
                 <th scope="col">Interview</th>
                 <th scope="col">Updated</th>
+                <th scope="col">ATS Match</th>
                 <th scope="col">Offer Action</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="isLoading">
-                <td colspan="6" class="rq-empty-row">Loading applications...</td>
+                <td colspan="7" class="rq-empty-row">Loading applications...</td>
               </tr>
 
               <tr v-else-if="!applications.length">
-                <td colspan="6" class="rq-empty-row">No applications found for this filter.</td>
+                <td colspan="7" class="rq-empty-row">No applications found for this filter.</td>
               </tr>
 
               <tr v-for="row in applications" :key="row.application_id" @click="$emit('open-application', row)">
@@ -98,6 +99,17 @@
                   <span v-else class="rq-row-sub">Not scheduled</span>
                 </td>
                 <td>{{ formatDateTime(row.updated_at) }}</td>
+                <td>
+                  <button
+                    class="rq-ghost rq-ghost-xs"
+                    type="button"
+                    :disabled="isScoring[row.application_id]"
+                    :aria-label="`Run ATS match for ${row.drive?.title || 'this role'}`"
+                    @click.stop="$emit('score-application', row)"
+                  >
+                    {{ isScoring[row.application_id] ? 'Scoring...' : 'Check Match' }}
+                  </button>
+                </td>
                 <td>
                   <div v-if="canRespondToOffer(row.offer)" class="rq-inline-actions">
                     <button
@@ -153,6 +165,16 @@
                 <span class="rq-status-pill" :class="statusClass(row.status)">
                   {{ row.status_label || statusLabel(row.status) }}
                 </span>
+
+                <button
+                  class="rq-ghost rq-ghost-xs"
+                  type="button"
+                  :disabled="isScoring[row.application_id]"
+                  :aria-label="`Run ATS match for ${row.drive?.title || 'this role'}`"
+                  @click.stop.prevent="$emit('score-application', row)"
+                >
+                  {{ isScoring[row.application_id] ? 'Scoring...' : 'Check Match' }}
+                </button>
 
                 <button
                   v-if="canRespondToOffer(row.offer)"
@@ -269,6 +291,10 @@ export default {
     isResponding: {
       type: Object,
       default: () => ({})
+    },
+    isScoring: {
+      type: Object,
+      default: () => ({})
     }
   },
   emits: [
@@ -277,7 +303,8 @@ export default {
     'apply-filters',
     'page-change',
     'respond-offer',
-    'open-application'
+    'open-application',
+    'score-application'
   ],
   methods: {
     canRespondToOffer(offer) {

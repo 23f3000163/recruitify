@@ -1,80 +1,99 @@
 <template>
   <section class="rq-view">
     <div class="rq-analytics-grid">
-      <div class="rq-card">
+      <div class="rq-card rq-col-2">
         <div class="rq-card-hd">
-          <span class="rq-card-title">Placement Rate</span>
-          <span class="rq-pill rq-pill-green">2024–25</span>
+          <span class="rq-card-title">Placement Trends</span>
+          <span class="rq-pill rq-pill-blue">{{ monthLabel }}</span>
         </div>
-        <div class="rq-donut-section">
-          <div class="rq-donut-fig">
-            <svg viewBox="0 0 120 120" width="130" height="130" aria-label="Placement rate" role="img">
-              <circle cx="60" cy="60" r="46" fill="none" stroke="#E5E7EB" stroke-width="12"/>
-              <circle cx="60" cy="60" r="46" fill="none" stroke="#2563EB" stroke-width="12" stroke-linecap="round" :stroke-dasharray="donutCirc" :stroke-dashoffset="donutPlacedOffset" transform="rotate(-90 60 60)"/>
-            </svg>
-            <div class="rq-donut-center">
-              <div class="rq-donut-val">{{ placementRatePct }}%</div>
-              <div class="rq-donut-sub">Placed</div>
-            </div>
+        <div class="rq-card-body">
+          <div v-if="isLoading" class="rq-empty">
+            <div class="rq-empty-ico">⏳</div>
+            <b>Loading analytics</b>
+            <span>Building trend charts from the latest monthly data.</span>
           </div>
-          <div class="rq-donut-legend">
-            <div class="rq-leg-row"><span class="rq-leg-dot" style="background:#2563EB"></span><span>Placed — {{ placedCount }}</span></div>
-            <div class="rq-leg-row"><span class="rq-leg-dot" style="background:#D97706"></span><span>In Progress — {{ inProgressCount }}</span></div>
-            <div class="rq-leg-row"><span class="rq-leg-dot" style="background:#E5E7EB"></span><span>Not Placed — {{ notPlacedCount }}</span></div>
+
+          <div v-else-if="errorMessage" class="rq-state rq-state-error">
+            <span>{{ errorMessage }}</span>
+            <button class="rq-ghost" type="button" @click="$emit('retry')">Retry</button>
+          </div>
+
+          <div v-else class="rq-chart-wrap rq-chart-lg">
+            <canvas ref="trendChart" aria-label="Placement trend line chart" role="img"></canvas>
           </div>
         </div>
       </div>
 
-      <div class="rq-card rq-col-2">
+      <div class="rq-card">
         <div class="rq-card-hd">
-          <span class="rq-card-title">Top Recruiting Companies</span>
+          <span class="rq-card-title">Application Funnel</span>
+          <span class="rq-pill rq-pill-amber">Total {{ funnelTotal }}</span>
+        </div>
+        <div class="rq-card-body">
+          <div v-if="isLoading" class="rq-empty rq-empty-compact">
+            <span class="rq-row-sub">Loading funnel metrics...</span>
+          </div>
+          <div v-else class="rq-chart-wrap rq-chart-md">
+            <canvas ref="funnelChart" aria-label="Application funnel chart" role="img"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="rq-card">
+        <div class="rq-card-hd">
+          <span class="rq-card-title">Top Skill Demand</span>
           <button class="rq-ghost" @click="$emit('export', 'analytics')">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v7M3 6l3 3 3-3M1 11h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             Export
           </button>
         </div>
-        <div class="rq-tbl-wrap">
-          <table class="rq-tbl" aria-label="Top recruiters">
-            <thead><tr>
-              <th scope="col">#</th>
-              <th scope="col">Company</th>
-              <th scope="col">Drives</th>
-              <th scope="col">Offers</th>
-              <th scope="col">Avg Pkg</th>
-              <th scope="col">Highest</th>
-            </tr></thead>
-            <tbody>
-              <tr v-for="(co, i) in topCompanies" :key="co.name">
-                <td><span class="rq-rank" :class="['gold','silver','bronze'][i] || ''">{{ i + 1 }}</span></td>
-                <td>
-                  <div class="rq-entity">
-                    <div class="rq-av rq-av-sm" :style="{ background: co.color }">{{ co.initials }}</div>
-                    <span class="rq-ename">{{ co.name }}</span>
-                  </div>
-                </td>
-                <td class="rq-mono rq-tc">{{ co.drives }}</td>
-                <td class="rq-mono rq-tc rq-green">{{ co.offers }}</td>
-                <td class="rq-mono rq-tc rq-blue">{{ co.avgPkg }}</td>
-                <td class="rq-mono rq-tc rq-purple">{{ co.highest }}</td>
-              </tr>
-            </tbody>
-          </table>
+        <div class="rq-card-body">
+          <div v-if="isLoading" class="rq-empty rq-empty-compact">
+            <span class="rq-row-sub">Loading skill demand...</span>
+          </div>
+          <div v-else class="rq-chart-wrap rq-chart-md">
+            <canvas ref="skillsChart" aria-label="Skill demand bar chart" role="img"></canvas>
+          </div>
         </div>
       </div>
 
       <div class="rq-card rq-col-full">
         <div class="rq-card-hd">
-          <span class="rq-card-title">Branch-wise Placement</span>
+          <span class="rq-card-title">Analytics Snapshot</span>
         </div>
         <div class="rq-card-body">
-          <div class="rq-vchart">
-            <div v-for="b in branchStats" :key="b.name" class="rq-vbar-col">
-              <div class="rq-vbar-pct">{{ pct(b.placed, b.total) }}%</div>
-              <div class="rq-vbar-track">
-                <div class="rq-vbar-fill" :style="{ height: pct(b.placed, b.total) + '%', background: b.color }"></div>
-              </div>
-              <div class="rq-vbar-label">{{ b.name }}</div>
-              <div class="rq-vbar-frac">{{ b.placed }}/{{ b.total }}</div>
+          <div class="rq-mini-metrics">
+            <div class="rq-mini-metric">
+              <span class="rq-mini-metric-label">Students</span>
+              <span class="rq-mini-metric-value">{{ formatMetric(summary.total_students) }}</span>
+            </div>
+            <div class="rq-mini-metric">
+              <span class="rq-mini-metric-label">Companies</span>
+              <span class="rq-mini-metric-value">{{ formatMetric(summary.total_companies) }}</span>
+            </div>
+            <div class="rq-mini-metric">
+              <span class="rq-mini-metric-label">Jobs</span>
+              <span class="rq-mini-metric-value">{{ formatMetric(summary.total_jobs) }}</span>
+            </div>
+            <div class="rq-mini-metric">
+              <span class="rq-mini-metric-label">Applications</span>
+              <span class="rq-mini-metric-value">{{ formatMetric(summary.total_applications) }}</span>
+            </div>
+            <div class="rq-mini-metric">
+              <span class="rq-mini-metric-label">Offers Released</span>
+              <span class="rq-mini-metric-value">{{ formatMetric(summary.offers_released) }}</span>
+            </div>
+            <div class="rq-mini-metric">
+              <span class="rq-mini-metric-label">Offers Accepted</span>
+              <span class="rq-mini-metric-value">{{ formatMetric(summary.offers_accepted) }}</span>
+            </div>
+            <div class="rq-mini-metric">
+              <span class="rq-mini-metric-label">Placements</span>
+              <span class="rq-mini-metric-value">{{ formatMetric(summary.total_placements) }}</span>
+            </div>
+            <div class="rq-mini-metric">
+              <span class="rq-mini-metric-label">Legacy Placement Rate</span>
+              <span class="rq-mini-metric-value">{{ placementRatePct }}%</span>
             </div>
           </div>
         </div>
@@ -84,9 +103,25 @@
 </template>
 
 <script>
+import { Chart, registerables } from 'chart.js'
+
+Chart.register(...registerables)
+
 export default {
   name: 'AnalyticsPanel',
   props: {
+    analyticsOverview: {
+      type: Object,
+      default: () => ({})
+    },
+    isLoading: {
+      type: Boolean,
+      default: false
+    },
+    errorMessage: {
+      type: String,
+      default: ''
+    },
     topCompanies: { type: Array, required: true },
     branchStats: { type: Array, required: true },
     placedCount: { type: Number, required: true },
@@ -97,6 +132,267 @@ export default {
     donutPlacedOffset: { type: Number, required: true },
     pct: { type: Function, required: true }
   },
-  emits: ['export']
+  emits: ['export', 'retry'],
+  data() {
+    return {
+      trendChartInstance: null,
+      funnelChartInstance: null,
+      skillsChartInstance: null
+    }
+  },
+  computed: {
+    summary() {
+      return this.analyticsOverview?.summary || {}
+    },
+    monthLabel() {
+      const months = Number(this.analyticsOverview?.meta?.months || 0)
+      if (!months) return 'Last 6 Months'
+      return `Last ${months} Months`
+    },
+    trendRows() {
+      const rows = Array.isArray(this.analyticsOverview?.placement_trends)
+        ? this.analyticsOverview.placement_trends
+        : []
+      if (rows.length) {
+        return rows
+      }
+
+      return this.branchStats.map((branch, index) => ({
+        month_label: `M${index + 1}`,
+        applications: Number(branch.total || 0),
+        placements: Number(branch.placed || 0),
+        offers: Number(branch.placed || 0)
+      }))
+    },
+    funnelCounts() {
+      const fallbackTotal = Number(this.placedCount + this.inProgressCount + this.notPlacedCount)
+      const raw = this.analyticsOverview?.application_funnel || {}
+      return {
+        applied: Number(raw.applied || 0),
+        shortlisted: Number(raw.shortlisted || 0),
+        interview: Number(raw.interview || 0),
+        offered: Number(raw.offered || 0),
+        placed: Number(raw.placed || 0),
+        rejected: Number(raw.rejected || 0),
+        total: Number(raw.total || fallbackTotal)
+      }
+    },
+    funnelTotal() {
+      return Number(this.funnelCounts.total || 0)
+    },
+    skillRows() {
+      const rows = Array.isArray(this.analyticsOverview?.job_demand_by_skills)
+        ? this.analyticsOverview.job_demand_by_skills
+        : []
+      return rows.slice(0, 10)
+    }
+  },
+  watch: {
+    analyticsOverview: {
+      deep: true,
+      handler() {
+        this.queueRenderCharts()
+      }
+    },
+    isLoading() {
+      this.queueRenderCharts()
+    },
+    errorMessage() {
+      this.queueRenderCharts()
+    }
+  },
+  mounted() {
+    this.queueRenderCharts()
+  },
+  beforeUnmount() {
+    this.destroyCharts()
+  },
+  methods: {
+    formatMetric(value) {
+      const parsed = Number(value || 0)
+      return Number.isFinite(parsed) ? parsed.toLocaleString() : '0'
+    },
+    queueRenderCharts() {
+      this.$nextTick(() => {
+        this.renderCharts()
+      })
+    },
+    destroyCharts() {
+      if (this.trendChartInstance) {
+        this.trendChartInstance.destroy()
+        this.trendChartInstance = null
+      }
+      if (this.funnelChartInstance) {
+        this.funnelChartInstance.destroy()
+        this.funnelChartInstance = null
+      }
+      if (this.skillsChartInstance) {
+        this.skillsChartInstance.destroy()
+        this.skillsChartInstance = null
+      }
+    },
+    renderCharts() {
+      this.destroyCharts()
+
+      if (this.isLoading || this.errorMessage) {
+        return
+      }
+
+      this.renderTrendChart()
+      this.renderFunnelChart()
+      this.renderSkillsChart()
+    },
+    renderTrendChart() {
+      const canvas = this.$refs.trendChart
+      if (!canvas) return
+
+      const labels = this.trendRows.map((row) => row.month_label || row.month_key || '-')
+      const applications = this.trendRows.map((row) => Number(row.applications || 0))
+      const offers = this.trendRows.map((row) => Number(row.offers || 0))
+      const placements = this.trendRows.map((row) => Number(row.placements || 0))
+
+      this.trendChartInstance = new Chart(canvas, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Applications',
+              data: applications,
+              borderColor: '#2563EB',
+              backgroundColor: 'rgba(37, 99, 235, 0.12)',
+              tension: 0.28,
+              fill: true
+            },
+            {
+              label: 'Offers',
+              data: offers,
+              borderColor: '#D97706',
+              backgroundColor: 'rgba(217, 119, 6, 0.1)',
+              tension: 0.28,
+              fill: false
+            },
+            {
+              label: 'Placements',
+              data: placements,
+              borderColor: '#059669',
+              backgroundColor: 'rgba(5, 150, 105, 0.1)',
+              tension: 0.28,
+              fill: false
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'bottom'
+            }
+          },
+          scales: {
+            x: {
+              grid: {
+                display: false
+              }
+            },
+            y: {
+              beginAtZero: true
+            }
+          }
+        }
+      })
+    },
+    renderFunnelChart() {
+      const canvas = this.$refs.funnelChart
+      if (!canvas) return
+
+      const dataset = this.funnelCounts
+      this.funnelChartInstance = new Chart(canvas, {
+        type: 'bar',
+        data: {
+          labels: ['Applied', 'Shortlisted', 'Interview', 'Offered', 'Placed', 'Rejected'],
+          datasets: [
+            {
+              label: 'Applications',
+              data: [
+                dataset.applied,
+                dataset.shortlisted,
+                dataset.interview,
+                dataset.offered,
+                dataset.placed,
+                dataset.rejected
+              ],
+              backgroundColor: ['#D97706', '#7C3AED', '#2563EB', '#0891B2', '#059669', '#DC2626'],
+              borderRadius: 6,
+              borderSkipped: false
+            }
+          ]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              display: false
+            }
+          },
+          scales: {
+            x: {
+              beginAtZero: true
+            },
+            y: {
+              grid: {
+                display: false
+              }
+            }
+          }
+        }
+      })
+    },
+    renderSkillsChart() {
+      const canvas = this.$refs.skillsChart
+      if (!canvas) return
+
+      const labels = this.skillRows.map((row) => row.skill || '-')
+      const values = this.skillRows.map((row) => Number(row.demand_count || 0))
+
+      this.skillsChartInstance = new Chart(canvas, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Demand count',
+              data: values,
+              backgroundColor: '#2563EB',
+              borderRadius: 6,
+              borderSkipped: false
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              display: false
+            }
+          },
+          scales: {
+            x: {
+              grid: {
+                display: false
+              }
+            },
+            y: {
+              beginAtZero: true
+            }
+          }
+        }
+      })
+    }
+  }
 }
 </script>

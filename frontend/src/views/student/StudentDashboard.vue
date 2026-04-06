@@ -74,11 +74,13 @@
           :is-loading="isLoadingApplications"
           :error-message="applicationsError"
           :is-responding="isRespondingOffer"
+          :is-scoring="isScoringMatch"
           @update:status-filter="statusFilter = $event"
           @update:query-text="queryText = $event"
           @apply-filters="applyApplicationFilters"
           @page-change="loadApplications"
           @respond-offer="respondToOffer"
+          @score-application="scoreApplicationMatch"
           @open-application="openApplicationDetails"
         />
 
@@ -134,6 +136,7 @@
 
       <StudentApplicationModal
         :application="selectedApplication"
+        :screening-result="selectedApplicationScore"
         @close="selectedApplication = null"
       />
     </div>
@@ -292,6 +295,8 @@ export default {
       statusFilter: 'all',
       queryText: '',
       isRespondingOffer: {},
+      isScoringMatch: {},
+      atsScoresByApplication: {},
       notifications: [],
       notificationsPagination: {
         page: 1,
@@ -415,6 +420,13 @@ export default {
           item.role.toLowerCase().includes(query) ||
           item.company.toLowerCase().includes(query)
       )
+    },
+    selectedApplicationScore() {
+      const applicationId = Number(this.selectedApplication?.application_id || this.selectedApplication?.id || 0)
+      if (!applicationId) {
+        return null
+      }
+      return this.atsScoresByApplication[applicationId] || null
     }
   },
   watch: {
@@ -703,6 +715,51 @@ export default {
         this.isRespondingOffer = {
           ...this.isRespondingOffer,
           [parsedOfferId]: false
+        }
+      }
+    },
+    async scoreApplicationMatch(application) {
+      const applicationId = Number(application?.application_id || application?.id || 0)
+      const driveId = Number(
+        application?.drive?.id ||
+        application?.drive_id ||
+        application?.job_id ||
+        0
+      )
+
+      if (!applicationId || !driveId || this.isScoringMatch[applicationId]) {
+        return
+      }
+
+      this.isScoringMatch = {
+        ...this.isScoringMatch,
+        [applicationId]: true
+      }
+
+      try {
+        const response = await studentApi.scoreResumeForJob(driveId)
+        const scorePayload = response?.data?.data || null
+
+        this.atsScoresByApplication = {
+          ...this.atsScoresByApplication,
+          [applicationId]: scorePayload
+        }
+        this.selectedApplication = application
+
+        const score = Number(scorePayload?.analysis?.score || 0)
+        this.publishActionNote(`ATS match score: ${score}%`, 'success')
+      } catch (error) {
+        const message =
+          error?.response?.data?.error ||
+          error?.response?.data?.message ||
+          error?.message ||
+          'Unable to evaluate ATS keyword match.'
+        this.applicationsError = message
+        this.publishActionNote(message, 'error')
+      } finally {
+        this.isScoringMatch = {
+          ...this.isScoringMatch,
+          [applicationId]: false
         }
       }
     },
