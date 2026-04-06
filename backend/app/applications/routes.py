@@ -1,7 +1,9 @@
 """ATS-compatible application routes with strict transition controls."""
 
+import re
 from datetime import datetime, timezone
 from math import ceil
+from urllib.parse import unquote, urlparse
 
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
@@ -33,6 +35,34 @@ applications_bp = Blueprint("applications", __name__)
 MAX_LIMIT = 100
 MAX_NOTES_LENGTH = 500
 MAX_REJECTION_REASON_LENGTH = 300
+MAX_SCREEN_KEYWORDS = 40
+
+KEYWORD_ALIAS_MAP = {
+    "node.js": "nodejs",
+    "node js": "nodejs",
+    "react.js": "react",
+    "vue.js": "vue",
+    "c plus plus": "c++",
+    "cplusplus": "c++",
+    "c sharp": "c#",
+    "asp.net": "dotnet",
+    ".net": "dotnet",
+}
+
+TITLE_STOP_WORDS = {
+    "and",
+    "for",
+    "with",
+    "the",
+    "senior",
+    "junior",
+    "intern",
+    "engineer",
+    "developer",
+    "specialist",
+    "analyst",
+    "associate",
+}
 
 
 def _json_error(message, status_code=400):
@@ -113,6 +143,176 @@ def _normalize_optional_text(raw_value, field_name, max_length):
         return None, f"{field_name} must be at most {max_length} characters"
 
     return cleaned or None, None
+
+
+def _normalize_keyword(raw_value):
+    normalized = re.sub(r"\s+", " ", str(raw_value or "").strip().lower())
+    if not normalized:
+        return ""
+    return KEYWORD_ALIAS_MAP.get(normalized, normalized)
+
+
+def _split_keywords(raw_text):
+    text = str(raw_text or "").strip()
+    if not text:
+        return []
+
+    tokens = re.split(r"[,;|\n/]+", text)
+    items = []
+    seen = set()
+    for token in tokens:
+        keyword = _normalize_keyword(token)
+        if not keyword or keyword in seen:
+            continue
+        seen.add(keyword)
+        items.append(keyword)
+    return items
+
+
+def _extract_word_keywords(raw_text):
+    text = str(raw_text or "").strip().lower()
+    if not text:
+        return []
+
+    words = re.findall(r"[a-z0-9][a-z0-9+#\.]{1,}", text)
+    items = []
+    seen = set()
+    for word in words:
+        keyword = _normalize_keyword(word)
+        if not keyword or keyword in seen:
+            continue
+        seen.add(keyword)
+        items.append(keyword)
+    return items
+
+
+def _resume_filename_keywords(resume_url):
+    raw_url = str(resume_url or "").strip()
+    if not raw_url:
+        return []
+
+    parsed_url = urlparse(raw_url)
+    path = parsed_url.path or raw_url
+    filename = unquote(path.split("/")[-1]).strip()
+    if not filename:
+        return []
+
+    base_name = filename.rsplit(".", 1)[0]
+    chunks = re.split(r"[^a-zA-Z0-9+#\.]+", base_name)
+
+    items = []
+    seen = set()
+    for chunk in chunks:
+        keyword = _normalize_keyword(chunk)
+        if not keyword or keyword in seen:
+            continue
+        seen.add(keyword)
+        items.append(keyword)
+    return items
+
+
+def _unique_keywords(*keyword_lists):
+    items = []
+    seen = set()
+    for keyword_list in keyword_lists:
+        for value in keyword_list:
+            keyword = _normalize_keyword(value)
+            if not keyword or keyword in seen:
+                continue
+            seen.add(keyword)
+            items.append(keyword)
+    return items
+
+
+def _keywords_from_drive(drive, payload_keywords=None):
+    payload_list = []
+    if payload_keywords is not None:
+        if isinstance(payload_keywords, list):
+            payload_list = _unique_keywords(payload_keywords)
+        elif isinstance(payload_keywords, str):
+            payload_list = _split_keywords(payload_keywords)
+        else:
+            return [], "keywords must be a string or an array of strings"
+
+    drive_keywords = _split_keywords(drive.required_skills)
+    if not drive_keywords:
+        fallback_keywords = [
+            word
+            for word in _extract_word_keywords(drive.job_title)
+            if word not in TITLE_STOP_WORDS
+        ]
+        drive_keywords = fallback_keywords[:6]
+
+    final_keywords = _unique_keywords(payload_list or drive_keywords)
+    if not final_keywords:
+        return [], "No target keywords available for this job"
+
+    return final_keywords[:MAX_SCREEN_KEYWORDS], None
+
+
+def _candidate_keywords_from_student(student):
+    skill_keywords = _split_keywords(student.skills)
+    experience_keywords = _extract_word_keywords(student.experience_summary)
+    resume_keywords = _resume_filename_keywords(student.resume_url)
+    return _unique_keywords(skill_keywords, experience_keywords, resume_keywords)
+
+
+def _keyword_is_matched(target_keyword, candidate_keywords):
+    if target_keyword in candidate_keywords:
+        return True
+
+    if " " in target_keyword:
+        parts = [part for part in target_keyword.split(" ") if part]
+        if parts and all(part in candidate_keywords for part in parts):
+            return True
+
+    return False
+
+
+def _score_keyword_match(target_keywords, candidate_keywords):
+    matched = []
+    missing = []
+
+    candidate_set = set(candidate_keywords)
+    for keyword in target_keywords:
+        if _keyword_is_matched(keyword, candidate_set):
+            matched.append(keyword)
+        else:
+            missing.append(keyword)
+
+    total = len(target_keywords)
+    matched_count = len(matched)
+    coverage_ratio = (matched_count / total) if total else 0.0
+    score = round(coverage_ratio * 100, 2)
+
+    if score >= 75:
+        recommendation = "strong"
+    elif score >= 50:
+        recommendation = "moderate"
+    else:
+        recommendation = "needs-improvement"
+
+    return {
+        "score": score,
+        "recommendation": recommendation,
+        "matched_keywords": matched,
+        "missing_keywords": missing,
+        "matched_count": matched_count,
+        "total_keywords": total,
+        "coverage_ratio": round(coverage_ratio, 4),
+    }
+
+
+def _parse_positive_int(raw_value, field_name):
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        return None, f"{field_name} must be an integer"
+
+    if value < 1:
+        return None, f"{field_name} must be greater than 0"
+
+    return value, None
 
 
 def _application_ats_status(application):
@@ -278,6 +478,113 @@ def _ensure_transition_allowed(current_status, target_status):
         return True
 
     return target_status in ATS_TRANSITIONS.get(current_status, set())
+
+
+@applications_bp.post("/applications/screener")
+@jwt_required()
+def score_resume_keywords():
+    role_error = _require_roles("student", "company", "admin")
+    if role_error:
+        return role_error
+
+    user_id = _current_user_id()
+    if user_id is None:
+        return _json_error("Invalid token identity", 401)
+
+    payload = request.get_json(silent=True) or {}
+    role = _current_role()
+
+    application = None
+    drive = None
+    student = None
+
+    if role == "student":
+        job_id, job_error = _parse_positive_int(
+            payload.get("job_id", payload.get("drive_id")),
+            "job_id",
+        )
+        if job_error:
+            return _json_error(job_error, 400)
+
+        student = _student_for_user(user_id)
+        if not student:
+            return _json_error("Student profile not found", 404)
+
+        drive = db.session.get(PlacementDrive, job_id)
+        if not drive:
+            return _json_error("Job not found", 404)
+    else:
+        application_id, application_error = _parse_positive_int(
+            payload.get("application_id"),
+            "application_id",
+        )
+        if application_error:
+            return _json_error(application_error, 400)
+
+        application = db.session.get(Application, application_id)
+        if not application:
+            return _json_error("Application not found", 404)
+
+        drive = application.drive
+        if not drive:
+            return _json_error("Job not found for this application", 404)
+
+        student = application.student
+        if not student:
+            return _json_error("Student profile not found", 404)
+
+        if role == "company":
+            company = _company_for_user(user_id)
+            if not company:
+                return _json_error("Company profile not found", 404)
+
+            if drive.company_id != company.company_id:
+                return _json_error("Forbidden: cannot screen applications for this job", 403)
+
+    target_keywords, keyword_error = _keywords_from_drive(
+        drive,
+        payload_keywords=payload.get("keywords"),
+    )
+    if keyword_error:
+        return _json_error(keyword_error, 400)
+
+    candidate_keywords = _candidate_keywords_from_student(student)
+    analysis = _score_keyword_match(target_keywords, candidate_keywords)
+
+    return (
+        jsonify(
+            {
+                "success": True,
+                "data": {
+                    "job": {
+                        "job_id": drive.drive_id,
+                        "title": drive.job_title,
+                        "required_skills": drive.required_skills,
+                        "target_keywords": target_keywords,
+                    },
+                    "candidate": {
+                        "student_id": student.student_id,
+                        "application_id": (
+                            application.application_id if application is not None else None
+                        ),
+                        "skills": student.skills,
+                        "resume_url": student.resume_url,
+                        "resume_uploaded_at": (
+                            student.resume_uploaded_at.isoformat()
+                            if student.resume_uploaded_at
+                            else None
+                        ),
+                    },
+                    "analysis": analysis,
+                    "meta": {
+                        "generated_at": datetime.now(timezone.utc).isoformat(),
+                        "role": role,
+                    },
+                },
+            }
+        ),
+        200,
+    )
 
 
 @applications_bp.post("/applications")
