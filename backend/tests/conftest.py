@@ -13,6 +13,7 @@ def app():
             "SECRET_KEY": "test-secret",
             "JWT_SECRET_KEY": "test-jwt-secret-key-0123456789abcdef",
             "JWT_ACCESS_TOKEN_EXPIRES": 3600,
+            "CACHE_ENABLED": False,
         }
     )
 

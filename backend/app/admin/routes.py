@@ -1,14 +1,26 @@
 """Admin routes for dashboard and management module."""
 
-from flask import Blueprint, jsonify, request
+from urllib.parse import urlencode
+
+from flask import Blueprint, current_app, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
+from app.cache import (
+    CACHE_NAMESPACE_ADMIN_COMPANY_SEARCH,
+    CACHE_NAMESPACE_ADMIN_JOBS,
+    CACHE_NAMESPACE_ADMIN_STUDENT_SEARCH,
+    invalidate_api_cache_namespaces,
+)
 from app.auth.utils import role_required
 
 from . import services
 
 admin_bp = Blueprint("admin_bp", __name__)
 MAX_LIMIT = 100
+
+CACHE_NAMESPACE_JOBS = CACHE_NAMESPACE_ADMIN_JOBS
+CACHE_NAMESPACE_COMPANY_SEARCH = CACHE_NAMESPACE_ADMIN_COMPANY_SEARCH
+CACHE_NAMESPACE_STUDENT_SEARCH = CACHE_NAMESPACE_ADMIN_STUDENT_SEARCH
 
 
 def _parse_pagination_and_sort():
@@ -62,6 +74,81 @@ def _current_user_id():
         return int(identity)
     except (TypeError, ValueError):
         return None
+
+
+def _cache_extension():
+    return current_app.extensions.get("redis_cache")
+
+
+def _cache_suffix_for_request():
+    sorted_pairs = []
+    for key in sorted(request.args.keys()):
+        values = sorted(request.args.getlist(key))
+        for value in values:
+            sorted_pairs.append((key, value))
+
+    query_string = urlencode(sorted_pairs, doseq=True)
+    user_id = _current_user_id()
+    return f"admin={user_id}|{query_string}"
+
+
+def _cache_lookup(namespace):
+    cache = _cache_extension()
+    if not cache or not getattr(cache, "is_available", False):
+        return None, None
+
+    cache_key = cache.make_key(namespace, _cache_suffix_for_request())
+    cached_value = cache.get_json(cache_key)
+    if not isinstance(cached_value, dict):
+        return cache_key, None
+
+    payload = cached_value.get("payload")
+    status_code = cached_value.get("status_code", 200)
+    if not isinstance(payload, dict):
+        return cache_key, None
+
+    try:
+        status_code = int(status_code)
+    except (TypeError, ValueError):
+        status_code = 200
+
+    return cache_key, (payload, status_code)
+
+
+def _cache_store(cache_key, service_result, ttl_config_key):
+    if not cache_key:
+        return
+
+    cache = _cache_extension()
+    if not cache or not getattr(cache, "is_available", False):
+        return
+
+    payload, status_code = service_result
+    if status_code != 200 or not isinstance(payload, dict) or not payload.get("success"):
+        return
+
+    ttl_seconds = current_app.config.get(
+        ttl_config_key,
+        current_app.config.get("CACHE_DEFAULT_TTL_SECONDS", 120),
+    )
+    cache.set_json(
+        cache_key,
+        {"payload": payload, "status_code": status_code},
+        ttl_seconds,
+    )
+
+
+def _service_result_success(service_result):
+    payload, status_code = service_result
+    if status_code < 200 or status_code >= 300:
+        return False
+    if isinstance(payload, dict):
+        return bool(payload.get("success", True))
+    return True
+
+
+def _invalidate_cache_namespaces(*namespaces):
+    invalidate_api_cache_namespaces(_cache_extension(), *namespaces)
 
 
 @admin_bp.get("/dashboard")
@@ -149,7 +236,10 @@ def approve_company(company_id):
     actor_user_id = _current_user_id()
     if actor_user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
-    return _json_result(services.approve_company(company_id, actor_user_id))
+    service_result = services.approve_company(company_id, actor_user_id)
+    if _service_result_success(service_result):
+        _invalidate_cache_namespaces(CACHE_NAMESPACE_COMPANY_SEARCH)
+    return _json_result(service_result)
 
 
 @admin_bp.put("/company/<int:company_id>/reject")
@@ -159,7 +249,10 @@ def reject_company(company_id):
     actor_user_id = _current_user_id()
     if actor_user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
-    return _json_result(services.reject_company(company_id, actor_user_id))
+    service_result = services.reject_company(company_id, actor_user_id)
+    if _service_result_success(service_result):
+        _invalidate_cache_namespaces(CACHE_NAMESPACE_COMPANY_SEARCH)
+    return _json_result(service_result)
 
 
 @admin_bp.delete("/company/<int:company_id>")
@@ -169,7 +262,10 @@ def delete_company(company_id):
     actor_user_id = _current_user_id()
     if actor_user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
-    return _json_result(services.soft_delete_company(company_id, actor_user_id))
+    service_result = services.soft_delete_company(company_id, actor_user_id)
+    if _service_result_success(service_result):
+        _invalidate_cache_namespaces(CACHE_NAMESPACE_COMPANY_SEARCH)
+    return _json_result(service_result)
 
 
 @admin_bp.put("/company/<int:company_id>/deactivate")
@@ -179,7 +275,10 @@ def deactivate_company(company_id):
     actor_user_id = _current_user_id()
     if actor_user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
-    return _json_result(services.deactivate_company(company_id, actor_user_id))
+    service_result = services.deactivate_company(company_id, actor_user_id)
+    if _service_result_success(service_result):
+        _invalidate_cache_namespaces(CACHE_NAMESPACE_COMPANY_SEARCH)
+    return _json_result(service_result)
 
 
 @admin_bp.put("/company/<int:company_id>/activate")
@@ -189,7 +288,10 @@ def activate_company(company_id):
     actor_user_id = _current_user_id()
     if actor_user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
-    return _json_result(services.activate_company(company_id, actor_user_id))
+    service_result = services.activate_company(company_id, actor_user_id)
+    if _service_result_success(service_result):
+        _invalidate_cache_namespaces(CACHE_NAMESPACE_COMPANY_SEARCH)
+    return _json_result(service_result)
 
 
 @admin_bp.get("/students")
@@ -211,7 +313,10 @@ def deactivate_student(student_id):
     actor_user_id = _current_user_id()
     if actor_user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
-    return _json_result(services.deactivate_student(student_id, actor_user_id))
+    service_result = services.deactivate_student(student_id, actor_user_id)
+    if _service_result_success(service_result):
+        _invalidate_cache_namespaces(CACHE_NAMESPACE_STUDENT_SEARCH)
+    return _json_result(service_result)
 
 
 @admin_bp.put("/student/<int:student_id>/activate")
@@ -221,7 +326,10 @@ def activate_student(student_id):
     actor_user_id = _current_user_id()
     if actor_user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
-    return _json_result(services.activate_student(student_id, actor_user_id))
+    service_result = services.activate_student(student_id, actor_user_id)
+    if _service_result_success(service_result):
+        _invalidate_cache_namespaces(CACHE_NAMESPACE_STUDENT_SEARCH)
+    return _json_result(service_result)
 
 
 @admin_bp.get("/jobs")
@@ -243,7 +351,14 @@ def list_jobs():
         message, status_code = error
         return jsonify({"success": False, "error": message}), status_code
 
-    return _json_result(services.list_jobs(page, limit, sort_by, order, company_id))
+    cache_key, cached_result = _cache_lookup(CACHE_NAMESPACE_JOBS)
+    if cached_result:
+        payload, status_code = cached_result
+        return jsonify(payload), status_code
+
+    service_result = services.list_jobs(page, limit, sort_by, order, company_id)
+    _cache_store(cache_key, service_result, "CACHE_JOBS_LIST_TTL_SECONDS")
+    return _json_result(service_result)
 
 
 @admin_bp.put("/job/<int:job_id>/approve")
@@ -253,7 +368,10 @@ def approve_job(job_id):
     actor_user_id = _current_user_id()
     if actor_user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
-    return _json_result(services.approve_job(job_id, actor_user_id))
+    service_result = services.approve_job(job_id, actor_user_id)
+    if _service_result_success(service_result):
+        _invalidate_cache_namespaces(CACHE_NAMESPACE_JOBS)
+    return _json_result(service_result)
 
 
 @admin_bp.put("/job/<int:job_id>/reject")
@@ -263,7 +381,10 @@ def reject_job(job_id):
     actor_user_id = _current_user_id()
     if actor_user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
-    return _json_result(services.reject_job(job_id, actor_user_id))
+    service_result = services.reject_job(job_id, actor_user_id)
+    if _service_result_success(service_result):
+        _invalidate_cache_namespaces(CACHE_NAMESPACE_JOBS)
+    return _json_result(service_result)
 
 
 @admin_bp.delete("/job/<int:job_id>")
@@ -273,7 +394,10 @@ def delete_job(job_id):
     actor_user_id = _current_user_id()
     if actor_user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
-    return _json_result(services.soft_delete_job(job_id, actor_user_id))
+    service_result = services.soft_delete_job(job_id, actor_user_id)
+    if _service_result_success(service_result):
+        _invalidate_cache_namespaces(CACHE_NAMESPACE_JOBS)
+    return _json_result(service_result)
 
 
 @admin_bp.get("/search/companies")
@@ -289,9 +413,14 @@ def search_companies():
         message, status_code = error
         return jsonify({"success": False, "error": message}), status_code
 
-    return _json_result(
-        services.search_companies(query_text, page, limit, sort_by, order)
-    )
+    cache_key, cached_result = _cache_lookup(CACHE_NAMESPACE_COMPANY_SEARCH)
+    if cached_result:
+        payload, status_code = cached_result
+        return jsonify(payload), status_code
+
+    service_result = services.search_companies(query_text, page, limit, sort_by, order)
+    _cache_store(cache_key, service_result, "CACHE_COMPANY_SEARCH_TTL_SECONDS")
+    return _json_result(service_result)
 
 
 @admin_bp.get("/search/students")
@@ -307,9 +436,14 @@ def search_students():
         message, status_code = error
         return jsonify({"success": False, "error": message}), status_code
 
-    return _json_result(
-        services.search_students(query_text, page, limit, sort_by, order)
-    )
+    cache_key, cached_result = _cache_lookup(CACHE_NAMESPACE_STUDENT_SEARCH)
+    if cached_result:
+        payload, status_code = cached_result
+        return jsonify(payload), status_code
+
+    service_result = services.search_students(query_text, page, limit, sort_by, order)
+    _cache_store(cache_key, service_result, "CACHE_STUDENT_SEARCH_TTL_SECONDS")
+    return _json_result(service_result)
 
 
 @admin_bp.get("/applications")

@@ -2,10 +2,15 @@
 
 from datetime import datetime, timezone
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required
 from sqlalchemy.exc import IntegrityError
 
+from app.cache import (
+	CACHE_NAMESPACE_ADMIN_COMPANY_SEARCH,
+	CACHE_NAMESPACE_ADMIN_STUDENT_SEARCH,
+	invalidate_api_cache_namespaces,
+)
 from app.models import (
 	Application,
 	Company,
@@ -68,6 +73,11 @@ def _create_admin_notifications(title, message, sender_id=None, resource_type=No
 			)
 		)
 
+
+def _invalidate_admin_cache(*namespaces):
+	cache = current_app.extensions.get("redis_cache")
+	invalidate_api_cache_namespaces(cache, *namespaces)
+
 @auth_bp.post("/register/student")
 def register_student():
 	data = _normalized_json_payload()
@@ -112,6 +122,8 @@ def register_student():
 	except Exception:
 		db.session.rollback()
 		return _json_error("Unable to register student", 500)
+
+	_invalidate_admin_cache(CACHE_NAMESPACE_ADMIN_STUDENT_SEARCH)
 
 	return (
 		jsonify(
@@ -209,6 +221,8 @@ def register_company():
 	except Exception:
 		db.session.rollback()
 		return _json_error("Unable to register company", 500)
+
+	_invalidate_admin_cache(CACHE_NAMESPACE_ADMIN_COMPANY_SEARCH)
 
 	return (
 		jsonify(

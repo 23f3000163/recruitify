@@ -29,6 +29,17 @@ def _env_bool(name, default_value=False):
     return bool(default_value)
 
 
+def _env_float(name, default_value):
+    raw_value = os.environ.get(name)
+    if raw_value is None:
+        return default_value
+
+    try:
+        return float(raw_value)
+    except (TypeError, ValueError):
+        return default_value
+
+
 def create_app(config_object=None):
     """Application factory for the Recruitify backend."""
 
@@ -105,6 +116,26 @@ def create_app(config_object=None):
             os.path.join(app.instance_path, "exports"),
         ),
         JOBS_EAGER_EXECUTION=_env_bool("JOBS_EAGER_EXECUTION", False),
+
+        # ⚡ API Response Cache (Redis) configuration contracts
+        CACHE_ENABLED=_env_bool("CACHE_ENABLED", True),
+        CACHE_KEY_PREFIX=os.environ.get("CACHE_KEY_PREFIX", "recruitify"),
+        CACHE_REDIS_URL=os.environ.get(
+            "CACHE_REDIS_URL",
+            os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/2"),
+        ),
+        CACHE_REDIS_CONNECT_TIMEOUT_SECONDS=_env_float(
+            "CACHE_REDIS_CONNECT_TIMEOUT_SECONDS",
+            0.5,
+        ),
+        CACHE_REDIS_SOCKET_TIMEOUT_SECONDS=_env_float(
+            "CACHE_REDIS_SOCKET_TIMEOUT_SECONDS",
+            0.5,
+        ),
+        CACHE_DEFAULT_TTL_SECONDS=_env_int("CACHE_DEFAULT_TTL_SECONDS", 120),
+        CACHE_JOBS_LIST_TTL_SECONDS=_env_int("CACHE_JOBS_LIST_TTL_SECONDS", 120),
+        CACHE_COMPANY_SEARCH_TTL_SECONDS=_env_int("CACHE_COMPANY_SEARCH_TTL_SECONDS", 90),
+        CACHE_STUDENT_SEARCH_TTL_SECONDS=_env_int("CACHE_STUDENT_SEARCH_TTL_SECONDS", 90),
     )
 
     # Optional external config override
@@ -210,6 +241,10 @@ def create_app(config_object=None):
     db.init_app(app)
     CORS(app)
     jwt = JWTManager(app)
+
+    from .cache import init_cache
+
+    init_cache(app)
 
     @jwt.expired_token_loader
     def handle_expired_token(jwt_header, jwt_payload):

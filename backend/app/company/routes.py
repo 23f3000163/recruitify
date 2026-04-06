@@ -3,7 +3,7 @@
 from datetime import date, datetime, timezone
 from math import ceil
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 from flask_jwt_extended import get_jwt_identity
 from sqlalchemy import func, or_
 
@@ -12,6 +12,11 @@ from app.applications.status_engine import (
     ATS_TRANSITIONS,
     application_ats_status,
     normalize_status_input,
+)
+from app.cache import (
+    CACHE_NAMESPACE_ADMIN_COMPANY_SEARCH,
+    CACHE_NAMESPACE_ADMIN_JOBS,
+    invalidate_api_cache_namespaces,
 )
 from app.auth.utils import role_required
 from app.auth.validators import validate_email
@@ -52,6 +57,11 @@ MAX_REJECTION_REASON_LENGTH = 300
 
 def _json_error(message, status_code=400):
     return jsonify({"success": False, "error": message}), status_code
+
+
+def _invalidate_admin_cache(*namespaces):
+    cache = current_app.extensions.get("redis_cache")
+    invalidate_api_cache_namespaces(cache, *namespaces)
 
 
 def _current_user_id():
@@ -546,6 +556,8 @@ def update_company_profile():
         db.session.rollback()
         return _json_error("Unable to update company profile", 500)
 
+    _invalidate_admin_cache(CACHE_NAMESPACE_ADMIN_COMPANY_SEARCH)
+
     return jsonify({"success": True, "data": _company_profile_payload(company)}), 200
 
 
@@ -739,6 +751,8 @@ def create_drive():
         db.session.rollback()
         return _json_error("Failed to create drive", 500)
 
+    _invalidate_admin_cache(CACHE_NAMESPACE_ADMIN_JOBS)
+
     return jsonify({"success": True, "data": _drive_to_dict(drive, 0)}), 201
 
 
@@ -768,6 +782,8 @@ def close_drive(drive_id):
         except Exception:
             db.session.rollback()
             return _json_error("Failed to close drive", 500)
+
+        _invalidate_admin_cache(CACHE_NAMESPACE_ADMIN_JOBS)
 
     applications_count = (
         db.session.query(func.count(Application.application_id))

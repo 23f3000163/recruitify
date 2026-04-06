@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from math import ceil
 
-from flask import Blueprint, jsonify, make_response, request
+from flask import Blueprint, current_app, jsonify, make_response, request
 from flask_jwt_extended import get_jwt_identity
 from sqlalchemy import func, or_
 
@@ -11,6 +11,10 @@ from app.applications.status_engine import (
     ATS_TO_LEGACY_STATUS,
     ATS_TRANSITIONS,
     application_ats_status,
+)
+from app.cache import (
+    CACHE_NAMESPACE_ADMIN_STUDENT_SEARCH,
+    invalidate_api_cache_namespaces,
 )
 from app.auth.utils import role_required
 from app.auth.validators import validate_required_fields
@@ -60,6 +64,11 @@ ALLOWED_OFFER_RESPONSE_STATUSES = {"accepted", "rejected"}
 def _json_error(message, status_code=400):
     """Return a consistent JSON error payload."""
     return jsonify({"success": False, "error": message}), status_code
+
+
+def _invalidate_admin_cache(*namespaces):
+    cache = current_app.extensions.get("redis_cache")
+    invalidate_api_cache_namespaces(cache, *namespaces)
 
 
 def _normalized_json_payload():
@@ -578,6 +587,8 @@ def update_student_profile():
     except Exception:
         db.session.rollback()
         return _json_error("Unable to update student profile", 500)
+
+    _invalidate_admin_cache(CACHE_NAMESPACE_ADMIN_STUDENT_SEARCH)
 
     return (
         jsonify(
