@@ -68,3 +68,8 @@ Recent safe checkpoints on main:
 - 013b301 feat: add company and placement async export jobs
 - 65ae8a1 chore: simplify reminder channels
 - 514a7b1 test: add jobs hardening checks
+
+## Milestone Closure Docs
+
+- Backend API performance + Redis caching closure:
+	- backend/docs/api-performance-redis-caching-closure.md
