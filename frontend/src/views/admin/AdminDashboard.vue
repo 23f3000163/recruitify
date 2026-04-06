@@ -176,11 +176,7 @@
     />
 
     <Transition name="rq-toast">
-      <div v-if="toast.show" class="rq-toast" :class="'toast-' + toast.type" role="alert" aria-live="polite">
-        <span class="rq-toast-ico" aria-hidden="true">{{ toast.icon }}</span>
-        <span class="rq-toast-msg">{{ toast.message }}</span>
-        <button class="rq-toast-x" @click="toast.show = false" aria-label="Dismiss">x</button>
-      </div>
+      <Toast v-if="toast.show" :toast="toast" @dismiss="toast.show = false" />
     </Transition>
   </div>
 </template>
@@ -195,6 +191,7 @@ import DrivesPanel from '../../components/admin/DrivesPanel.vue'
 import Sidebar from '../../components/admin/Sidebar.vue'
 import StudentApplicationsModal from '../../components/admin/StudentApplicationsModal.vue'
 import StudentsTable from '../../components/admin/StudentsTable.vue'
+import Toast from '../../components/layout/Toast.vue'
 import Topbar from '../../components/admin/Topbar.vue'
 import './AdminDashboard.css'
 
@@ -209,7 +206,8 @@ export default {
     StudentsTable,
     DrivesPanel,
     AnalyticsPanel,
-    StudentApplicationsModal
+    StudentApplicationsModal,
+    Toast
   },
   data() {
     const svgs = {
