@@ -414,4 +414,28 @@ describe('StudentDashboard step 3B wiring', () => {
       experience_summary: 'Built and shipped two production student portals.'
     })
   })
+
+  it('blocks profile save when CGPA is out of range', async () => {
+    const wrapper = mountWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    wrapper.vm.profileForm = {
+      ...wrapper.vm.profileForm,
+      college_name: 'My Engineering College',
+      branch: 'ECE',
+      year: 4,
+      cgpa: 11,
+      roll_number: 'CS21B099',
+      phone: '9876543210',
+      resume_url: 'https://example.com/new-resume.pdf',
+      skills: 'Vue, Flask, SQL',
+      experience_summary: 'Built and shipped two production student portals.'
+    }
+
+    await wrapper.vm.saveProfile()
+
+    expect(studentApi.updateProfile).not.toHaveBeenCalled()
+    expect(wrapper.vm.profileError).toContain('CGPA must be between 0 and 10')
+  })
 })

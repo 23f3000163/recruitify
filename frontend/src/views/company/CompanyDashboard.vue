@@ -821,6 +821,76 @@ export default {
       }
       return parsed
     },
+    normalizeInput(value) {
+      const text = String(value || '').trim()
+      return text === '-' ? '' : text
+    },
+    isValidEmail(value) {
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim())
+    },
+    isValidWebsite(value) {
+      const text = String(value || '').trim()
+      if (!text) {
+        return true
+      }
+      return /^(https?:\/\/)?([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(\/.*)?$/.test(text)
+    },
+    validateCompanyProfilePayload(payload) {
+      if (!payload.company_name || payload.company_name.length < 2) {
+        return 'Company name must be at least 2 characters.'
+      }
+      if (!payload.hr_contact_name || payload.hr_contact_name.length < 2) {
+        return 'HR contact name must be at least 2 characters.'
+      }
+      if (!payload.hr_contact_email) {
+        return 'HR contact email is required.'
+      }
+      if (!this.isValidEmail(payload.hr_contact_email)) {
+        return 'Enter a valid HR contact email.'
+      }
+      if (!payload.industry) {
+        return 'Industry is required.'
+      }
+      if (!this.isValidWebsite(payload.website)) {
+        return 'Enter a valid website/domain.'
+      }
+      return ''
+    },
+    validateNewDrivePayload(newDrive, salaryLpa) {
+      const title = String(newDrive.title || '').trim()
+      if (!title) {
+        return 'Please fill in all required fields.'
+      }
+      if (title.length < 3) {
+        return 'Drive title must be at least 3 characters.'
+      }
+
+      if (salaryLpa === null || salaryLpa <= 0 || salaryLpa > 200) {
+        return 'CTC / Stipend must be a valid number between 0 and 200.'
+      }
+
+      const minCgpa = Number(newDrive.minCgpa)
+      if (Number.isNaN(minCgpa) || minCgpa < 0 || minCgpa > 10) {
+        return 'Minimum CGPA must be between 0 and 10.'
+      }
+
+      if (!newDrive.deadline) {
+        return 'Please fill in all required fields.'
+      }
+
+      const deadlineDate = new Date(`${newDrive.deadline}T00:00:00`)
+      if (Number.isNaN(deadlineDate.getTime())) {
+        return 'Enter a valid application deadline.'
+      }
+
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      if (deadlineDate < today) {
+        return 'Application deadline cannot be in the past.'
+      }
+
+      return ''
+    },
     handleApiError(error, fallbackMessage, options = {}) {
       const message = parseApiError(error, fallbackMessage)
       const statusCode = error?.response?.status
@@ -1065,8 +1135,15 @@ export default {
         return
       }
 
+      const salaryLpa = this.parseSalaryLpa(this.newDrive.salary)
+      const driveValidationError = this.validateNewDrivePayload(this.newDrive, salaryLpa)
+      if (driveValidationError) {
+        this.toast_show(driveValidationError, 'warning')
+        return
+      }
+
       const payload = {
-        job_title: this.newDrive.title,
+        job_title: String(this.newDrive.title || '').trim(),
         job_description: this.newDrive.description || 'Role details shared during screening.',
         required_skills: '',
         experience_required: '0-2 years',
@@ -1074,7 +1151,7 @@ export default {
         min_cgpa: Number(this.newDrive.minCgpa || 0),
         eligible_branches: this.parseBranches(this.newDrive.branches),
         eligible_years: [3, 4],
-        salary_lpa: this.parseSalaryLpa(this.newDrive.salary),
+        salary_lpa: salaryLpa,
         job_location: this.companyProfile.location === '-' ? '' : this.companyProfile.location,
         application_deadline: `${this.newDrive.deadline}T23:59:59+00:00`,
         interview_mode: 'both'
@@ -1123,13 +1200,19 @@ export default {
     },
     async saveProfile() {
       const payload = {
-        company_name: this.profileEdit.name,
-        website: this.profileEdit.domain,
-        hr_contact_name: this.profileEdit.hrName,
-        hr_contact_email: this.profileEdit.hrEmail,
-        industry: this.profileEdit.industry,
-        company_description: this.profileEdit.about,
-        location: this.profileEdit.location
+        company_name: this.normalizeInput(this.profileEdit.name),
+        website: this.normalizeInput(this.profileEdit.domain),
+        hr_contact_name: this.normalizeInput(this.profileEdit.hrName),
+        hr_contact_email: this.normalizeInput(this.profileEdit.hrEmail),
+        industry: this.normalizeInput(this.profileEdit.industry),
+        company_description: this.normalizeInput(this.profileEdit.about),
+        location: this.normalizeInput(this.profileEdit.location)
+      }
+
+      const profileValidationError = this.validateCompanyProfilePayload(payload)
+      if (profileValidationError) {
+        this.toast_show(profileValidationError, 'warning')
+        return
       }
 
       try {

@@ -970,6 +970,39 @@ export default {
         [field]: value
       }
     },
+    validateStudentProfilePayload(payload) {
+      if (!payload.college_name) {
+        return 'College name is required.'
+      }
+      if (!payload.branch) {
+        return 'Branch is required.'
+      }
+      if (!payload.roll_number) {
+        return 'Roll number is required.'
+      }
+
+      const year = Number(payload.year)
+      if (!Number.isInteger(year) || year < 1 || year > 6) {
+        return 'Year must be a whole number between 1 and 6.'
+      }
+
+      const cgpa = Number(payload.cgpa)
+      if (Number.isNaN(cgpa) || cgpa < 0 || cgpa > 10) {
+        return 'CGPA must be between 0 and 10.'
+      }
+
+      const phone = String(payload.phone || '').trim()
+      if (phone && !/^\d{10}$/.test(phone)) {
+        return 'Phone number must be exactly 10 digits.'
+      }
+
+      const resumeUrl = String(payload.resume_url || '').trim()
+      if (resumeUrl && !/^https?:\/\//i.test(resumeUrl)) {
+        return 'Resume URL must start with http:// or https://.'
+      }
+
+      return ''
+    },
     async saveProfile() {
       this.isSavingProfile = true
       this.profileError = ''
@@ -986,6 +1019,14 @@ export default {
         resume_url: String(this.profileForm.resume_url || '').trim(),
         skills: String(this.profileForm.skills || '').trim(),
         experience_summary: String(this.profileForm.experience_summary || '').trim()
+      }
+
+      const validationError = this.validateStudentProfilePayload(payload)
+      if (validationError) {
+        this.profileError = validationError
+        this.publishActionNote(validationError, 'error')
+        this.isSavingProfile = false
+        return
       }
 
       try {

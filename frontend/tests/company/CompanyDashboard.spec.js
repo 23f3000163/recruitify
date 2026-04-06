@@ -224,7 +224,7 @@ const makeWrapper = (routerPush = vi.fn()) =>
             <div class="new-drive-modal-stub">
               <button class="set-title" @click="$emit('update-field', 'title', 'Platform Engineer Intern')">Title</button>
               <button class="set-salary" @click="$emit('update-field', 'salary', '18')">Salary</button>
-              <button class="set-deadline" @click="$emit('update-field', 'deadline', '2026-12-30')">Deadline</button>
+              <button class="set-deadline" @click="$emit('update-field', 'deadline', '2099-12-30')">Deadline</button>
               <button class="submit-drive" @click="$emit('submit')">Submit</button>
               <button class="close-drive-modal" @click="$emit('close')">Close</button>
             </div>
@@ -386,13 +386,56 @@ describe('CompanyDashboard phase 6 integration', () => {
       expect.objectContaining({
         job_title: 'Platform Engineer Intern',
         salary_lpa: 18,
-        application_deadline: '2026-12-30T23:59:59+00:00'
+        application_deadline: '2099-12-30T23:59:59+00:00'
       })
     )
     expect(companyApi.getDrives).toHaveBeenCalledTimes(2)
     expect(wrapper.vm.showNewDriveModal).toBe(false)
     expect(wrapper.vm.myDrives).toHaveLength(2)
     expect(wrapper.vm.toast.message).toContain('submitted for admin approval')
+  })
+
+  it('blocks new drive submission when deadline is in the past', async () => {
+    const wrapper = makeWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    wrapper.vm.newDrive = {
+      ...wrapper.vm.newDrive,
+      title: 'Platform Engineer Intern',
+      salary: '18',
+      deadline: '2000-01-01',
+      minCgpa: 7.5
+    }
+
+    await wrapper.vm.submitNewDrive()
+
+    expect(companyApi.createDrive).not.toHaveBeenCalled()
+    expect(wrapper.vm.toast.type).toBe('warning')
+    expect(wrapper.vm.toast.message).toContain('cannot be in the past')
+  })
+
+  it('blocks company profile update when HR email is invalid', async () => {
+    const wrapper = makeWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    wrapper.vm.profileEdit = {
+      ...wrapper.vm.companyProfile,
+      name: 'Acme Labs',
+      domain: 'acme.example',
+      hrName: 'Ari HR',
+      hrEmail: 'invalid-email',
+      industry: 'Software',
+      location: 'Pune',
+      about: 'Hiring backend and data roles.'
+    }
+
+    await wrapper.vm.saveProfile()
+
+    expect(companyApi.updateProfile).not.toHaveBeenCalled()
+    expect(wrapper.vm.toast.type).toBe('warning')
+    expect(wrapper.vm.toast.message).toContain('valid HR contact email')
   })
 
   it('updates application status from applications actions', async () => {
