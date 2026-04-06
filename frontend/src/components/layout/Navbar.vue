@@ -74,24 +74,33 @@
 </nav>
 </template>
 
-<script setup>
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
-
-defineProps({
-  scrolled: {
-    type: Boolean,
-    default: false
+<script>
+export default {
+  name: 'Navbar',
+  props: {
+    scrolled: {
+      type: Boolean,
+      default: false
+    }
+  },
+  data() {
+    return {
+      activePill: 'Student'
+    }
+  },
+  methods: {
+    go(path) {
+      this.$router.push(path)
+    },
+    goHome() {
+      this.$router.push('/')
+    },
+    goHash(hash) {
+      this.$router.push({ path: '/', hash })
+    },
+    setActivePill(pill) {
+      this.activePill = pill
+    }
   }
-})
-
-const router = useRouter()
-const activePill = ref('Student')
-
-const go = (path) => router.push(path)
-const goHome = () => router.push('/')
-const goHash = (hash) => router.push({ path: '/', hash })
-const setActivePill = (pill) => {
-  activePill.value = pill
 }
 </script>

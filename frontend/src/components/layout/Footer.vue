@@ -108,9 +108,13 @@
 </footer>
 </template>
 
-<script setup>
-import { useRouter } from 'vue-router'
-
-const router = useRouter()
-const go = (path) => router.push(path)
+<script>
+export default {
+  name: 'Footer',
+  methods: {
+    go(path) {
+      this.$router.push(path)
+    }
+  }
+}
 </script>

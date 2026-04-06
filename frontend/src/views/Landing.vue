@@ -528,112 +528,39 @@
   </div>
 </template>
 
-<script setup>
-import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+<script>
 import Navbar from '../components/layout/Navbar.vue'
 import Footer from '../components/layout/Footer.vue'
 import HeroSection from '../components/landing/HeroSection.vue'
-import { useRouter } from 'vue-router'
 
-const router = useRouter()
-const go = (path) => router.push(path)
-
-const demoRole = ref('student')
-const scrollProgress = ref(0)
-const showScrollTop = ref(false)
-const isNavbarScrolled = ref(false)
-const mouseX = ref(50)
-const mouseY = ref(50)
-const pipelineProgressGo = ref(false)
-
-const counters = reactive([
-  { target: 500, value: 0 },
-  { target: 80, value: 0 },
-  { target: 200, value: 0 },
-  { target: 95, value: 0 }
-])
-
-const statsSection = ref(null)
-const pipelineTrack = ref(null)
-let counterObserver = null
-let pipelineObserver = null
-let onScroll = null
-let onMouseMove = null
-
-const animateCounter = (index, target, duration = 2000) => {
-  let start = null
-  const step = (timestamp) => {
-    if (!start) start = timestamp
-    const progress = Math.min((timestamp - start) / duration, 1)
-    const eased = 1 - Math.pow(1 - progress, 4)
-    counters[index].value = Math.floor(eased * target)
-    if (progress < 1) requestAnimationFrame(step)
-    else counters[index].value = target
-  }
-  requestAnimationFrame(step)
-}
-
-const scrollTop = () => {
-  window.scrollTo({ top: 0, behavior: 'smooth' })
-}
-
-onMounted(() => {
-  onMouseMove = (e) => {
-    mouseX.value = e.clientX
-    mouseY.value = e.clientY
-  }
-
-  onScroll = () => {
-    const scrolled = window.scrollY
-    const maxScroll = document.documentElement.scrollHeight - window.innerHeight
-    scrollProgress.value = maxScroll > 0 ? (scrolled / maxScroll) * 100 : 0
-    showScrollTop.value = scrolled > 450
-    isNavbarScrolled.value = scrolled > 30
-  }
-
-  window.addEventListener('mousemove', onMouseMove, { passive: true })
-  window.addEventListener('scroll', onScroll, { passive: true })
-  onScroll()
-
-  counterObserver = new IntersectionObserver((entries) => {
-    entries.forEach((entry) => {
-      if (entry.isIntersecting) {
-        counters.forEach((counter, index) => {
-          animateCounter(index, counter.target)
-        })
-        counterObserver?.disconnect()
-      }
-    })
-  }, { threshold: 0.3 })
-
-  if (statsSection.value) {
-    counterObserver.observe(statsSection.value)
-  }
-
-  pipelineObserver = new IntersectionObserver((entries) => {
-    entries.forEach((entry) => {
-      if (entry.isIntersecting) {
-        pipelineProgressGo.value = true
-        pipelineObserver?.disconnect()
-      }
-    })
-  }, { threshold: 0.4 })
-
-  if (pipelineTrack.value) {
-    pipelineObserver.observe(pipelineTrack.value)
-  }
-})
-
-onBeforeUnmount(() => {
-  if (onMouseMove) window.removeEventListener('mousemove', onMouseMove)
-  if (onScroll) window.removeEventListener('scroll', onScroll)
-  counterObserver?.disconnect()
-  pipelineObserver?.disconnect()
-})
-</script>
-
-<script>
 export default {
+  name: 'LandingView',
+  components: {
+    Navbar,
+    Footer,
+    HeroSection
+  },
+  data() {
+    return {
+      demoRole: 'student',
+      scrollProgress: 0,
+      showScrollTop: false,
+      isNavbarScrolled: false,
+      mouseX: 50,
+      mouseY: 50,
+      pipelineProgressGo: false,
+      counters: [
+        { target: 500, value: 0 },
+        { target: 80, value: 0 },
+        { target: 200, value: 0 },
+        { target: 95, value: 0 }
+      ],
+      counterObserver: null,
+      pipelineObserver: null,
+      onScroll: null,
+      onMouseMove: null
+    }
+  },
   directives: {
     reveal: {
       mounted(el) {
@@ -652,6 +579,87 @@ export default {
       unmounted(el) {
         el.__revealObserver?.disconnect()
       }
+    }
+  },
+  mounted() {
+    this.onMouseMove = (e) => {
+      this.mouseX = e.clientX
+      this.mouseY = e.clientY
+    }
+
+    this.onScroll = () => {
+      const scrolled = window.scrollY
+      const maxScroll = document.documentElement.scrollHeight - window.innerHeight
+      this.scrollProgress = maxScroll > 0 ? (scrolled / maxScroll) * 100 : 0
+      this.showScrollTop = scrolled > 450
+      this.isNavbarScrolled = scrolled > 30
+    }
+
+    window.addEventListener('mousemove', this.onMouseMove, { passive: true })
+    window.addEventListener('scroll', this.onScroll, { passive: true })
+    this.onScroll()
+
+    this.counterObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          this.counters.forEach((counter, index) => {
+            this.animateCounter(index, counter.target)
+          })
+          this.counterObserver?.disconnect()
+        }
+      })
+    }, { threshold: 0.3 })
+
+    if (this.$refs.statsSection) {
+      this.counterObserver.observe(this.$refs.statsSection)
+    }
+
+    this.pipelineObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          this.pipelineProgressGo = true
+          this.pipelineObserver?.disconnect()
+        }
+      })
+    }, { threshold: 0.4 })
+
+    if (this.$refs.pipelineTrack) {
+      this.pipelineObserver.observe(this.$refs.pipelineTrack)
+    }
+  },
+  beforeUnmount() {
+    if (this.onMouseMove) {
+      window.removeEventListener('mousemove', this.onMouseMove)
+    }
+    if (this.onScroll) {
+      window.removeEventListener('scroll', this.onScroll)
+    }
+    this.counterObserver?.disconnect()
+    this.pipelineObserver?.disconnect()
+  },
+  methods: {
+    go(path) {
+      this.$router.push(path)
+    },
+    animateCounter(index, target, duration = 2000) {
+      let start = null
+      const step = (timestamp) => {
+        if (!start) {
+          start = timestamp
+        }
+        const progress = Math.min((timestamp - start) / duration, 1)
+        const eased = 1 - Math.pow(1 - progress, 4)
+        this.counters[index].value = Math.floor(eased * target)
+        if (progress < 1) {
+          requestAnimationFrame(step)
+        } else {
+          this.counters[index].value = target
+        }
+      }
+      requestAnimationFrame(step)
+    },
+    scrollTop() {
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     }
   }
 }

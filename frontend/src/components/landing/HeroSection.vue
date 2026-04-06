@@ -191,9 +191,13 @@
 </section>
 </template>
 
-<script setup>
-import { useRouter } from 'vue-router'
-
-const router = useRouter()
-const go = (path) => router.push(path)
+<script>
+export default {
+  name: 'HeroSection',
+  methods: {
+    go(path) {
+      this.$router.push(path)
+    }
+  }
+}
 </script>
