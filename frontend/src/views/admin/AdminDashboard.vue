@@ -899,6 +899,13 @@ export default {
         }
       } catch (error) {
         const message = error.response?.data?.error || 'Failed to load analytics overview'
+        this.analyticsOverview = {
+          summary: {},
+          placement_trends: [],
+          application_funnel: {},
+          job_demand_by_skills: [],
+          meta: {}
+        }
         this.loadErrors.analytics = message
       } finally {
         this.loading.analytics = false

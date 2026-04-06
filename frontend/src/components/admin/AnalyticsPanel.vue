@@ -18,6 +18,10 @@
             <button class="rq-ghost" type="button" @click="$emit('retry')">Retry</button>
           </div>
 
+          <div v-else-if="!hasTrendData" class="rq-empty rq-empty-compact">
+            <span class="rq-row-sub">No placement trend data available yet.</span>
+          </div>
+
           <div v-else class="rq-chart-wrap rq-chart-lg">
             <canvas ref="trendChart" aria-label="Placement trend line chart" role="img"></canvas>
           </div>
@@ -32,6 +36,13 @@
         <div class="rq-card-body">
           <div v-if="isLoading" class="rq-empty rq-empty-compact">
             <span class="rq-row-sub">Loading funnel metrics...</span>
+          </div>
+          <div v-else-if="errorMessage" class="rq-state rq-state-error">
+            <span>{{ errorMessage }}</span>
+            <button class="rq-ghost" type="button" @click="$emit('retry')">Retry</button>
+          </div>
+          <div v-else-if="!hasFunnelData" class="rq-empty rq-empty-compact">
+            <span class="rq-row-sub">No funnel data available yet.</span>
           </div>
           <div v-else class="rq-chart-wrap rq-chart-md">
             <canvas ref="funnelChart" aria-label="Application funnel chart" role="img"></canvas>
@@ -51,6 +62,13 @@
           <div v-if="isLoading" class="rq-empty rq-empty-compact">
             <span class="rq-row-sub">Loading skill demand...</span>
           </div>
+          <div v-else-if="errorMessage" class="rq-state rq-state-error">
+            <span>{{ errorMessage }}</span>
+            <button class="rq-ghost" type="button" @click="$emit('retry')">Retry</button>
+          </div>
+          <div v-else-if="!hasSkillData" class="rq-empty rq-empty-compact">
+            <span class="rq-row-sub">No skill demand data available yet.</span>
+          </div>
           <div v-else class="rq-chart-wrap rq-chart-md">
             <canvas ref="skillsChart" aria-label="Skill demand bar chart" role="img"></canvas>
           </div>
@@ -62,7 +80,14 @@
           <span class="rq-card-title">Analytics Snapshot</span>
         </div>
         <div class="rq-card-body">
-          <div class="rq-mini-metrics">
+          <div v-if="errorMessage" class="rq-state rq-state-error">
+            <span>{{ errorMessage }}</span>
+            <button class="rq-ghost" type="button" @click="$emit('retry')">Retry</button>
+          </div>
+          <div v-else-if="!hasSummaryData" class="rq-empty rq-empty-compact">
+            <span class="rq-row-sub">No summary metrics available yet.</span>
+          </div>
+          <div v-else class="rq-mini-metrics">
             <div class="rq-mini-metric">
               <span class="rq-mini-metric-label">Students</span>
               <span class="rq-mini-metric-value">{{ formatMetric(summary.total_students) }}</span>
@@ -185,6 +210,41 @@ export default {
         ? this.analyticsOverview.job_demand_by_skills
         : []
       return rows.slice(0, 10)
+    },
+    hasTrendData() {
+      return this.trendRows.some((row) => (
+        Number(row.applications || 0) > 0 ||
+        Number(row.offers || 0) > 0 ||
+        Number(row.placements || 0) > 0
+      ))
+    },
+    hasFunnelData() {
+      const dataset = this.funnelCounts
+      return [
+        dataset.applied,
+        dataset.shortlisted,
+        dataset.interview,
+        dataset.offered,
+        dataset.placed,
+        dataset.rejected,
+        dataset.total
+      ].some((value) => Number(value || 0) > 0)
+    },
+    hasSkillData() {
+      return this.skillRows.some((row) => Number(row.demand_count || 0) > 0)
+    },
+    hasSummaryData() {
+      const keys = [
+        'total_students',
+        'total_companies',
+        'total_jobs',
+        'total_applications',
+        'offers_released',
+        'offers_accepted',
+        'total_placements'
+      ]
+
+      return keys.some((key) => Number(this.summary?.[key] || 0) > 0)
     }
   },
   watch: {
@@ -238,9 +298,15 @@ export default {
         return
       }
 
-      this.renderTrendChart()
-      this.renderFunnelChart()
-      this.renderSkillsChart()
+      if (this.hasTrendData) {
+        this.renderTrendChart()
+      }
+      if (this.hasFunnelData) {
+        this.renderFunnelChart()
+      }
+      if (this.hasSkillData) {
+        this.renderSkillsChart()
+      }
     },
     renderTrendChart() {
       const canvas = this.$refs.trendChart

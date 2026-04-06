@@ -258,6 +258,8 @@ describe('AdminDashboard notifications integration', () => {
     await flushPromises()
 
     expect(wrapper.vm.loadErrors.analytics).toBe('Analytics temporarily unavailable')
+    expect(wrapper.vm.analyticsOverview.summary).toEqual({})
+    expect(wrapper.vm.analyticsOverview.placement_trends).toEqual([])
 
     await wrapper.vm.fetchAnalyticsOverview()
     await flushPromises()

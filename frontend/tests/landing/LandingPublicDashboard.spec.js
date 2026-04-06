@@ -126,4 +126,70 @@ describe('Landing public dashboard integration', () => {
     expect(wrapper.vm.publicDashboardError).toBe('Public analytics unavailable')
     expect(wrapper.text()).toContain('Public analytics unavailable')
   })
+
+  it('clears stale public dashboard data and destroys chart when a refresh fails', async () => {
+    adminApi.getPublicLandingDashboard
+      .mockResolvedValueOnce({
+        data: {
+          data: {
+            highlights: {
+              placements_confirmed: 520,
+              approved_companies: 88,
+              approved_drives: 210,
+              latest_month_placements: 42
+            },
+            placement_trends: [
+              {
+                month_key: '2026-03',
+                month_label: 'Mar 2026',
+                applications: 58,
+                offers: 12,
+                placements: 10
+              }
+            ],
+            application_funnel: {
+              applied: 300,
+              shortlisted: 170,
+              interview: 120,
+              offered: 45,
+              placed: 33,
+              rejected: 140,
+              total: 300
+            },
+            job_demand_by_skills: [
+              { skill: 'Python', demand_count: 6 },
+              { skill: 'SQL', demand_count: 4 }
+            ],
+            meta: {
+              months: 6
+            }
+          }
+        }
+      })
+      .mockRejectedValueOnce({
+        response: {
+          data: {
+            error: 'Public analytics unavailable'
+          }
+        }
+      })
+
+    const wrapper = mountLanding()
+    await flushPromises()
+    await flushPromises()
+
+    const previousChartInstance = wrapper.vm.publicTrendChartInstance
+    expect(previousChartInstance).toBeTruthy()
+    expect(wrapper.vm.publicDashboard.highlights.placements_confirmed).toBe(520)
+
+    await wrapper.vm.fetchPublicDashboard()
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.vm.publicDashboardError).toBe('Public analytics unavailable')
+    expect(wrapper.vm.publicDashboard.highlights.placements_confirmed).toBe(0)
+    expect(wrapper.vm.counters[0].target).toBe(0)
+    expect(wrapper.vm.publicTrendChartInstance).toBeNull()
+    expect(previousChartInstance.destroy).toHaveBeenCalledTimes(1)
+  })
 })

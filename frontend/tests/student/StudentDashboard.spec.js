@@ -493,4 +493,22 @@ describe('StudentDashboard step 3B wiring', () => {
     expect(wrapper.vm.applicationsError).toContain('ATS scoring failed')
     expect(wrapper.vm.isScoringMatch[501]).toBe(false)
   })
+
+  it('shows an info note and skips ATS request when job identifier is missing', async () => {
+    const wrapper = mountWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    const noteSpy = vi.spyOn(wrapper.vm, 'publishActionNote')
+
+    await wrapper.vm.scoreApplicationMatch({
+      application_id: 777,
+      drive: null,
+      drive_id: null,
+      job_id: null
+    })
+
+    expect(studentApi.scoreResumeForJob).not.toHaveBeenCalled()
+    expect(noteSpy).toHaveBeenCalledWith('ATS match is unavailable for this application right now.', 'info')
+  })
 })

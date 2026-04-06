@@ -727,7 +727,12 @@ export default {
         0
       )
 
-      if (!applicationId || !driveId || this.isScoringMatch[applicationId]) {
+      if (!applicationId || this.isScoringMatch[applicationId]) {
+        return
+      }
+
+      if (!driveId) {
+        this.publishActionNote('ATS match is unavailable for this application right now.', 'info')
         return
       }
 

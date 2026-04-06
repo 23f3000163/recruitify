@@ -586,6 +586,32 @@ import { adminApi } from '../api/api'
 
 Chart.register(...registerables)
 
+function createEmptyPublicDashboard() {
+  return {
+    highlights: {
+      total_students: 0,
+      approved_companies: 0,
+      approved_drives: 0,
+      placements_confirmed: 0,
+      latest_month_placements: 0
+    },
+    placement_trends: [],
+    application_funnel: {
+      applied: 0,
+      shortlisted: 0,
+      interview: 0,
+      offered: 0,
+      placed: 0,
+      rejected: 0,
+      total: 0
+    },
+    job_demand_by_skills: [],
+    meta: {
+      months: 6
+    }
+  }
+}
+
 export default {
   name: 'LandingView',
   components: {
@@ -608,29 +634,7 @@ export default {
         { target: 200, value: 0 },
         { target: 95, value: 0 }
       ],
-      publicDashboard: {
-        highlights: {
-          total_students: 0,
-          approved_companies: 0,
-          approved_drives: 0,
-          placements_confirmed: 0,
-          latest_month_placements: 0
-        },
-        placement_trends: [],
-        application_funnel: {
-          applied: 0,
-          shortlisted: 0,
-          interview: 0,
-          offered: 0,
-          placed: 0,
-          rejected: 0,
-          total: 0
-        },
-        job_demand_by_skills: [],
-        meta: {
-          months: 6
-        }
-      },
+      publicDashboard: createEmptyPublicDashboard(),
       publicDashboardError: '',
       publicTrendChartInstance: null,
       counterObserver: null,
@@ -746,15 +750,16 @@ export default {
       try {
         const response = await adminApi.getPublicLandingDashboard({ months })
         const payload = response?.data?.data || {}
+        const fallback = createEmptyPublicDashboard()
 
         this.publicDashboard = {
-          highlights: payload.highlights || this.publicDashboard.highlights,
+          highlights: payload.highlights || fallback.highlights,
           placement_trends: Array.isArray(payload.placement_trends) ? payload.placement_trends : [],
-          application_funnel: payload.application_funnel || this.publicDashboard.application_funnel,
+          application_funnel: payload.application_funnel || fallback.application_funnel,
           job_demand_by_skills: Array.isArray(payload.job_demand_by_skills)
             ? payload.job_demand_by_skills
             : [],
-          meta: payload.meta || this.publicDashboard.meta
+          meta: payload.meta || fallback.meta
         }
 
         this.syncCountersFromPublicData()
@@ -762,6 +767,9 @@ export default {
           this.renderPublicTrendChart()
         })
       } catch (error) {
+        this.publicDashboard = createEmptyPublicDashboard()
+        this.syncCountersFromPublicData()
+        this.destroyPublicTrendChart()
         this.publicDashboardError =
           error?.response?.data?.error ||
           error?.response?.data?.message ||

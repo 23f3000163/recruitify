@@ -1136,6 +1136,10 @@ export default {
         return
       }
 
+      this.screeningError = ''
+      this.screeningResult = null
+      this.showScreeningModal = false
+
       this.isScoringResume = {
         ...this.isScoringResume,
         [applicationId]: true
@@ -1148,6 +1152,7 @@ export default {
         this.showScreeningModal = true
       } catch (error) {
         this.screeningError = parseApiError(error, 'Unable to run ATS screening.')
+        this.showScreeningModal = true
         this.toast_show(this.screeningError, 'danger')
       } finally {
         this.isScoringResume = {

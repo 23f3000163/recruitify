@@ -493,7 +493,7 @@ describe('CompanyDashboard phase 6 integration', () => {
     expect(wrapper.vm.isScoringResume[501]).toBe(false)
   })
 
-  it('surfaces ATS screening errors and keeps modal closed', async () => {
+  it('surfaces ATS screening errors and opens the modal with error state', async () => {
     companyApi.scoreApplicationResume.mockRejectedValueOnce({
       response: {
         data: {
@@ -511,9 +511,53 @@ describe('CompanyDashboard phase 6 integration', () => {
     await flushPromises()
 
     expect(companyApi.scoreApplicationResume).toHaveBeenCalledWith(501)
-    expect(wrapper.vm.showScreeningModal).toBe(false)
+    expect(wrapper.vm.showScreeningModal).toBe(true)
     expect(wrapper.vm.screeningError).toContain('ATS service unavailable')
     expect(wrapper.vm.toast.type).toBe('danger')
+  })
+
+  it('prevents duplicate ATS requests while a screening call is in progress', async () => {
+    let resolveScreening
+    companyApi.scoreApplicationResume.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        resolveScreening = resolve
+      })
+    )
+
+    const wrapper = makeWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    const application = wrapper.vm.allApplications[0]
+
+    const firstCall = wrapper.vm.screenApplicationResume(application)
+    await flushPromises()
+    await wrapper.vm.screenApplicationResume(application)
+
+    expect(companyApi.scoreApplicationResume).toHaveBeenCalledTimes(1)
+
+    resolveScreening({
+      data: {
+        data: {
+          analysis: {
+            score: 75,
+            matched_count: 3,
+            recommendation: 'Moderate fit',
+            matched_keywords: ['python', 'sql', 'api'],
+            missing_keywords: ['redis', 'docker']
+          },
+          job: {
+            title: 'Backend Engineer'
+          }
+        }
+      }
+    })
+
+    await firstCall
+    await flushPromises()
+
+    expect(wrapper.vm.isScoringResume[501]).toBe(false)
+    expect(wrapper.vm.showScreeningModal).toBe(true)
   })
 
   it('routes to login when an API call returns 401', async () => {
