@@ -117,6 +117,9 @@ def create_app(config_object=None):
         ),
         JOBS_EAGER_EXECUTION=_env_bool("JOBS_EAGER_EXECUTION", False),
 
+        # 📊 Analytics API defaults
+        ANALYTICS_LOOKBACK_MONTHS=_env_int("ANALYTICS_LOOKBACK_MONTHS", 6),
+
         # ⚡ API Response Cache (Redis) configuration contracts
         CACHE_ENABLED=_env_bool("CACHE_ENABLED", True),
         CACHE_KEY_PREFIX=os.environ.get("CACHE_KEY_PREFIX", "recruitify"),

@@ -17,6 +17,7 @@ from . import services
 
 admin_bp = Blueprint("admin_bp", __name__)
 MAX_LIMIT = 100
+MAX_ANALYTICS_MONTHS = 24
 
 CACHE_NAMESPACE_JOBS = CACHE_NAMESPACE_ADMIN_JOBS
 CACHE_NAMESPACE_COMPANY_SEARCH = CACHE_NAMESPACE_ADMIN_COMPANY_SEARCH
@@ -61,6 +62,25 @@ def _parse_pagination():
         return None, None, ("limit must be greater than 0", 400)
 
     return page, min(limit, MAX_LIMIT), None
+
+
+def _parse_months_query(default_value=6):
+    raw_value = request.args.get("months")
+    if raw_value is None or str(raw_value).strip() == "":
+        return default_value, None
+
+    try:
+        months = int(raw_value)
+    except (TypeError, ValueError):
+        return None, ("months must be an integer", 400)
+
+    if months < 1 or months > MAX_ANALYTICS_MONTHS:
+        return None, (
+            f"months must be between 1 and {MAX_ANALYTICS_MONTHS}",
+            400,
+        )
+
+    return months, None
 
 
 def _json_result(service_result):
@@ -156,6 +176,28 @@ def _invalidate_cache_namespaces(*namespaces):
 @role_required("admin")
 def dashboard():
     return _json_result(services.get_dashboard_stats())
+
+
+@admin_bp.get("/analytics/overview")
+@jwt_required()
+@role_required("admin")
+def analytics_overview():
+    months, error = _parse_months_query()
+    if error:
+        message, status_code = error
+        return jsonify({"success": False, "error": message}), status_code
+
+    return _json_result(services.get_analytics_overview(months=months))
+
+
+@admin_bp.get("/public/landing-dashboard")
+def public_landing_dashboard():
+    months, error = _parse_months_query()
+    if error:
+        message, status_code = error
+        return jsonify({"success": False, "error": message}), status_code
+
+    return _json_result(services.get_public_landing_dashboard(months=months))
 
 
 @admin_bp.get("/activity-logs")

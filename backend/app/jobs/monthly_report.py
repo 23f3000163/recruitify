@@ -43,6 +43,17 @@ def _month_key(month_start):
     return month_start.strftime("%Y-%m")
 
 
+def _month_start(now_utc):
+    return now_utc.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+
+def _add_months(month_start, delta_months):
+    month_index = (month_start.month - 1) + int(delta_months)
+    year = month_start.year + (month_index // 12)
+    month = (month_index % 12) + 1
+    return month_start.replace(year=year, month=month)
+
+
 def _normalize_report_audience(raw_audience):
     value = str(raw_audience or "").strip().lower()
     if value in {"admin", "company", "both"}:
@@ -239,6 +250,37 @@ def _monthly_metrics(period_start, period_end, company_id=None):
         "offers_released": offers_query.scalar() or 0,
         "placements_confirmed": placements_query.scalar() or 0,
     }
+
+
+def build_monthly_metrics_series(months=6, company_id=None, now_utc=None):
+    """Build monthly metric rows for the previous complete months.
+
+    The returned list is ordered oldest to newest and excludes the current
+    in-progress month so trend charts always compare complete periods.
+    """
+
+    try:
+        month_count = int(months)
+    except (TypeError, ValueError):
+        month_count = 6
+
+    month_count = max(1, min(month_count, 24))
+
+    anchor = _month_start(now_utc or _utcnow())
+    rows = []
+    for offset in range(month_count, 0, -1):
+        period_start = _add_months(anchor, -offset)
+        period_end = _add_months(period_start, 1)
+        metrics = _monthly_metrics(period_start, period_end, company_id=company_id)
+        rows.append(
+            {
+                "month_key": _month_key(period_start),
+                "month_label": _month_label(period_start),
+                **metrics,
+            }
+        )
+
+    return rows
 
 
 def _admin_recipients():

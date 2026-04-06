@@ -1,11 +1,14 @@
 """Service layer for admin dashboard and management operations."""
 
+import re
 from datetime import datetime, timezone
 from math import ceil
 
+from flask import current_app
 from sqlalchemy import func, or_
 from sqlalchemy.orm import selectinload
 
+from app.jobs.monthly_report import build_monthly_metrics_series
 from app.applications.status_engine import (
     ATS_TO_LEGACY_STATUS,
     ATS_TRANSITIONS,
@@ -17,7 +20,9 @@ from app.models import (
     Application,
     Company,
     Notification,
+    Placement,
     PlacementDrive,
+    PlacementOffer,
     Student,
     User,
     db,
@@ -35,6 +40,10 @@ ALLOWED_APPLICATION_STATUSES = {
 }
 ALLOWED_ACTIVITY_STATUSES = {"success", "danger", "warning", "info"}
 ALLOWED_NOTIFICATION_READ_FILTERS = {"all", "true", "false"}
+MAX_ANALYTICS_MONTHS = 24
+DEFAULT_ANALYTICS_MONTHS = 6
+DEFAULT_PUBLIC_SKILL_LIMIT = 12
+DEFAULT_ADMIN_SKILL_LIMIT = 20
 
 
 def _ok(data, status_code=200):
@@ -276,6 +285,221 @@ def get_dashboard_stats():
             "total_companies": total_companies,
             "total_jobs": total_jobs,
             "total_applications": total_applications,
+        }
+    )
+
+
+def _normalize_analytics_months(raw_months=None):
+    default_months = current_app.config.get(
+        "ANALYTICS_LOOKBACK_MONTHS",
+        DEFAULT_ANALYTICS_MONTHS,
+    )
+    try:
+        months = int(raw_months if raw_months is not None else default_months)
+    except (TypeError, ValueError):
+        months = int(default_months)
+
+    return max(1, min(months, MAX_ANALYTICS_MONTHS))
+
+
+def _funnel_stage_counts():
+    rows = (
+        db.session.query(
+            Application.status,
+            PlacementOffer.status,
+            func.count(Application.application_id),
+        )
+        .outerjoin(
+            PlacementOffer,
+            PlacementOffer.application_id == Application.application_id,
+        )
+        .group_by(Application.status, PlacementOffer.status)
+        .all()
+    )
+
+    counts = {
+        "applied": 0,
+        "shortlisted": 0,
+        "interview": 0,
+        "offered": 0,
+        "placed": 0,
+        "rejected": 0,
+    }
+
+    for app_status, offer_status, total in rows:
+        legacy_status = str(app_status or "").strip().lower()
+        offer_state = str(offer_status or "").strip().lower()
+        increment = int(total or 0)
+
+        if legacy_status == "applied":
+            counts["applied"] += increment
+        elif legacy_status in {"shortlisted", "waitlisted"}:
+            counts["shortlisted"] += increment
+        elif legacy_status == "interviewed":
+            counts["interview"] += increment
+        elif legacy_status == "selected":
+            if offer_state == "accepted":
+                counts["placed"] += increment
+            elif offer_state == "rejected":
+                counts["rejected"] += increment
+            else:
+                counts["offered"] += increment
+        elif legacy_status == "rejected":
+            counts["rejected"] += increment
+
+    counts["total"] = sum(counts.values())
+    return counts
+
+
+def _split_skills(raw_text):
+    text = str(raw_text or "").strip()
+    if not text:
+        return []
+
+    normalized = re.sub(r"[|/;\\n]+", ",", text)
+    raw_tokens = [token.strip() for token in normalized.split(",")]
+
+    deduped = []
+    seen = set()
+    for token in raw_tokens:
+        if not token:
+            continue
+        compact = re.sub(r"\s+", " ", token)
+        key = compact.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(compact)
+
+    return deduped
+
+
+def _job_demand_by_skills(limit=DEFAULT_PUBLIC_SKILL_LIMIT):
+    rows = (
+        db.session.query(PlacementDrive.required_skills)
+        .filter(
+            PlacementDrive.required_skills.isnot(None),
+            PlacementDrive.status.in_(("pending", "approved")),
+        )
+        .all()
+    )
+
+    counts = {}
+    labels = {}
+    for row in rows:
+        for skill in _split_skills(row.required_skills):
+            key = skill.lower()
+            labels.setdefault(key, skill)
+            counts[key] = counts.get(key, 0) + 1
+
+    sorted_items = sorted(
+        counts.items(),
+        key=lambda item: (-item[1], labels[item[0]].lower()),
+    )
+
+    return [
+        {
+            "skill": labels[key],
+            "demand_count": demand_count,
+        }
+        for key, demand_count in sorted_items[: max(1, int(limit or 1))]
+    ]
+
+
+def _placement_trend_rows(months):
+    series = build_monthly_metrics_series(months=months)
+    return [
+        {
+            "month_key": row["month_key"],
+            "month_label": row["month_label"],
+            "drives": row["drives_conducted"],
+            "applications": row["total_applications"],
+            "offers": row["offers_released"],
+            "placements": row["placements_confirmed"],
+        }
+        for row in series
+    ]
+
+
+def _analytics_summary_with_placements():
+    dashboard_payload, _status = get_dashboard_stats()
+    summary = dict(dashboard_payload.get("data", {}))
+    summary.update(
+        {
+            "total_placements": db.session.query(func.count(Placement.placement_id)).scalar()
+            or 0,
+            "offers_released": db.session.query(func.count(PlacementOffer.offer_id)).scalar()
+            or 0,
+            "offers_accepted": (
+                db.session.query(func.count(PlacementOffer.offer_id))
+                .filter(PlacementOffer.status == "accepted")
+                .scalar()
+                or 0
+            ),
+        }
+    )
+    return summary
+
+
+def get_analytics_overview(months=None):
+    month_count = _normalize_analytics_months(months)
+    return _ok(
+        {
+            "summary": _analytics_summary_with_placements(),
+            "placement_trends": _placement_trend_rows(month_count),
+            "application_funnel": _funnel_stage_counts(),
+            "job_demand_by_skills": _job_demand_by_skills(
+                limit=DEFAULT_ADMIN_SKILL_LIMIT
+            ),
+            "meta": {
+                "months": month_count,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+            },
+        }
+    )
+
+
+def get_public_landing_dashboard(months=None):
+    month_count = _normalize_analytics_months(months)
+    total_students = db.session.query(func.count(Student.student_id)).scalar() or 0
+    total_companies = (
+        db.session.query(func.count(Company.company_id))
+        .filter(
+            Company.approval_status == "approved",
+            Company.is_blacklisted.is_(False),
+        )
+        .scalar()
+        or 0
+    )
+    total_drives = (
+        db.session.query(func.count(PlacementDrive.drive_id))
+        .filter(PlacementDrive.status == "approved")
+        .scalar()
+        or 0
+    )
+    total_placements = db.session.query(func.count(Placement.placement_id)).scalar() or 0
+
+    trends = _placement_trend_rows(month_count)
+    latest_month = trends[-1] if trends else None
+
+    return _ok(
+        {
+            "highlights": {
+                "total_students": total_students,
+                "approved_companies": total_companies,
+                "approved_drives": total_drives,
+                "placements_confirmed": total_placements,
+                "latest_month_placements": latest_month["placements"]
+                if latest_month
+                else 0,
+            },
+            "placement_trends": trends,
+            "application_funnel": _funnel_stage_counts(),
+            "job_demand_by_skills": _job_demand_by_skills(),
+            "meta": {
+                "months": month_count,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+            },
         }
     )
 
