@@ -35,11 +35,6 @@
   <!-- Hero text -->
   <div class="hero-content">
 
-    <div class="hero-badge">
-      <span class="badge-chip">New</span>
-      <span class="badge-label">Campus Placement Platform V2 is live</span>
-    </div>
-
     <h1 class="hero-h1">
       <span class="h1-line-1">Campus Placements.</span>
       <div class="h1-line-2">

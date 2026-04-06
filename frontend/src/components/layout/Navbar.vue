@@ -2,7 +2,7 @@
   <nav class="nav" :class="{ scrolled }" id="navbar">
 
   <!-- Logo -->
-  <a class="nav-logo" href="#" @click.prevent="goHome">
+  <a class="nav-logo" href="#" @click.prevent="scrollToTop">
     <div class="logo-icon">
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
         <path d="M3 14 L9 4 L15 14" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -16,7 +16,7 @@
   <!-- Nav Links + Mega Menu -->
   <div class="nav-mid">
     <div class="mega-wrap">
-      <a href="#features" class="nav-link" @click.prevent="goHash('#features')">
+      <a href="#features" class="nav-link" @click.prevent="scrollToSection('features')">
         Features
         <svg class="nav-caret" width="12" height="12" viewBox="0 0 12 12" fill="none">
           <path d="M3 4.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -48,16 +48,9 @@
         </div>
       </div>
     </div>
-    <a href="#who" class="nav-link" @click.prevent="goHash('#who')">How It Works</a>
-    <a href="#pipeline" class="nav-link" @click.prevent="goHash('#pipeline')">Process</a>
-    <a href="#" class="nav-link" @click.prevent="goHome">About</a>
-  </div>
-
-  <!-- Role pills -->
-  <div class="nav-pills">
-    <button class="pill" :class="{ active: activePill === 'Student' }" @click="setActivePill('Student')">Student</button>
-    <button class="pill" :class="{ active: activePill === 'Company' }" @click="setActivePill('Company')">Company</button>
-    <button class="pill" :class="{ active: activePill === 'Admin' }" @click="setActivePill('Admin')">Admin</button>
+    <a href="#who" class="nav-link" @click.prevent="scrollToSection('who')">How It Works</a>
+    <a href="#pipeline" class="nav-link" @click.prevent="scrollToSection('pipeline')">Process</a>
+    <a href="#" class="nav-link" @click.prevent="scrollToTop">About</a>
   </div>
 
   <!-- Nav actions -->
@@ -97,7 +90,6 @@ export default {
   },
   data() {
     return {
-      activePill: 'Student',
       deferredInstallPrompt: null,
       canInstall: false,
       isOnline: true
@@ -123,14 +115,66 @@ export default {
     go(path) {
       this.$router.push(path)
     },
-    goHome() {
-      this.$router.push('/')
+    waitForElement(id, retries = 24) {
+      return new Promise((resolve) => {
+        const probe = (remaining) => {
+          const element = document.getElementById(id)
+          if (element) {
+            resolve(true)
+            return
+          }
+          if (remaining <= 0) {
+            resolve(false)
+            return
+          }
+          window.setTimeout(() => probe(remaining - 1), 40)
+        }
+        probe(retries)
+      })
     },
-    goHash(hash) {
-      this.$router.push({ path: '/', hash })
+    async ensureLandingReady() {
+      if (this.$route.path !== '/') {
+        await this.$router.push('/')
+      }
+      return this.waitForElement('navbar')
     },
-    setActivePill(pill) {
-      this.activePill = pill
+    getTopOffset() {
+      const navbar = document.getElementById('navbar')
+      return Number(navbar?.offsetHeight || 66) + 12
+    },
+    async scrollToTop() {
+      const ready = await this.ensureLandingReady()
+      if (!ready) {
+        return
+      }
+      window.scrollTo({
+        top: 0,
+        behavior: 'smooth'
+      })
+    },
+    async scrollToSection(sectionId) {
+      const ready = await this.ensureLandingReady()
+      if (!ready) {
+        return
+      }
+
+      const found = await this.waitForElement(sectionId)
+      if (!found) {
+        return
+      }
+
+      const section = document.getElementById(sectionId)
+      if (!section) {
+        return
+      }
+
+      const destination =
+        window.scrollY + section.getBoundingClientRect().top - this.getTopOffset()
+
+      window.scrollTo({
+        top: Math.max(destination, 0),
+        behavior: 'smooth'
+      })
     },
     handleBeforeInstallPrompt(event) {
       event.preventDefault()

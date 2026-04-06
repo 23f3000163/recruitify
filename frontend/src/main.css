@@ -747,9 +747,10 @@ body::before {
 }
 
 .public-card-head h3 {
+  font-family: var(--serif);
   font-size: .95rem;
-  font-weight: 700;
-  letter-spacing: -.01em;
+  font-weight: 600;
+  letter-spacing: -.02em;
   color: var(--ink);
 }
 
