@@ -128,19 +128,19 @@ def test_update_application_status_creates_activity_log_and_list_limit(app, clie
 
     status_response = client.put(
         f"/admin/application/{application_id}/status",
-        json={"status": "selected"},
+        json={"status": "shortlisted"},
         headers=headers,
     )
     assert status_response.status_code == 200
     status_payload = status_response.get_json()
     assert status_payload["success"] is True
-    assert status_payload["data"]["status"] == "selected"
+    assert status_payload["data"]["status"] == "shortlisted"
 
     with app.app_context():
         logs = ActivityLog.query.order_by(ActivityLog.log_id.desc()).all()
         assert logs
         assert logs[0].action == "Application Updated"
-        assert logs[0].target == f"#{application_id} -> selected"
+        assert logs[0].target == f"#{application_id} -> shortlisted"
         assert logs[0].status == "success"
 
     logs_response = client.get("/admin/activity-logs?limit=1", headers=headers)
@@ -150,6 +150,85 @@ def test_update_application_status_creates_activity_log_and_list_limit(app, clie
     assert logs_payload["data"]["limit"] == 1
     assert len(logs_payload["data"]["items"]) == 1
     assert logs_payload["data"]["items"][0]["action"] == "Application Updated"
+
+
+def test_admin_shortcut_status_updates_are_rejected(app, client):
+    with app.app_context():
+        admin_user = _make_user("admin.shortcuts", "admin.shortcuts@example.com", "admin")
+        company_user = _make_user("co.shortcuts", "co.shortcuts@example.com", "company")
+        student_user = _make_user("stu.shortcuts", "stu.shortcuts@example.com", "student")
+
+        company = Company(
+            user_id=company_user.user_id,
+            company_name="Shortcut Guard Labs",
+            industry="Product",
+            hr_contact_name="Guard HR",
+            hr_contact_email="hr.shortcuts@example.com",
+            hr_contact_phone="7777777777",
+            approval_status="approved",
+        )
+        db.session.add(company)
+        db.session.flush()
+
+        student = Student(
+            user_id=student_user.user_id,
+            roll_number="CS21B1099",
+            branch="CSE",
+            year=4,
+            cgpa=8.1,
+        )
+        db.session.add(student)
+        db.session.flush()
+
+        drive = PlacementDrive(
+            company_id=company.company_id,
+            job_title="Platform Analyst",
+            job_description="Analyze platform metrics",
+            required_skills="Python,SQL",
+            experience_required="0-1 years",
+            benefits="Mentorship",
+            min_cgpa=6.5,
+            eligible_branches=["CSE", "ECE"],
+            eligible_years=[3, 4],
+            salary_lpa=10.0,
+            job_location="Remote",
+            application_deadline=datetime.now(timezone.utc) + timedelta(days=30),
+            interview_mode="online",
+            status="approved",
+        )
+        db.session.add(drive)
+        db.session.flush()
+
+        application = Application(
+            student_id=student.student_id,
+            drive_id=drive.drive_id,
+            status="shortlisted",
+        )
+        db.session.add(application)
+        db.session.commit()
+
+        headers = _auth_headers(admin_user.user_id, "admin")
+        application_id = application.application_id
+
+    expected_error = (
+        "Direct status updates to interview, offered, or placed are not allowed. "
+        "Use interview and offer workflow APIs."
+    )
+
+    for blocked_status in ("interviewed", "selected", "placed"):
+        response = client.put(
+            f"/admin/application/{application_id}/status",
+            json={"status": blocked_status},
+            headers=headers,
+        )
+        assert response.status_code == 400
+        assert response.get_json()["error"] == expected_error
+
+    with app.app_context():
+        refreshed = db.session.get(Application, application_id)
+        assert refreshed is not None
+        assert refreshed.status == "shortlisted"
+        assert ActivityLog.query.filter_by(action="Application Updated").count() == 0
 
 
 def test_activity_logs_limit_validation(app, client):

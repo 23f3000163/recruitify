@@ -29,9 +29,7 @@
                   >
                     <option value="applied">Applied</option>
                     <option value="shortlisted">Shortlisted</option>
-                    <option value="interviewed">Interviewed</option>
                     <option value="waitlisted">Waitlisted</option>
-                    <option value="selected">Selected</option>
                     <option value="rejected">Rejected</option>
                   </select>
                 </td>

@@ -21,7 +21,7 @@ const selectedStudent = {
 }
 
 describe('StudentApplicationsModal action flow', () => {
-  it('emits update-app-status with selected value', async () => {
+  it('emits update-app-status with shortlisted value', async () => {
     const wrapper = mount(StudentApplicationsModal, {
       props: {
         selectedStudent,
@@ -30,11 +30,27 @@ describe('StudentApplicationsModal action flow', () => {
     })
 
     const select = wrapper.get('select.rq-app-status-select')
-    await select.setValue('selected')
+    await select.setValue('shortlisted')
 
     expect(wrapper.emitted('update-app-status')).toBeTruthy()
     expect(wrapper.emitted('update-app-status')[0][0]).toMatchObject({ id: 7 })
-    expect(wrapper.emitted('update-app-status')[0][1]).toBe('selected')
+    expect(wrapper.emitted('update-app-status')[0][1]).toBe('shortlisted')
+  })
+
+  it('does not show interview and selected shortcut options', () => {
+    const wrapper = mount(StudentApplicationsModal, {
+      props: {
+        selectedStudent,
+        pendingApplicationActions: {}
+      }
+    })
+
+    const optionValues = wrapper
+      .findAll('select.rq-app-status-select option')
+      .map((option) => option.element.value)
+
+    expect(optionValues).not.toContain('interviewed')
+    expect(optionValues).not.toContain('selected')
   })
 
   it('disables status select for in-flight updates', () => {

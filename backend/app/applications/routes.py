@@ -36,6 +36,11 @@ MAX_LIMIT = 100
 MAX_NOTES_LENGTH = 500
 MAX_REJECTION_REASON_LENGTH = 300
 MAX_SCREEN_KEYWORDS = 40
+DIRECT_STATUS_UPDATE_BLOCKED_STATUSES = {"interview", "offered", "placed"}
+DIRECT_STATUS_UPDATE_BLOCKED_MESSAGE = (
+    "Direct status updates to interview, offered, or placed are not allowed. "
+    "Use interview and offer workflow APIs."
+)
 
 KEYWORD_ALIAS_MAP = {
     "node.js": "nodejs",
@@ -881,6 +886,9 @@ def update_application_status(application_id):
     target_status = _normalize_status_input(payload.get("status"))
     if not target_status:
         return _json_error("Invalid application status", 400)
+
+    if target_status in DIRECT_STATUS_UPDATE_BLOCKED_STATUSES:
+        return _json_error(DIRECT_STATUS_UPDATE_BLOCKED_MESSAGE, 400)
 
     current_status = _application_ats_status(application)
     if not _ensure_transition_allowed(current_status, target_status):

@@ -199,7 +199,55 @@ def test_invalid_transition_is_rejected_by_backend(app, client):
         headers=company_headers,
     )
     assert invalid_transition_response.status_code == 400
-    assert "Invalid status transition" in invalid_transition_response.get_json()["error"]
+    assert (
+        invalid_transition_response.get_json()["error"]
+        == "Direct status updates to interview, offered, or placed are not allowed. Use interview and offer workflow APIs."
+    )
+
+
+def test_direct_interview_offer_place_updates_are_blocked(app, client):
+    with app.app_context():
+        company_user = _make_user("company.ats.block.1", "company.ats.block.1@example.com", "company")
+        company = _make_company_profile(
+            company_user.user_id,
+            "ATS Guardrail Corp",
+            "hr.ats.block.1@example.com",
+            approval_status="approved",
+        )
+        drive = _make_drive(company.company_id, title="Lifecycle Engineer", status="approved")
+
+        student_user = _make_user("student.ats.block.1", "student.ats.block.1@example.com", "student")
+        student = _make_student_profile(student_user.user_id, "CS21B9810")
+
+        application = Application(
+            student_id=student.student_id,
+            drive_id=drive.drive_id,
+            status="shortlisted",
+        )
+        db.session.add(application)
+        db.session.commit()
+
+        company_headers = _auth_headers(company_user.user_id, "company")
+        application_id = application.application_id
+
+    expected_error = (
+        "Direct status updates to interview, offered, or placed are not allowed. "
+        "Use interview and offer workflow APIs."
+    )
+
+    for blocked_status in ("interview", "offered", "placed"):
+        response = client.patch(
+            f"/applications/{application_id}",
+            json={"status": blocked_status},
+            headers=company_headers,
+        )
+        assert response.status_code == 400
+        assert response.get_json()["error"] == expected_error
+
+    with app.app_context():
+        refreshed = db.session.get(Application, application_id)
+        assert refreshed is not None
+        assert refreshed.status == "shortlisted"
 
 
 def test_unauthorized_access_is_blocked(app, client):

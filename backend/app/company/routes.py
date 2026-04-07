@@ -53,6 +53,11 @@ ALLOWED_BRANCHES = {"CSE", "ECE", "MECH", "EE", "OTHER"}
 ALLOWED_NOTIFICATION_READ_FILTERS = {"all", "true", "false"}
 MAX_APPLICATION_NOTES_LENGTH = 500
 MAX_REJECTION_REASON_LENGTH = 300
+DIRECT_STATUS_UPDATE_BLOCKED_STATUSES = {"interview", "offered", "placed"}
+DIRECT_STATUS_UPDATE_BLOCKED_MESSAGE = (
+    "Direct status updates to interview, offered, or placed are not allowed. "
+    "Use interview and offer workflow APIs."
+)
 
 
 def _json_error(message, status_code=400):
@@ -904,6 +909,9 @@ def update_application_status(application_id):
     target_ats_status = normalize_status_input(payload.get("status"))
     if not target_ats_status:
         return _json_error("Invalid application status", 400)
+
+    if target_ats_status in DIRECT_STATUS_UPDATE_BLOCKED_STATUSES:
+        return _json_error(DIRECT_STATUS_UPDATE_BLOCKED_MESSAGE, 400)
 
     current_ats_status = application_ats_status(application)
     if target_ats_status != current_ats_status:

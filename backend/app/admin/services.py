@@ -44,6 +44,11 @@ MAX_ANALYTICS_MONTHS = 24
 DEFAULT_ANALYTICS_MONTHS = 6
 DEFAULT_PUBLIC_SKILL_LIMIT = 12
 DEFAULT_ADMIN_SKILL_LIMIT = 20
+DIRECT_STATUS_UPDATE_BLOCKED_STATUSES = {"interview", "offered", "placed"}
+DIRECT_STATUS_UPDATE_BLOCKED_MESSAGE = (
+    "Direct status updates to interview, offered, or placed are not allowed. "
+    "Use interview and offer workflow APIs."
+)
 
 
 def _ok(data, status_code=200):
@@ -853,12 +858,17 @@ def update_application_status(
     if not target_ats_status:
         return _error("Invalid application status", 400)
 
+    if target_ats_status in DIRECT_STATUS_UPDATE_BLOCKED_STATUSES:
+        return _error(DIRECT_STATUS_UPDATE_BLOCKED_MESSAGE, 400)
+
     current_ats_status = application_ats_status(application)
     if target_ats_status != current_ats_status:
         allowed_targets = ATS_TRANSITIONS.get(current_ats_status, set())
         if target_ats_status not in allowed_targets:
-            # Admin moderation is allowed to perform corrective jump transitions.
-            pass
+            return _error(
+                f"Invalid status transition: {current_ats_status} -> {target_ats_status}",
+                400,
+            )
 
     if target_ats_status == "placed" and not application.placement_offer:
         return _error("Cannot mark as placed before an offer is created", 400)

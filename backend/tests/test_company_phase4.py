@@ -235,8 +235,60 @@ def test_company_status_transition_rules_are_enforced(app, client):
     assert invalid_transition_response.status_code == 400
     assert (
         invalid_transition_response.get_json()["error"]
-        == "Invalid status transition: applied -> offered"
+        == "Direct status updates to interview, offered, or placed are not allowed. Use interview and offer workflow APIs."
     )
+
+
+def test_company_shortcut_status_updates_are_rejected(app, client):
+    with app.app_context():
+        company_user = _make_user(
+            "company.shortcut.guard",
+            "company.shortcut.guard@example.com",
+            "company",
+        )
+        company = _make_company_profile(
+            company_user.user_id,
+            "Shortcut Guard Company",
+            "hr.shortcut.guard@example.com",
+        )
+        drive = _make_drive(company.company_id, title="Lifecycle QA", status="approved")
+
+        student_user = _make_user(
+            "student.shortcut.guard",
+            "student.shortcut.guard@example.com",
+            "student",
+        )
+        student = _make_student_profile(student_user.user_id, "CS21B9200")
+
+        application = Application(
+            student_id=student.student_id,
+            drive_id=drive.drive_id,
+            status="shortlisted",
+        )
+        db.session.add(application)
+        db.session.commit()
+
+        headers = _auth_headers(company_user.user_id, "company")
+        application_id = application.application_id
+
+    expected_error = (
+        "Direct status updates to interview, offered, or placed are not allowed. "
+        "Use interview and offer workflow APIs."
+    )
+
+    for blocked_status in ("interviewed", "selected", "placed"):
+        response = client.put(
+            f"/company/applications/{application_id}/status",
+            json={"status": blocked_status},
+            headers=headers,
+        )
+        assert response.status_code == 400
+        assert response.get_json()["error"] == expected_error
+
+    with app.app_context():
+        refreshed = db.session.get(Application, application_id)
+        assert refreshed is not None
+        assert refreshed.status == "shortlisted"
 
 
 def test_company_can_schedule_interview_and_update_result(app, client):
