@@ -17,6 +17,10 @@ vi.mock('../../src/api/api', () => ({
     getProfile: vi.fn(),
     getDrives: vi.fn(),
     getApplications: vi.fn(),
+    getInterviews: vi.fn(),
+    scheduleInterview: vi.fn(),
+    updateInterviewResult: vi.fn(),
+    createOffer: vi.fn(),
     scoreApplicationResume: vi.fn(),
     getNotifications: vi.fn(),
     createDrive: vi.fn(),
@@ -57,6 +61,14 @@ const buildApplicationsResponse = (items = []) => ({
 })
 
 const buildNotificationsResponse = (items = []) => ({
+  data: {
+    data: {
+      items
+    }
+  }
+})
+
+const buildInterviewsResponse = (items = []) => ({
   data: {
     data: {
       items
@@ -133,6 +145,45 @@ const configureBootstrapMocks = ({ approvalStatus = 'approved' } = {}) => {
     data: {
       data: {
         status: 'shortlisted'
+      }
+    }
+  })
+
+  companyApi.scheduleInterview.mockResolvedValue({
+    data: {
+      data: {
+        application_status: 'interviewed'
+      }
+    }
+  })
+
+  companyApi.createOffer.mockResolvedValue({
+    data: {
+      data: {
+        application_status: 'selected'
+      }
+    }
+  })
+
+  companyApi.getInterviews.mockResolvedValue(
+    buildInterviewsResponse([
+      {
+        interview_id: 901,
+        application_id: 501,
+        drive_id: 11,
+        result: 'pending',
+        feedback: ''
+      }
+    ])
+  )
+
+  companyApi.updateInterviewResult.mockResolvedValue({
+    data: {
+      data: {
+        interview_id: 901,
+        application_id: 501,
+        result: 'pass',
+        application_status: 'selected'
       }
     }
   })
@@ -475,6 +526,309 @@ describe('CompanyDashboard phase 6 integration', () => {
     expect(companyApi.updateApplicationStatus).toHaveBeenCalledWith(501, { status: 'shortlisted' })
     expect(wrapper.vm.allApplications[0].status).toBe('shortlisted')
     expect(wrapper.vm.toast.message).toContain('shortlisted')
+  })
+
+  it('opens interview modal before scheduling and submits validated payload', async () => {
+    const wrapper = makeWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    wrapper.vm.allApplications[0].status = 'shortlisted'
+
+    await wrapper.vm.advanceStage(wrapper.vm.allApplications[0], 'interview')
+    expect(wrapper.vm.showInterviewModal).toBe(true)
+    expect(companyApi.scheduleInterview).not.toHaveBeenCalled()
+
+    wrapper.vm.interviewForm = {
+      ...wrapper.vm.interviewForm,
+      interview_date: '2099-12-30T10:30',
+      interview_mode: 'online',
+      interviewer_name: 'Ari HR',
+      interview_link: 'https://meet.example.com/room-501',
+      interview_location: ''
+    }
+
+    await wrapper.vm.submitInterviewModal()
+    await flushPromises()
+
+    expect(companyApi.scheduleInterview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        application_id: 501,
+        interview_mode: 'online',
+        interviewer_name: 'Ari HR',
+        interview_link: 'https://meet.example.com/room-501',
+        interview_date: expect.any(String)
+      })
+    )
+    expect(companyApi.updateApplicationStatus).not.toHaveBeenCalled()
+    expect(wrapper.vm.showInterviewModal).toBe(false)
+    expect(wrapper.vm.allApplications[0].status).toBe('interview')
+    expect(wrapper.vm.toast.message).toContain('Interview scheduled')
+  })
+
+  it('opens interview result modal and updates application status for pass result', async () => {
+    const wrapper = makeWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    wrapper.vm.allApplications[0].status = 'interview'
+    wrapper.vm.allApplications[0].hasOffer = false
+
+    await wrapper.vm.openInterviewResultModal(wrapper.vm.allApplications[0])
+    await flushPromises()
+
+    expect(wrapper.vm.showInterviewResultModal).toBe(true)
+    expect(companyApi.getInterviews).toHaveBeenCalledWith({ page: 1, limit: 100, drive_id: 11 })
+
+    wrapper.vm.interviewResultForm = {
+      result: 'pass',
+      feedback: 'Strong communication and problem-solving skills.'
+    }
+
+    await wrapper.vm.submitInterviewResultModal()
+    await flushPromises()
+
+    expect(companyApi.updateInterviewResult).toHaveBeenCalledWith(901, {
+      result: 'pass',
+      feedback: 'Strong communication and problem-solving skills.'
+    })
+    expect(wrapper.vm.showInterviewResultModal).toBe(false)
+    expect(wrapper.vm.allApplications[0].status).toBe('offered')
+    expect(wrapper.vm.allApplications[0].hasOffer).toBe(false)
+    expect(wrapper.vm.toast.message).toContain('passed')
+  })
+
+  it('keeps interview-result submit blocked when no interview record exists', async () => {
+    companyApi.getInterviews.mockResolvedValueOnce(buildInterviewsResponse([]))
+
+    const wrapper = makeWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    wrapper.vm.allApplications[0].status = 'interview'
+
+    await wrapper.vm.openInterviewResultModal(wrapper.vm.allApplications[0])
+    await flushPromises()
+
+    expect(wrapper.vm.interviewResultFormError).toContain('No scheduled interview found')
+
+    await wrapper.vm.submitInterviewResultModal()
+    expect(companyApi.updateInterviewResult).not.toHaveBeenCalled()
+  })
+
+  it('surfaces interview-list API failures and keeps result modal state safe', async () => {
+    companyApi.getInterviews.mockRejectedValueOnce({
+      response: {
+        data: {
+          error: 'Interview service unavailable'
+        }
+      }
+    })
+
+    const wrapper = makeWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    wrapper.vm.allApplications[0].status = 'interview'
+
+    await wrapper.vm.openInterviewResultModal(wrapper.vm.allApplications[0])
+    await flushPromises()
+
+    expect(wrapper.vm.showInterviewResultModal).toBe(true)
+    expect(wrapper.vm.interviewResultInterviewId).toBeNull()
+    expect(wrapper.vm.interviewResultFormError).toContain('Interview service unavailable')
+    expect(wrapper.vm.toast.type).toBe('danger')
+  })
+
+  it('keeps interview result modal open when result submission API fails', async () => {
+    companyApi.updateInterviewResult.mockRejectedValueOnce({
+      response: {
+        data: {
+          error: 'Result update failed'
+        }
+      }
+    })
+
+    const wrapper = makeWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    wrapper.vm.allApplications[0].status = 'interview'
+    await wrapper.vm.openInterviewResultModal(wrapper.vm.allApplications[0])
+    await flushPromises()
+
+    wrapper.vm.interviewResultForm = {
+      result: 'pass',
+      feedback: 'Strong analytical skills'
+    }
+
+    await wrapper.vm.submitInterviewResultModal()
+    await flushPromises()
+
+    expect(companyApi.updateInterviewResult).toHaveBeenCalledWith(901, {
+      result: 'pass',
+      feedback: 'Strong analytical skills'
+    })
+    expect(wrapper.vm.showInterviewResultModal).toBe(true)
+    expect(wrapper.vm.interviewResultFormError).toContain('Result update failed')
+    expect(wrapper.vm.toast.type).toBe('danger')
+    expect(wrapper.vm.allApplications[0].status).toBe('interview')
+  })
+
+  it('opens offer modal before creating an offer and submits validated payload', async () => {
+    const wrapper = makeWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    wrapper.vm.allApplications[0].status = 'offered'
+    wrapper.vm.allApplications[0].hasOffer = false
+
+    await wrapper.vm.advanceStage(wrapper.vm.allApplications[0], 'offered')
+    expect(wrapper.vm.showOfferModal).toBe(true)
+    expect(companyApi.createOffer).not.toHaveBeenCalled()
+
+    wrapper.vm.offerForm = {
+      ...wrapper.vm.offerForm,
+      position: 'Site Reliability Engineer',
+      salary: '1450000',
+      joining_date: '2099-12-31'
+    }
+
+    await wrapper.vm.submitOfferModal()
+    await flushPromises()
+
+    expect(companyApi.createOffer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        application_id: 501,
+        salary: 1450000,
+        position: 'Site Reliability Engineer',
+        joining_date: '2099-12-31'
+      })
+    )
+    expect(companyApi.updateApplicationStatus).not.toHaveBeenCalled()
+    expect(wrapper.vm.showOfferModal).toBe(false)
+    expect(wrapper.vm.allApplications[0].status).toBe('offered')
+    expect(wrapper.vm.allApplications[0].hasOffer).toBe(true)
+    expect(wrapper.vm.toast.message).toContain('Offer released')
+  })
+
+  it('requires rejection reason and submits feedback from reject modal', async () => {
+    const wrapper = makeWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    const application = wrapper.vm.allApplications[0]
+
+    await wrapper.vm.rejectApp(application)
+    expect(wrapper.vm.showRejectModal).toBe(true)
+
+    wrapper.vm.rejectForm = {
+      rejection_reason: '',
+      notes: 'Panel rubric mismatch'
+    }
+    await wrapper.vm.submitRejectModal()
+
+    expect(companyApi.updateApplicationStatus).not.toHaveBeenCalled()
+    expect(wrapper.vm.rejectFormError).toContain('Rejection reason')
+
+    companyApi.updateApplicationStatus.mockResolvedValueOnce({
+      data: {
+        data: {
+          status: 'rejected',
+          rejection_reason: 'Skills mismatch',
+          notes: 'Panel rubric mismatch'
+        }
+      }
+    })
+
+    wrapper.vm.rejectForm = {
+      rejection_reason: 'Skills mismatch',
+      notes: 'Panel rubric mismatch'
+    }
+    await wrapper.vm.submitRejectModal()
+    await flushPromises()
+
+    expect(companyApi.updateApplicationStatus).toHaveBeenCalledWith(501, {
+      status: 'rejected',
+      rejection_reason: 'Skills mismatch',
+      notes: 'Panel rubric mismatch'
+    })
+    expect(wrapper.vm.showRejectModal).toBe(false)
+    expect(wrapper.vm.allApplications[0].status).toBe('rejected')
+    expect(wrapper.vm.toast.message).toContain('marked as rejected')
+  })
+
+  it('opens bulk shortlist modal and submits shared notes', async () => {
+    const wrapper = makeWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    wrapper.vm.selectedApps = [501]
+
+    await wrapper.vm.bulkShortlist()
+    expect(wrapper.vm.showBulkShortlistModal).toBe(true)
+
+    wrapper.vm.bulkShortlistForm = {
+      notes: 'Strong ATS and interview readiness.'
+    }
+
+    await wrapper.vm.submitBulkShortlistModal()
+    await flushPromises()
+
+    expect(companyApi.updateApplicationStatus).toHaveBeenCalledWith(501, {
+      status: 'shortlisted',
+      notes: 'Strong ATS and interview readiness.'
+    })
+    expect(wrapper.vm.showBulkShortlistModal).toBe(false)
+    expect(wrapper.vm.selectedApps).toHaveLength(0)
+    expect(wrapper.vm.allApplications[0].status).toBe('shortlisted')
+  })
+
+  it('validates bulk reject reason and submits shared rejection feedback', async () => {
+    const wrapper = makeWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    wrapper.vm.selectedApps = [501]
+
+    await wrapper.vm.bulkReject()
+    expect(wrapper.vm.showBulkRejectModal).toBe(true)
+
+    wrapper.vm.bulkRejectForm = {
+      rejection_reason: '',
+      notes: 'Panel feedback below threshold.'
+    }
+    await wrapper.vm.submitBulkRejectModal()
+
+    expect(companyApi.updateApplicationStatus).not.toHaveBeenCalled()
+    expect(wrapper.vm.bulkRejectFormError).toContain('Rejection reason')
+
+    companyApi.updateApplicationStatus.mockResolvedValueOnce({
+      data: {
+        data: {
+          status: 'rejected',
+          rejection_reason: 'Does not meet role requirements',
+          notes: 'Panel feedback below threshold.'
+        }
+      }
+    })
+
+    wrapper.vm.bulkRejectForm = {
+      rejection_reason: 'Does not meet role requirements',
+      notes: 'Panel feedback below threshold.'
+    }
+
+    await wrapper.vm.submitBulkRejectModal()
+    await flushPromises()
+
+    expect(companyApi.updateApplicationStatus).toHaveBeenCalledWith(501, {
+      status: 'rejected',
+      rejection_reason: 'Does not meet role requirements',
+      notes: 'Panel feedback below threshold.'
+    })
+    expect(wrapper.vm.showBulkRejectModal).toBe(false)
+    expect(wrapper.vm.selectedApps).toHaveLength(0)
+    expect(wrapper.vm.allApplications[0].status).toBe('rejected')
   })
 
   it('runs ATS screening for an application and opens the screening modal', async () => {

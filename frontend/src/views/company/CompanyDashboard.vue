@@ -130,6 +130,7 @@
             @shortlist="shortlistApp"
             @reject="rejectApp"
             @advance="advanceStage"
+            @update-interview-result="openInterviewResultModal"
             @screen-application="screenApplicationResume"
           />
 
@@ -258,6 +259,344 @@
       </div>
     </Transition>
 
+    <Transition name="rq-modal">
+      <div
+        v-if="showInterviewModal"
+        class="rq-modal-overlay"
+        @click.self="closeInterviewModal"
+      >
+        <div class="rq-modal">
+          <div class="rq-modal-hd">
+            <div>
+              <h3 class="rq-card-title">Schedule Interview</h3>
+              <p class="rq-sm rq-dim">
+                {{ interviewTargetApp?.student || 'Candidate' }} · {{ interviewTargetApp?.drive || 'Drive' }}
+              </p>
+            </div>
+            <button class="rq-modal-close" type="button" @click="closeInterviewModal">×</button>
+          </div>
+
+          <div class="rq-modal-body">
+            <p v-if="interviewFormError" class="rq-sm" style="color:var(--rq-red); font-weight:700;">{{ interviewFormError }}</p>
+
+            <div class="rq-form-group">
+              <label class="rq-form-label">Interview Date and Time</label>
+              <input
+                v-model="interviewForm.interview_date"
+                type="datetime-local"
+                class="rq-form-input"
+              />
+            </div>
+
+            <div class="rq-form-group">
+              <label class="rq-form-label">Interview Mode</label>
+              <select v-model="interviewForm.interview_mode" class="rq-form-input rq-select-field">
+                <option value="online">Online</option>
+                <option value="offline">Offline</option>
+              </select>
+            </div>
+
+            <div class="rq-form-group">
+              <label class="rq-form-label">Interviewer Name</label>
+              <input
+                v-model="interviewForm.interviewer_name"
+                type="text"
+                class="rq-form-input"
+                placeholder="Panel or interviewer"
+              />
+            </div>
+
+            <div v-if="interviewForm.interview_mode === 'online'" class="rq-form-group">
+              <label class="rq-form-label">Interview Link</label>
+              <input
+                v-model="interviewForm.interview_link"
+                type="url"
+                class="rq-form-input"
+                placeholder="https://meet.example.com/session"
+              />
+            </div>
+
+            <div v-else class="rq-form-group">
+              <label class="rq-form-label">Interview Location</label>
+              <input
+                v-model="interviewForm.interview_location"
+                type="text"
+                class="rq-form-input"
+                placeholder="Block, room, office address"
+              />
+            </div>
+          </div>
+
+          <div class="rq-modal-ft">
+            <button class="rq-ghost" type="button" @click="closeInterviewModal">Cancel</button>
+            <button class="rq-btn-purple" type="button" :disabled="isSubmittingInterview" @click="submitInterviewModal">
+              {{ isSubmittingInterview ? 'Scheduling...' : 'Schedule Interview' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <Transition name="rq-modal">
+      <div
+        v-if="showOfferModal"
+        class="rq-modal-overlay"
+        @click.self="closeOfferModal"
+      >
+        <div class="rq-modal">
+          <div class="rq-modal-hd">
+            <div>
+              <h3 class="rq-card-title">Release Offer</h3>
+              <p class="rq-sm rq-dim">
+                {{ offerTargetApp?.student || 'Candidate' }} · {{ offerTargetApp?.drive || 'Drive' }}
+              </p>
+            </div>
+            <button class="rq-modal-close" type="button" @click="closeOfferModal">×</button>
+          </div>
+
+          <div class="rq-modal-body">
+            <p v-if="offerFormError" class="rq-sm" style="color:var(--rq-red); font-weight:700;">{{ offerFormError }}</p>
+
+            <div class="rq-form-group">
+              <label class="rq-form-label">Position</label>
+              <input
+                v-model="offerForm.position"
+                type="text"
+                class="rq-form-input"
+                placeholder="Offered role title"
+              />
+            </div>
+
+            <div class="rq-form-group">
+              <label class="rq-form-label">Salary (INR per annum)</label>
+              <input
+                v-model="offerForm.salary"
+                type="number"
+                min="1"
+                step="1"
+                class="rq-form-input"
+                placeholder="1450000"
+              />
+            </div>
+
+            <div class="rq-form-group">
+              <label class="rq-form-label">Joining Date</label>
+              <input
+                v-model="offerForm.joining_date"
+                type="date"
+                class="rq-form-input"
+              />
+            </div>
+          </div>
+
+          <div class="rq-modal-ft">
+            <button class="rq-ghost" type="button" @click="closeOfferModal">Cancel</button>
+            <button class="rq-btn-ok" type="button" :disabled="isSubmittingOffer" @click="submitOfferModal">
+              {{ isSubmittingOffer ? 'Releasing...' : 'Release Offer' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <Transition name="rq-modal">
+      <div
+        v-if="showInterviewResultModal"
+        class="rq-modal-overlay"
+        @click.self="closeInterviewResultModal"
+      >
+        <div class="rq-modal">
+          <div class="rq-modal-hd">
+            <div>
+              <h3 class="rq-card-title">Update Interview Result</h3>
+              <p class="rq-sm rq-dim">
+                {{ interviewResultTargetApp?.student || 'Candidate' }} · {{ interviewResultTargetApp?.drive || 'Drive' }}
+              </p>
+            </div>
+            <button class="rq-modal-close" type="button" @click="closeInterviewResultModal">×</button>
+          </div>
+
+          <div class="rq-modal-body">
+            <p v-if="interviewResultFormError" class="rq-sm" style="color:var(--rq-red); font-weight:700;">{{ interviewResultFormError }}</p>
+            <p v-if="isLoadingInterviewRecord" class="rq-sm rq-dim">Loading latest interview details...</p>
+
+            <template v-else>
+              <div class="rq-form-group">
+                <label class="rq-form-label">Interview Outcome</label>
+                <select v-model="interviewResultForm.result" class="rq-form-input rq-select-field" :disabled="!interviewResultInterviewId">
+                  <option value="">Select outcome</option>
+                  <option value="pass">Pass</option>
+                  <option value="fail">Fail</option>
+                </select>
+              </div>
+
+              <div class="rq-form-group">
+                <label class="rq-form-label">Feedback (Optional)</label>
+                <textarea
+                  v-model="interviewResultForm.feedback"
+                  class="rq-form-input rq-form-textarea"
+                  rows="3"
+                  placeholder="Share panel feedback for this candidate"
+                  :disabled="!interviewResultInterviewId"
+                ></textarea>
+              </div>
+            </template>
+          </div>
+
+          <div class="rq-modal-ft">
+            <button class="rq-ghost" type="button" @click="closeInterviewResultModal">Cancel</button>
+            <button
+              class="rq-btn-purple"
+              type="button"
+              :disabled="isSubmittingInterviewResult || isLoadingInterviewRecord || !interviewResultInterviewId"
+              @click="submitInterviewResultModal"
+            >
+              {{ isSubmittingInterviewResult ? 'Saving...' : 'Save Result' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <Transition name="rq-modal">
+      <div
+        v-if="showRejectModal"
+        class="rq-modal-overlay"
+        @click.self="closeRejectModal"
+      >
+        <div class="rq-modal">
+          <div class="rq-modal-hd">
+            <div>
+              <h3 class="rq-card-title">Reject Application</h3>
+              <p class="rq-sm rq-dim">
+                {{ rejectTargetApp?.student || 'Candidate' }} · {{ rejectTargetApp?.drive || 'Drive' }}
+              </p>
+            </div>
+            <button class="rq-modal-close" type="button" @click="closeRejectModal">×</button>
+          </div>
+
+          <div class="rq-modal-body">
+            <p v-if="rejectFormError" class="rq-sm" style="color:var(--rq-red); font-weight:700;">{{ rejectFormError }}</p>
+
+            <div class="rq-form-group">
+              <label class="rq-form-label">Rejection Reason</label>
+              <textarea
+                v-model="rejectForm.rejection_reason"
+                class="rq-form-input rq-form-textarea"
+                rows="3"
+                placeholder="Share why the profile could not be selected"
+              ></textarea>
+            </div>
+
+            <div class="rq-form-group">
+              <label class="rq-form-label">Internal Notes (Optional)</label>
+              <textarea
+                v-model="rejectForm.notes"
+                class="rq-form-input rq-form-textarea"
+                rows="3"
+                placeholder="Additional panel notes"
+              ></textarea>
+            </div>
+          </div>
+
+          <div class="rq-modal-ft">
+            <button class="rq-ghost" type="button" @click="closeRejectModal">Cancel</button>
+            <button class="rq-btn-no" type="button" :disabled="isSubmittingReject" @click="submitRejectModal">
+              {{ isSubmittingReject ? 'Rejecting...' : 'Reject Candidate' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <Transition name="rq-modal">
+      <div
+        v-if="showBulkShortlistModal"
+        class="rq-modal-overlay"
+        @click.self="closeBulkShortlistModal"
+      >
+        <div class="rq-modal">
+          <div class="rq-modal-hd">
+            <div>
+              <h3 class="rq-card-title">Bulk Shortlist</h3>
+              <p class="rq-sm rq-dim">Selected applications: {{ selectedApps.length }}</p>
+            </div>
+            <button class="rq-modal-close" type="button" @click="closeBulkShortlistModal">×</button>
+          </div>
+
+          <div class="rq-modal-body">
+            <p v-if="bulkShortlistFormError" class="rq-sm" style="color:var(--rq-red); font-weight:700;">{{ bulkShortlistFormError }}</p>
+
+            <div class="rq-form-group">
+              <label class="rq-form-label">Feedback Note (Optional)</label>
+              <textarea
+                v-model="bulkShortlistForm.notes"
+                class="rq-form-input rq-form-textarea"
+                rows="3"
+                placeholder="Shared note for shortlisted candidates"
+              ></textarea>
+            </div>
+          </div>
+
+          <div class="rq-modal-ft">
+            <button class="rq-ghost" type="button" @click="closeBulkShortlistModal">Cancel</button>
+            <button class="rq-btn-ok" type="button" :disabled="isSubmittingBulkShortlist" @click="submitBulkShortlistModal">
+              {{ isSubmittingBulkShortlist ? 'Shortlisting...' : 'Shortlist Selected' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <Transition name="rq-modal">
+      <div
+        v-if="showBulkRejectModal"
+        class="rq-modal-overlay"
+        @click.self="closeBulkRejectModal"
+      >
+        <div class="rq-modal">
+          <div class="rq-modal-hd">
+            <div>
+              <h3 class="rq-card-title">Bulk Reject</h3>
+              <p class="rq-sm rq-dim">Selected applications: {{ selectedApps.length }}</p>
+            </div>
+            <button class="rq-modal-close" type="button" @click="closeBulkRejectModal">×</button>
+          </div>
+
+          <div class="rq-modal-body">
+            <p v-if="bulkRejectFormError" class="rq-sm" style="color:var(--rq-red); font-weight:700;">{{ bulkRejectFormError }}</p>
+
+            <div class="rq-form-group">
+              <label class="rq-form-label">Rejection Reason</label>
+              <textarea
+                v-model="bulkRejectForm.rejection_reason"
+                class="rq-form-input rq-form-textarea"
+                rows="3"
+                placeholder="Shared rejection reason for selected candidates"
+              ></textarea>
+            </div>
+
+            <div class="rq-form-group">
+              <label class="rq-form-label">Internal Notes (Optional)</label>
+              <textarea
+                v-model="bulkRejectForm.notes"
+                class="rq-form-input rq-form-textarea"
+                rows="3"
+                placeholder="Additional panel notes"
+              ></textarea>
+            </div>
+          </div>
+
+          <div class="rq-modal-ft">
+            <button class="rq-ghost" type="button" @click="closeBulkRejectModal">Cancel</button>
+            <button class="rq-btn-no" type="button" :disabled="isSubmittingBulkReject" @click="submitBulkRejectModal">
+              {{ isSubmittingBulkReject ? 'Rejecting...' : 'Reject Selected' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
     <Transition name="rq-toast">
       <Toast v-if="toast.show" :toast="toast" @dismiss="toast.show = false" />
     </Transition>
@@ -318,6 +657,7 @@ const AVATAR_COLORS = Object.freeze([
 ])
 
 const BRANCH_COLORS = Object.freeze(['#2563EB', '#059669', '#D97706', '#7C3AED', '#DC2626'])
+const DEFAULT_OFFER_SALARY = 600000
 
 const NAV_SVGS = Object.freeze({
   home: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 6.5L8 2l6 4.5V14a1 1 0 01-1 1H3a1 1 0 01-1-1V6.5z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 15V9h4v6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
@@ -352,6 +692,51 @@ function createDefaultNewDrive() {
     minCgpa: 7.5,
     branches: 'CSE',
     description: ''
+  }
+}
+
+function createDefaultInterviewForm() {
+  return {
+    interview_date: '',
+    interview_mode: 'online',
+    interviewer_name: '',
+    interview_link: '',
+    interview_location: ''
+  }
+}
+
+function createDefaultInterviewResultForm() {
+  return {
+    result: '',
+    feedback: ''
+  }
+}
+
+function createDefaultOfferForm() {
+  return {
+    position: '',
+    salary: '',
+    joining_date: ''
+  }
+}
+
+function createDefaultRejectForm() {
+  return {
+    rejection_reason: '',
+    notes: ''
+  }
+}
+
+function createDefaultBulkShortlistForm() {
+  return {
+    notes: ''
+  }
+}
+
+function createDefaultBulkRejectForm() {
+  return {
+    rejection_reason: '',
+    notes: ''
   }
 }
 
@@ -403,6 +788,38 @@ export default {
       screeningError: '',
 
       newDrive: createDefaultNewDrive(),
+
+      showInterviewModal: false,
+      showInterviewResultModal: false,
+      showOfferModal: false,
+      showRejectModal: false,
+      interviewTargetApp: null,
+      interviewResultTargetApp: null,
+      interviewResultInterviewId: null,
+      offerTargetApp: null,
+      rejectTargetApp: null,
+      interviewForm: createDefaultInterviewForm(),
+      interviewResultForm: createDefaultInterviewResultForm(),
+      offerForm: createDefaultOfferForm(),
+      rejectForm: createDefaultRejectForm(),
+      interviewFormError: '',
+      interviewResultFormError: '',
+      offerFormError: '',
+      rejectFormError: '',
+      isSubmittingInterview: false,
+      isLoadingInterviewRecord: false,
+      isSubmittingInterviewResult: false,
+      isSubmittingOffer: false,
+      isSubmittingReject: false,
+
+      showBulkShortlistModal: false,
+      showBulkRejectModal: false,
+      bulkShortlistForm: createDefaultBulkShortlistForm(),
+      bulkRejectForm: createDefaultBulkRejectForm(),
+      bulkShortlistFormError: '',
+      bulkRejectFormError: '',
+      isSubmittingBulkShortlist: false,
+      isSubmittingBulkReject: false,
 
       toast: { show: false, message: '', icon: '', type: 'success' },
       toastTimerId: null
@@ -791,6 +1208,7 @@ export default {
         status: this.normalizeApplicationStatus(item.status || item.legacy_status),
         initials: this.initialsFor(studentName),
         color: this.colorFor(studentName),
+        hasOffer: Boolean(item.has_offer || item.placement_offer),
         notes: item.notes || '',
         rejectionReason: item.rejection_reason || ''
       }
@@ -876,6 +1294,12 @@ export default {
       }
       if (Object.prototype.hasOwnProperty.call(updatedPayload, 'rejection_reason')) {
         target.rejectionReason = updatedPayload.rejection_reason || ''
+      }
+      if (Object.prototype.hasOwnProperty.call(updatedPayload, 'has_offer')) {
+        target.hasOffer = Boolean(updatedPayload.has_offer)
+      }
+      if (Object.prototype.hasOwnProperty.call(updatedPayload, 'hasOffer')) {
+        target.hasOffer = Boolean(updatedPayload.hasOffer)
       }
 
       this.refreshDriveStats()
@@ -1130,6 +1554,501 @@ export default {
         return false
       }
     },
+    toDateTimeLocalValue(rawValue) {
+      const parsed = rawValue instanceof Date ? rawValue : new Date(rawValue)
+      if (Number.isNaN(parsed.getTime())) {
+        return ''
+      }
+
+      const timezoneOffsetMs = parsed.getTimezoneOffset() * 60000
+      return new Date(parsed.getTime() - timezoneOffsetMs).toISOString().slice(0, 16)
+    },
+    toDateValue(rawValue) {
+      const parsed = rawValue instanceof Date ? rawValue : new Date(rawValue)
+      if (Number.isNaN(parsed.getTime())) {
+        return ''
+      }
+
+      const timezoneOffsetMs = parsed.getTimezoneOffset() * 60000
+      return new Date(parsed.getTime() - timezoneOffsetMs).toISOString().slice(0, 10)
+    },
+    findDriveForApplication(application) {
+      return this.myDrives.find((drive) => Number(drive.id) === Number(application?.driveId)) || null
+    },
+    resolveOfferSalary(application) {
+      const drive = this.findDriveForApplication(application)
+      const lpaCandidates = [
+        Number(drive?.salaryLpa),
+        this.parseSalaryLpa(drive?.salary)
+      ]
+
+      for (const candidate of lpaCandidates) {
+        const value = Number(candidate)
+        if (Number.isFinite(value) && value > 0) {
+          return Math.round(value * 100000)
+        }
+      }
+
+      return DEFAULT_OFFER_SALARY
+    },
+    openInterviewModal(application) {
+      if (!this.canManageApplications) {
+        this.toast_show('Application actions are enabled only after admin approval.', 'warning')
+        return
+      }
+
+      if (!application?.id) {
+        return
+      }
+
+      const interviewDate = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000)
+      interviewDate.setHours(10, 0, 0, 0)
+
+      this.interviewTargetApp = application
+      this.interviewForm = {
+        ...createDefaultInterviewForm(),
+        interview_date: this.toDateTimeLocalValue(interviewDate),
+        interview_mode: 'online',
+        interviewer_name: this.normalizeInput(this.companyProfile.hrName)
+      }
+      this.interviewFormError = ''
+      this.showInterviewModal = true
+    },
+    closeInterviewModal() {
+      this.showInterviewModal = false
+      this.interviewTargetApp = null
+      this.interviewForm = createDefaultInterviewForm()
+      this.interviewFormError = ''
+      this.isSubmittingInterview = false
+    },
+    async openInterviewResultModal(application) {
+      if (!this.canManageApplications) {
+        this.toast_show('Application actions are enabled only after admin approval.', 'warning')
+        return
+      }
+
+      if (!application?.id) {
+        return
+      }
+
+      this.showInterviewResultModal = true
+      this.interviewResultTargetApp = application
+      this.interviewResultInterviewId = null
+      this.interviewResultForm = createDefaultInterviewResultForm()
+      this.interviewResultFormError = ''
+      this.isLoadingInterviewRecord = true
+
+      try {
+        const params = {
+          page: 1,
+          limit: 100
+        }
+
+        if (application.driveId) {
+          params.drive_id = application.driveId
+        }
+
+        const response = await companyApi.getInterviews(params)
+        const items = Array.isArray(response?.data?.data?.items) ? response.data.data.items : []
+        const targetInterview = items.find((item) => Number(item.application_id) === Number(application.id))
+
+        if (!targetInterview) {
+          this.interviewResultFormError = 'No scheduled interview found for this application. Schedule an interview first.'
+          this.toast_show(this.interviewResultFormError, 'warning')
+          return
+        }
+
+        this.interviewResultInterviewId = Number(targetInterview.interview_id || targetInterview.id || 0)
+
+        const existingResult = String(targetInterview.result || '').trim().toLowerCase()
+        this.interviewResultForm = {
+          ...createDefaultInterviewResultForm(),
+          result: ['pass', 'fail'].includes(existingResult) ? existingResult : '',
+          feedback: this.normalizeInput(targetInterview.feedback)
+        }
+      } catch (error) {
+        this.interviewResultFormError = this.handleApiError(error, 'Unable to load interview details.')
+        this.toast_show(this.interviewResultFormError, 'danger')
+      } finally {
+        this.isLoadingInterviewRecord = false
+      }
+    },
+    closeInterviewResultModal() {
+      this.showInterviewResultModal = false
+      this.interviewResultTargetApp = null
+      this.interviewResultInterviewId = null
+      this.interviewResultForm = createDefaultInterviewResultForm()
+      this.interviewResultFormError = ''
+      this.isLoadingInterviewRecord = false
+      this.isSubmittingInterviewResult = false
+    },
+    validateInterviewResultForm() {
+      if (!this.interviewResultTargetApp?.id) {
+        return 'Select an application before updating interview result.'
+      }
+
+      if (!this.interviewResultInterviewId) {
+        return 'Interview record is unavailable for this application.'
+      }
+
+      const result = String(this.interviewResultForm.result || '').trim().toLowerCase()
+      if (!['pass', 'fail'].includes(result)) {
+        return 'Select interview outcome.'
+      }
+
+      return ''
+    },
+    buildInterviewResultPayload(formValues = null) {
+      const formPayload = formValues || this.interviewResultForm
+      const payload = {
+        result: String(formPayload.result || '').trim().toLowerCase()
+      }
+
+      const feedback = this.normalizeInput(formPayload.feedback)
+      if (feedback) {
+        payload.feedback = feedback
+      }
+
+      return payload
+    },
+    async submitInterviewResultModal() {
+      if (this.isSubmittingInterviewResult || this.isLoadingInterviewRecord) {
+        return
+      }
+
+      const validationError = this.validateInterviewResultForm()
+      if (validationError) {
+        this.interviewResultFormError = validationError
+        return
+      }
+
+      this.isSubmittingInterviewResult = true
+      this.interviewResultFormError = ''
+
+      try {
+        const payload = this.buildInterviewResultPayload(this.interviewResultForm)
+        const response = await companyApi.updateInterviewResult(this.interviewResultInterviewId, payload)
+        const nextStatus = response?.data?.data?.application_status || (payload.result === 'pass' ? 'offered' : 'rejected')
+
+        const updatePayload = {
+          status: nextStatus,
+          has_offer: false
+        }
+        if (payload.result === 'fail') {
+          updatePayload.rejection_reason = payload.feedback || 'Rejected after interview'
+        } else {
+          updatePayload.rejection_reason = ''
+        }
+
+        this.applyApplicationUpdate(this.interviewResultTargetApp.id, updatePayload)
+
+        const statusText = payload.result === 'pass' ? 'passed' : 'not selected'
+        this.toast_show(`Interview result updated: ${this.interviewResultTargetApp.student} ${statusText}.`, 'success')
+        this.closeInterviewResultModal()
+      } catch (error) {
+        this.interviewResultFormError = this.handleApiError(error, 'Unable to update interview result.')
+        this.toast_show(this.interviewResultFormError, 'danger')
+      } finally {
+        this.isSubmittingInterviewResult = false
+      }
+    },
+    validateInterviewForm() {
+      if (!this.interviewTargetApp?.id) {
+        return 'Select an application before scheduling an interview.'
+      }
+
+      const mode = String(this.interviewForm.interview_mode || '').trim().toLowerCase()
+      if (!this.interviewForm.interview_date) {
+        return 'Interview date and time is required.'
+      }
+
+      const parsedInterviewDate = new Date(this.interviewForm.interview_date)
+      if (Number.isNaN(parsedInterviewDate.getTime())) {
+        return 'Enter a valid interview date and time.'
+      }
+
+      if (!['online', 'offline'].includes(mode)) {
+        return 'Select a valid interview mode.'
+      }
+
+      if (mode === 'online' && !this.normalizeInput(this.interviewForm.interview_link)) {
+        return 'Interview link is required for online interviews.'
+      }
+
+      if (mode === 'offline' && !this.normalizeInput(this.interviewForm.interview_location)) {
+        return 'Interview location is required for offline interviews.'
+      }
+
+      return ''
+    },
+    buildInterviewPayload(application, formValues = null) {
+      const formPayload = formValues || this.interviewForm
+      const mode = String(formPayload.interview_mode || 'online').trim().toLowerCase()
+      const parsedInterviewDate = new Date(formPayload.interview_date)
+
+      const payload = {
+        application_id: Number(application.id),
+        interview_date: parsedInterviewDate.toISOString(),
+        interview_mode: mode
+      }
+
+      const interviewerName = this.normalizeInput(formPayload.interviewer_name || this.companyProfile.hrName)
+      if (interviewerName) {
+        payload.interviewer_name = interviewerName
+      }
+
+      const interviewLink = this.normalizeInput(formPayload.interview_link)
+      const interviewLocation = this.normalizeInput(formPayload.interview_location)
+
+      if (mode === 'online' && interviewLink) {
+        payload.interview_link = interviewLink
+      }
+
+      if (mode === 'offline' && interviewLocation) {
+        payload.interview_location = interviewLocation
+      }
+
+      return payload
+    },
+    async submitInterviewModal() {
+      if (this.isSubmittingInterview) {
+        return
+      }
+
+      const validationError = this.validateInterviewForm()
+      if (validationError) {
+        this.interviewFormError = validationError
+        return
+      }
+
+      this.isSubmittingInterview = true
+      this.interviewFormError = ''
+
+      try {
+        const payload = this.buildInterviewPayload(this.interviewTargetApp, this.interviewForm)
+        const ok = await this.scheduleInterviewForApplication(this.interviewTargetApp, payload)
+        if (ok) {
+          this.closeInterviewModal()
+        }
+      } finally {
+        this.isSubmittingInterview = false
+      }
+    },
+    openOfferModal(application) {
+      if (!this.canManageApplications) {
+        this.toast_show('Application actions are enabled only after admin approval.', 'warning')
+        return
+      }
+
+      if (!application?.id) {
+        return
+      }
+
+      if (application.hasOffer) {
+        this.toast_show('Offer has already been released for this candidate.', 'info')
+        return
+      }
+
+      const drive = this.findDriveForApplication(application)
+      const joiningDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+
+      this.offerTargetApp = application
+      this.offerForm = {
+        ...createDefaultOfferForm(),
+        position: drive?.role || drive?.title || application.drive || 'Placement Offer',
+        salary: String(this.resolveOfferSalary(application)),
+        joining_date: this.toDateValue(joiningDate)
+      }
+      this.offerFormError = ''
+      this.showOfferModal = true
+    },
+    closeOfferModal() {
+      this.showOfferModal = false
+      this.offerTargetApp = null
+      this.offerForm = createDefaultOfferForm()
+      this.offerFormError = ''
+      this.isSubmittingOffer = false
+    },
+    validateOfferForm() {
+      if (!this.offerTargetApp?.id) {
+        return 'Select an application before releasing an offer.'
+      }
+
+      const position = this.normalizeInput(this.offerForm.position)
+      if (!position) {
+        return 'Position is required.'
+      }
+
+      const salary = parseFloat(String(this.offerForm.salary || '').replace(/,/g, '').trim())
+      if (!Number.isFinite(salary) || salary <= 0) {
+        return 'Salary must be a valid positive number.'
+      }
+
+      if (!this.offerForm.joining_date) {
+        return 'Joining date is required.'
+      }
+
+      const parsedJoiningDate = new Date(`${this.offerForm.joining_date}T00:00:00`)
+      if (Number.isNaN(parsedJoiningDate.getTime())) {
+        return 'Enter a valid joining date.'
+      }
+
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      if (parsedJoiningDate < today) {
+        return 'Joining date cannot be in the past.'
+      }
+
+      return ''
+    },
+    buildOfferPayload(application, formValues = null) {
+      const formPayload = formValues || this.offerForm
+      const drive = this.findDriveForApplication(application)
+      const salary = parseFloat(String(formPayload.salary || '').replace(/,/g, '').trim())
+
+      return {
+        application_id: Number(application.id),
+        salary: Number.isFinite(salary) ? salary : this.resolveOfferSalary(application),
+        position: this.normalizeInput(formPayload.position) || drive?.role || drive?.title || application.drive || 'Placement Offer',
+        joining_date: this.normalizeInput(formPayload.joining_date) || this.toDateValue(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000))
+      }
+    },
+    async submitOfferModal() {
+      if (this.isSubmittingOffer) {
+        return
+      }
+
+      const validationError = this.validateOfferForm()
+      if (validationError) {
+        this.offerFormError = validationError
+        return
+      }
+
+      this.isSubmittingOffer = true
+      this.offerFormError = ''
+
+      try {
+        const payload = this.buildOfferPayload(this.offerTargetApp, this.offerForm)
+        const ok = await this.createOfferForApplication(this.offerTargetApp, payload)
+        if (ok) {
+          this.closeOfferModal()
+        }
+      } finally {
+        this.isSubmittingOffer = false
+      }
+    },
+    openRejectModal(application) {
+      if (!this.canManageApplications) {
+        this.toast_show('Application actions are enabled only after admin approval.', 'warning')
+        return
+      }
+
+      if (!application?.id) {
+        return
+      }
+
+      this.rejectTargetApp = application
+      this.rejectForm = {
+        ...createDefaultRejectForm(),
+        rejection_reason: this.normalizeInput(application.rejectionReason),
+        notes: this.normalizeInput(application.notes)
+      }
+      this.rejectFormError = ''
+      this.showRejectModal = true
+    },
+    closeRejectModal() {
+      this.showRejectModal = false
+      this.rejectTargetApp = null
+      this.rejectForm = createDefaultRejectForm()
+      this.rejectFormError = ''
+      this.isSubmittingReject = false
+    },
+    validateRejectForm() {
+      if (!this.rejectTargetApp?.id) {
+        return 'Select an application before submitting rejection feedback.'
+      }
+
+      const rejectionReason = this.normalizeInput(this.rejectForm.rejection_reason)
+      if (!rejectionReason) {
+        return 'Rejection reason is required.'
+      }
+
+      if (rejectionReason.length < 5) {
+        return 'Rejection reason must be at least 5 characters.'
+      }
+
+      return ''
+    },
+    async submitRejectModal() {
+      if (this.isSubmittingReject) {
+        return
+      }
+
+      const validationError = this.validateRejectForm()
+      if (validationError) {
+        this.rejectFormError = validationError
+        return
+      }
+
+      this.isSubmittingReject = true
+      this.rejectFormError = ''
+
+      try {
+        const payload = {
+          status: 'rejected',
+          rejection_reason: this.normalizeInput(this.rejectForm.rejection_reason),
+          notes: this.normalizeInput(this.rejectForm.notes)
+        }
+
+        const ok = await this.updateApplicationStatus(
+          this.rejectTargetApp,
+          payload,
+          `${this.rejectTargetApp.student} marked as rejected.`
+        )
+
+        if (ok) {
+          this.closeRejectModal()
+        }
+      } finally {
+        this.isSubmittingReject = false
+      }
+    },
+    async scheduleInterviewForApplication(application, payloadOverride = null) {
+      if (!this.canManageApplications) {
+        this.toast_show('Application actions are enabled only after admin approval.', 'warning')
+        return false
+      }
+
+      try {
+        const payload = payloadOverride || this.buildInterviewPayload(application)
+        const response = await companyApi.scheduleInterview(payload)
+        const nextStatus = response?.data?.data?.application_status || 'interview'
+        this.applyApplicationUpdate(application.id, { status: nextStatus })
+        this.toast_show(`Interview scheduled for ${application.student}.`, 'success')
+        return true
+      } catch (error) {
+        this.handleApiError(error, 'Unable to schedule interview.', { showToast: true })
+        return false
+      }
+    },
+    async createOfferForApplication(application, payloadOverride = null) {
+      if (!this.canManageApplications) {
+        this.toast_show('Application actions are enabled only after admin approval.', 'warning')
+        return false
+      }
+
+      try {
+        const payload = payloadOverride || this.buildOfferPayload(application)
+        const response = await companyApi.createOffer(payload)
+        const nextStatus = response?.data?.data?.application_status || 'offered'
+        this.applyApplicationUpdate(application.id, { status: nextStatus, has_offer: true })
+        this.toast_show(`Offer released for ${application.student}.`, 'success')
+        return true
+      } catch (error) {
+        this.handleApiError(error, 'Unable to release offer.', { showToast: true })
+        return false
+      }
+    },
     async screenApplicationResume(application) {
       const applicationId = Number(application?.id || 0)
       if (!applicationId || this.isScoringResume[applicationId]) {
@@ -1165,13 +2084,28 @@ export default {
       await this.updateApplicationStatus(application, { status: 'shortlisted' }, `${application.student} shortlisted.`)
     },
     async rejectApp(application) {
-      await this.updateApplicationStatus(
-        application,
-        { status: 'rejected', rejection_reason: 'Not selected for this role.' },
-        `${application.student} marked as rejected.`
-      )
+      this.openRejectModal(application)
     },
     async advanceStage(application, stage) {
+      if (!application?.id) {
+        return
+      }
+
+      if (stage === 'interview') {
+        this.openInterviewModal(application)
+        return
+      }
+
+      if (stage === 'offered') {
+        if (application.status === 'interview') {
+          this.openInterviewResultModal(application)
+          return
+        }
+
+        this.openOfferModal(application)
+        return
+      }
+
       const messages = {
         interview: `Interview stage set for ${application.student}.`,
         offered: `Offer stage set for ${application.student}.`
@@ -1199,20 +2133,79 @@ export default {
         return
       }
 
-      let successCount = 0
-      for (const applicationId of this.selectedApps) {
-        const application = this.allApplications.find((entry) => entry.id === applicationId)
-        if (!application || !['applied', 'pending'].includes(application.status)) {
-          continue
-        }
+      this.openBulkShortlistModal()
+    },
+    closeBulkShortlistModal() {
+      this.showBulkShortlistModal = false
+      this.bulkShortlistForm = createDefaultBulkShortlistForm()
+      this.bulkShortlistFormError = ''
+      this.isSubmittingBulkShortlist = false
+    },
+    openBulkShortlistModal() {
+      if (!this.canManageApplications) {
+        this.toast_show('Application actions are enabled only after admin approval.', 'warning')
+        return
+      }
 
-        const ok = await this.updateApplicationStatus(application, { status: 'shortlisted' }, `${application.student} shortlisted.`)
-        if (ok) {
-          successCount += 1
+      if (!this.selectedApps.length) {
+        this.toast_show('Select at least one application first.', 'warning')
+        return
+      }
+
+      this.bulkShortlistForm = createDefaultBulkShortlistForm()
+      this.bulkShortlistFormError = ''
+      this.showBulkShortlistModal = true
+    },
+    validateBulkShortlistForm() {
+      if (!this.selectedApps.length) {
+        return 'Select at least one application before bulk shortlist.'
+      }
+
+      return ''
+    },
+    async submitBulkShortlistModal() {
+      if (this.isSubmittingBulkShortlist) {
+        return
+      }
+
+      const validationError = this.validateBulkShortlistForm()
+      if (validationError) {
+        this.bulkShortlistFormError = validationError
+        return
+      }
+
+      this.isSubmittingBulkShortlist = true
+      this.bulkShortlistFormError = ''
+
+      let successCount = 0
+      try {
+        const selectedApplicationIds = [...this.selectedApps]
+        const notes = this.normalizeInput(this.bulkShortlistForm.notes)
+
+        for (const applicationId of selectedApplicationIds) {
+          const application = this.allApplications.find((entry) => entry.id === applicationId)
+          if (!application || !['applied', 'pending'].includes(application.status)) {
+            continue
+          }
+
+          const payload = {
+            status: 'shortlisted'
+          }
+          if (notes) {
+            payload.notes = notes
+          }
+
+          const ok = await this.updateApplicationStatus(application, payload, `${application.student} shortlisted.`)
+          if (ok) {
+            successCount += 1
+          }
         }
+      } finally {
+        this.isSubmittingBulkShortlist = false
       }
 
       this.selectedApps = []
+      this.closeBulkShortlistModal()
       this.toast_show(`${successCount} applications shortlisted`, 'success')
     },
     async bulkReject() {
@@ -1221,25 +2214,95 @@ export default {
         return
       }
 
+      this.openBulkRejectModal()
+    },
+    closeBulkRejectModal() {
+      this.showBulkRejectModal = false
+      this.bulkRejectForm = createDefaultBulkRejectForm()
+      this.bulkRejectFormError = ''
+      this.isSubmittingBulkReject = false
+    },
+    openBulkRejectModal() {
+      if (!this.canManageApplications) {
+        this.toast_show('Application actions are enabled only after admin approval.', 'warning')
+        return
+      }
+
+      if (!this.selectedApps.length) {
+        this.toast_show('Select at least one application first.', 'warning')
+        return
+      }
+
+      this.bulkRejectForm = createDefaultBulkRejectForm()
+      this.bulkRejectFormError = ''
+      this.showBulkRejectModal = true
+    },
+    validateBulkRejectForm() {
+      if (!this.selectedApps.length) {
+        return 'Select at least one application before bulk reject.'
+      }
+
+      const rejectionReason = this.normalizeInput(this.bulkRejectForm.rejection_reason)
+      if (!rejectionReason) {
+        return 'Rejection reason is required for bulk reject.'
+      }
+
+      if (rejectionReason.length < 5) {
+        return 'Rejection reason must be at least 5 characters.'
+      }
+
+      return ''
+    },
+    async submitBulkRejectModal() {
+      if (this.isSubmittingBulkReject) {
+        return
+      }
+
+      const validationError = this.validateBulkRejectForm()
+      if (validationError) {
+        this.bulkRejectFormError = validationError
+        return
+      }
+
+      this.isSubmittingBulkReject = true
+      this.bulkRejectFormError = ''
+
       let successCount = 0
-      for (const applicationId of this.selectedApps) {
-        const application = this.allApplications.find((entry) => entry.id === applicationId)
-        if (!application) {
-          continue
-        }
+      try {
+        const selectedApplicationIds = [...this.selectedApps]
+        const rejectionReason = this.normalizeInput(this.bulkRejectForm.rejection_reason)
+        const notes = this.normalizeInput(this.bulkRejectForm.notes)
 
-        const ok = await this.updateApplicationStatus(
-          application,
-          { status: 'rejected', rejection_reason: 'Not selected for this role.' },
-          `${application.student} marked as rejected.`
-        )
+        for (const applicationId of selectedApplicationIds) {
+          const application = this.allApplications.find((entry) => entry.id === applicationId)
+          if (!application) {
+            continue
+          }
 
-        if (ok) {
-          successCount += 1
+          const payload = {
+            status: 'rejected',
+            rejection_reason: rejectionReason
+          }
+          if (notes) {
+            payload.notes = notes
+          }
+
+          const ok = await this.updateApplicationStatus(
+            application,
+            payload,
+            `${application.student} marked as rejected.`
+          )
+
+          if (ok) {
+            successCount += 1
+          }
         }
+      } finally {
+        this.isSubmittingBulkReject = false
       }
 
       this.selectedApps = []
+      this.closeBulkRejectModal()
       this.toast_show(`${successCount} applications rejected`, 'warning')
     },
     openNewDriveModal() {

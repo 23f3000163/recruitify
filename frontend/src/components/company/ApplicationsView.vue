@@ -166,14 +166,27 @@
                     <button class="rq-ghost rq-ghost-xs" @click="$emit('screen-application', application)" :disabled="actionsDisabled || isScoring[application.id]">
                       {{ isScoring[application.id] ? 'Scoring...' : 'ATS Score' }}
                     </button>
-                    <button class="rq-btn-ok" @click="$emit('advance', application, 'offered')" :disabled="actionsDisabled">Offer</button>
+                    <button class="rq-btn-purple" @click="$emit('update-interview-result', application)" :disabled="actionsDisabled">Result</button>
                     <button class="rq-btn-no" @click="$emit('reject', application)" title="Reject" :disabled="actionsDisabled">
                       <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
                         <path d="M2 2l7 7M9 2l-7 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
                       </svg>
                     </button>
                   </template>
-                  <template v-if="['offered', 'rejected'].includes(application.status)">
+                  <template v-if="application.status === 'offered'">
+                    <button class="rq-ghost rq-ghost-xs" @click="$emit('screen-application', application)" :disabled="actionsDisabled || isScoring[application.id]">
+                      {{ isScoring[application.id] ? 'Scoring...' : 'ATS Score' }}
+                    </button>
+                    <button
+                      v-if="!application.hasOffer"
+                      class="rq-btn-ok"
+                      @click="$emit('advance', application, 'offered')"
+                      :disabled="actionsDisabled"
+                    >
+                      Offer
+                    </button>
+                  </template>
+                  <template v-if="application.status === 'rejected'">
                     <button class="rq-ghost rq-ghost-xs" @click="$emit('screen-application', application)" :disabled="actionsDisabled || isScoring[application.id]">
                       {{ isScoring[application.id] ? 'Scoring...' : 'ATS Score' }}
                     </button>
@@ -260,6 +273,7 @@ export default {
     'shortlist',
     'reject',
     'advance',
+    'update-interview-result',
     'screen-application'
   ],
   computed: {

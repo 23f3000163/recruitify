@@ -294,6 +294,140 @@ def test_company_can_schedule_interview_and_update_result(app, client):
         assert application.status == "selected"
 
 
+def test_company_interview_result_fail_updates_application_to_rejected(app, client):
+    with app.app_context():
+        company_user = _make_user("company.interview.fail", "company.interview.fail@example.com", "company")
+        company = _make_company_profile(
+            company_user.user_id,
+            "Interview Fail Corp",
+            "hr.interview.fail@example.com",
+        )
+        drive = _make_drive(company.company_id, title="Backend Intern", status="approved")
+
+        student_user = _make_user("student.interview.fail", "student.interview.fail@example.com", "student")
+        student = _make_student_profile(student_user.user_id, "CS21B9011")
+
+        application = Application(
+            student_id=student.student_id,
+            drive_id=drive.drive_id,
+            status="shortlisted",
+        )
+        db.session.add(application)
+        db.session.commit()
+
+        headers = _auth_headers(company_user.user_id, "company")
+        application_id = application.application_id
+
+    schedule_payload = {
+        "application_id": application_id,
+        "interview_date": (datetime.now(timezone.utc) + timedelta(days=2)).isoformat(),
+        "interview_mode": "offline",
+        "interview_location": "Room 402",
+        "interviewer_name": "Panel B",
+    }
+
+    schedule_response = client.post("/company/interviews", json=schedule_payload, headers=headers)
+    assert schedule_response.status_code == 201
+    interview_id = schedule_response.get_json()["data"]["interview_id"]
+
+    update_response = client.put(
+        f"/company/interviews/{interview_id}/result",
+        json={"result": "fail", "feedback": "Interview rubric mismatch"},
+        headers=headers,
+    )
+    assert update_response.status_code == 200
+
+    payload = update_response.get_json()["data"]
+    assert payload["result"] == "fail"
+    assert payload["application_status"] == "rejected"
+
+    with app.app_context():
+        interview = db.session.get(Interview, interview_id)
+        application = db.session.get(Application, application_id)
+        assert interview is not None
+        assert application is not None
+        assert interview.feedback == "Interview rubric mismatch"
+        assert application.status == "rejected"
+
+
+def test_company_interview_result_rejects_invalid_result_payload(app, client):
+    with app.app_context():
+        company_user = _make_user(
+            "company.interview.invalid",
+            "company.interview.invalid@example.com",
+            "company",
+        )
+        company = _make_company_profile(
+            company_user.user_id,
+            "Interview Invalid Corp",
+            "hr.interview.invalid@example.com",
+        )
+        drive = _make_drive(company.company_id, title="Data Intern", status="approved")
+
+        student_user = _make_user(
+            "student.interview.invalid",
+            "student.interview.invalid@example.com",
+            "student",
+        )
+        student = _make_student_profile(student_user.user_id, "CS21B9012")
+
+        application = Application(
+            student_id=student.student_id,
+            drive_id=drive.drive_id,
+            status="shortlisted",
+        )
+        db.session.add(application)
+        db.session.commit()
+
+        headers = _auth_headers(company_user.user_id, "company")
+        application_id = application.application_id
+
+    schedule_payload = {
+        "application_id": application_id,
+        "interview_date": (datetime.now(timezone.utc) + timedelta(days=2)).isoformat(),
+        "interview_mode": "online",
+        "interviewer_name": "Panel C",
+    }
+
+    schedule_response = client.post("/company/interviews", json=schedule_payload, headers=headers)
+    assert schedule_response.status_code == 201
+    interview_id = schedule_response.get_json()["data"]["interview_id"]
+
+    invalid_response = client.put(
+        f"/company/interviews/{interview_id}/result",
+        json={"result": "maybe", "feedback": "Unclear"},
+        headers=headers,
+    )
+
+    assert invalid_response.status_code == 400
+    assert invalid_response.get_json()["error"] == "Invalid interview result"
+
+
+def test_company_interview_result_returns_not_found_for_missing_interview(app, client):
+    with app.app_context():
+        company_user = _make_user(
+            "company.interview.missing",
+            "company.interview.missing@example.com",
+            "company",
+        )
+        _make_company_profile(
+            company_user.user_id,
+            "Interview Missing Corp",
+            "hr.interview.missing@example.com",
+        )
+        db.session.commit()
+        headers = _auth_headers(company_user.user_id, "company")
+
+    response = client.put(
+        "/company/interviews/999999/result",
+        json={"result": "pass", "feedback": "Strong profile"},
+        headers=headers,
+    )
+
+    assert response.status_code == 404
+    assert response.get_json()["error"] == "Interview not found"
+
+
 def test_company_can_release_offer_and_list_offers(app, client):
     with app.app_context():
         company_user = _make_user("company.offer", "company.offer@example.com", "company")
