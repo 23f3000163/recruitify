@@ -128,11 +128,14 @@
         />
       </main>
 
-      <StudentDriveModal
-        :drive="selectedDrive"
-        @close="selectedDrive = null"
-        @apply="applyToDriveFromModal"
-      />
+      <Transition name="rq-modal">
+        <StudentDriveModal
+          v-if="selectedDrive && activeView === 'drives'"
+          :drive="selectedDrive"
+          @close="selectedDrive = null"
+          @apply="applyToDriveFromModal"
+        />
+      </Transition>
 
       <StudentApplicationModal
         :application="selectedApplication"
@@ -1247,18 +1250,26 @@ export default {
       }
     },
     navigate(viewId) {
-      this.activeView = viewId
+      const nextView = typeof viewId === 'string' && viewId ? viewId : 'dashboard'
+      const isViewChanging = nextView !== this.activeView
 
-      if (viewId === 'drives' && !this.drives.length) {
+      this.activeView = nextView
+
+      if (isViewChanging) {
+        this.selectedDrive = null
+        this.selectedApplication = null
+      }
+
+      if (nextView === 'drives' && !this.drives.length) {
         this.loadDrives(1)
       }
-      if (viewId === 'applications' && !this.applications.length) {
+      if (nextView === 'applications' && !this.applications.length) {
         this.loadApplications(1)
       }
-      if (viewId === 'notifications' && !this.notifications.length) {
+      if (nextView === 'notifications' && !this.notifications.length) {
         this.loadNotifications(1)
       }
-      if (viewId === 'history' && !this.historyItems.length) {
+      if (nextView === 'history' && !this.historyItems.length) {
         this.loadHistory(1)
       }
     }

@@ -90,7 +90,7 @@
                 <td colspan="7" class="rq-empty-row">No drives found for this filter.</td>
               </tr>
 
-              <tr v-for="row in drives" :key="row.drive_id" @click="$emit('open-drive', row)">
+              <tr v-for="row in drives" :key="row.drive_id">
                 <td>
                   <p class="rq-row-title">{{ row.job_title || 'Role unavailable' }}</p>
                   <p class="rq-row-sub">{{ row.job_location || '-' }}</p>
@@ -115,17 +115,27 @@
                   </span>
                 </td>
                 <td>
-                  <button
-                    v-if="canApply(row)"
-                    class="rq-btn-primary"
-                    type="button"
-                    :disabled="isApplying[row.drive_id]"
-                    :aria-label="`Apply for ${row.job_title || 'drive'}`"
-                    @click.stop="$emit('apply-drive', row.drive_id)"
-                  >
-                    {{ isApplying[row.drive_id] ? 'Applying...' : 'Apply Now' }}
-                  </button>
-                  <span v-else class="rq-offer-state">{{ blockedActionLabel(row) }}</span>
+                  <div class="rq-inline-actions">
+                    <button
+                      class="rq-ghost"
+                      type="button"
+                      :aria-label="`Open details for ${row.job_title || 'drive'}`"
+                      @click.stop="$emit('open-drive', row)"
+                    >
+                      Open
+                    </button>
+                    <button
+                      v-if="canApply(row)"
+                      class="rq-btn-primary"
+                      type="button"
+                      :disabled="isApplying[row.drive_id]"
+                      :aria-label="`Apply for ${row.job_title || 'drive'}`"
+                      @click.stop="$emit('apply-drive', row.drive_id)"
+                    >
+                      {{ isApplying[row.drive_id] ? 'Applying...' : 'Apply Now' }}
+                    </button>
+                    <span v-else class="rq-offer-state">{{ blockedActionLabel(row) }}</span>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -156,6 +166,15 @@
                 <span class="rq-status-pill" :class="driveStateClass(row)">
                   {{ driveStateLabel(row) }}
                 </span>
+
+                <button
+                  class="rq-ghost rq-btn-primary-compact"
+                  type="button"
+                  :aria-label="`Open details for ${row.job_title || 'drive'}`"
+                  @click.stop.prevent="$emit('open-drive', row)"
+                >
+                  Open
+                </button>
 
                 <button
                   v-if="canApply(row)"

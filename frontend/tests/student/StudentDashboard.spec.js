@@ -360,6 +360,56 @@ describe('StudentDashboard step 3B wiring', () => {
     expect(studentApi.applyToDrive).toHaveBeenCalledWith(63)
   })
 
+  it('opens drive details from the Open action and clears it on section change', async () => {
+    const wrapper = mountWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    await wrapper.get('.to-drives').trigger('click')
+    await flushPromises()
+
+    const openButton = wrapper.findAll('button').find((node) => node.text() === 'Open')
+    expect(openButton).toBeTruthy()
+
+    await openButton.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.vm.selectedDrive?.drive_id).toBe(63)
+    expect(wrapper.text()).toContain('Drive Details')
+
+    await wrapper.get('.to-notifications').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.vm.selectedDrive).toBeNull()
+    expect(wrapper.text()).not.toContain('Drive Details')
+  })
+
+  it('applies from drive details modal and closes the modal', async () => {
+    const wrapper = mountWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    await wrapper.get('.to-drives').trigger('click')
+    await flushPromises()
+
+    const openButton = wrapper.findAll('button').find((node) => node.text() === 'Open')
+    expect(openButton).toBeTruthy()
+    await openButton.trigger('click')
+    await flushPromises()
+
+    const modal = wrapper.find('.rq-modal')
+    expect(modal.exists()).toBe(true)
+
+    const modalApplyButton = modal.findAll('button').find((node) => node.text() === 'Apply Now')
+    expect(modalApplyButton).toBeTruthy()
+    await modalApplyButton.trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    expect(studentApi.applyToDrive).toHaveBeenCalledWith(63)
+    expect(wrapper.vm.selectedDrive).toBeNull()
+  })
+
   it('loads history and calls offer/placement document downloads', async () => {
     const wrapper = mountWrapper()
     await flushPromises()
