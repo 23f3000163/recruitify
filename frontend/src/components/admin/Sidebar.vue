@@ -14,13 +14,13 @@
 
     <div class="rq-sb-header">
       <div class="rq-logo">
-        <div class="rq-logo-mark">
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-            <path d="M3 14L9 4L15 14" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M5.5 10.5h7" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
-          </svg>
-        </div>
-        <span class="rq-logo-text" v-show="!sidebarCollapsed">Recruitify<span class="rq-logo-dot">.</span></span>
+        <AppLogo
+          as="div"
+          :collapsed="sidebarCollapsed"
+          aria-label="Recruitify"
+          :title="sidebarCollapsed ? 'Recruitify' : undefined"
+          style="--app-logo-icon-size: 30px; --app-logo-lockup-width: 156px; --app-logo-lockup-height: 30px;"
+        />
       </div>
     </div>
 
@@ -85,8 +85,13 @@
 </template>
 
 <script>
+import AppLogo from '../common/AppLogo.vue'
+
 export default {
   name: 'Sidebar',
+  components: {
+    AppLogo
+  },
   props: {
     sidebarCollapsed: {
       type: Boolean,

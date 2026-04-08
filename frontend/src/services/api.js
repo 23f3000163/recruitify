@@ -109,23 +109,23 @@ function mapDashboardSummary(summary = {}) {
 
 async function fetchDashboardRaw() {
   return requestWithFallback([
-    () => apiClient.get('/company/dashboard'),
-    () => apiClient.get('/auth/company/dashboard')
+    () => apiClient.get('/auth/company/dashboard'),
+    () => apiClient.get('/company/dashboard')
   ])
 }
 
 async function deriveDashboardData() {
-  const [drivesRes, appsRes, notificationsRes, meRes] = await Promise.all([
+  const [drivesRes, appsRes, notificationsRes, meRes] = await Promise.allSettled([
     companyApi.getDrives({ page: 1, limit: 100 }),
     companyApi.getApplications({ page: 1, limit: 100 }),
     companyApi.getNotifications({ page: 1, limit: 100, is_read: 'all' }),
     authApi.getMe()
   ])
 
-  const drivesData = drivesRes?.data?.data || {}
-  const appsData = appsRes?.data?.data || {}
-  const notificationsData = notificationsRes?.data?.data || {}
-  const meData = meRes?.data?.data || {}
+  const drivesData = drivesRes.status === 'fulfilled' ? drivesRes.value?.data?.data || {} : {}
+  const appsData = appsRes.status === 'fulfilled' ? appsRes.value?.data?.data || {} : {}
+  const notificationsData = notificationsRes.status === 'fulfilled' ? notificationsRes.value?.data?.data || {} : {}
+  const meData = meRes.status === 'fulfilled' ? meRes.value?.data?.data || {} : {}
 
   const driveItems = Array.isArray(drivesData.items) ? drivesData.items : []
   const appItems = Array.isArray(appsData.items) ? appsData.items : []
@@ -218,8 +218,8 @@ export const applicationsApi = {
 export const companyApi = {
   getDashboard() {
     return requestWithFallback([
-      () => apiClient.get('/company/dashboard'),
-      () => apiClient.get('/auth/company/dashboard')
+      () => apiClient.get('/auth/company/dashboard'),
+      () => apiClient.get('/company/dashboard')
     ])
   },
 
@@ -322,8 +322,8 @@ export const companyApi = {
 
   getApplications(params = {}) {
     return requestWithFallback([
-      () => apiClient.get('/applications/company', { params }),
-      () => apiClient.get('/company/applications', { params })
+      () => apiClient.get('/company/applications', { params }),
+      () => apiClient.get('/applications/company', { params })
     ])
   },
 

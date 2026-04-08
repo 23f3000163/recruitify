@@ -2,16 +2,7 @@
   <nav class="nav" :class="{ scrolled }" id="navbar">
 
   <!-- Logo -->
-  <a class="nav-logo" href="#" @click.prevent="scrollToTop">
-    <div class="logo-icon">
-      <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-        <path d="M3 14 L9 4 L15 14" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M5.5 10.5 h7" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
-        <circle cx="9" cy="4" r="1.5" fill="white"/>
-      </svg>
-    </div>
-    <span class="logo-name">Recruitify<span class="logo-dot">.</span></span>
-  </a>
+  <AppLogo class="nav-logo" @click="scrollToTop" />
 
   <!-- Nav Links + Mega Menu -->
   <div class="nav-mid">
@@ -80,8 +71,13 @@
 </template>
 
 <script>
+import AppLogo from '../common/AppLogo.vue'
+
 export default {
   name: 'Navbar',
+  components: {
+    AppLogo
+  },
   props: {
     scrolled: {
       type: Boolean,

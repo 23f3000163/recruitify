@@ -29,8 +29,13 @@
 
     <div class="rq-sb-header">
       <div class="rq-logo">
-        <div class="rq-logo-mark">R</div>
-        <span class="rq-logo-text" v-show="!sidebarCollapsed">Recruitify<span class="rq-logo-dot">.</span></span>
+        <AppLogo
+          as="div"
+          :collapsed="sidebarCollapsed"
+          aria-label="Recruitify"
+          :title="sidebarCollapsed ? 'Recruitify' : undefined"
+          style="--app-logo-icon-size: 30px; --app-logo-lockup-width: 152px; --app-logo-lockup-height: 30px;"
+        />
       </div>
     </div>
 
@@ -130,8 +135,13 @@
 </template>
 
 <script>
+import AppLogo from '../common/AppLogo.vue'
+
 export default {
   name: 'StudentSidebar',
+  components: {
+    AppLogo
+  },
   props: {
     sidebarCollapsed: {
       type: Boolean,

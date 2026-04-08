@@ -1468,6 +1468,7 @@ export default {
 
       const blockingErrors = []
       const nonBlockingErrors = []
+      const nonBlockingSections = []
       let shouldDeriveSummary = false
       const loadedState = {
         profile: false,
@@ -1488,6 +1489,7 @@ export default {
         this.allApplications = Array.isArray(items) ? items.map((item) => this.normalizeApplication(item)) : []
         loadedState.applications = true
       } else {
+        nonBlockingSections.push('applications')
         nonBlockingErrors.push(this.handleApiError(applicationsResult.reason, 'Failed to load applications.'))
         shouldDeriveSummary = true
       }
@@ -1498,6 +1500,7 @@ export default {
         this.refreshDriveStats()
         loadedState.drives = true
       } else {
+        nonBlockingSections.push('drives')
         nonBlockingErrors.push(this.handleApiError(drivesResult.reason, 'Failed to load drives.'))
         shouldDeriveSummary = true
       }
@@ -1507,6 +1510,7 @@ export default {
         this.notifications = Array.isArray(items) ? items.map((item) => this.normalizeNotification(item)) : []
         this.notificationsError = ''
       } else {
+        nonBlockingSections.push('notifications')
         const message = this.handleApiError(notificationsResult.reason, 'Failed to load notifications.')
         this.notificationsError = message
         nonBlockingErrors.push(message)
@@ -1517,6 +1521,7 @@ export default {
         const dashboardData = dashboardResult.value || {}
         this.dashboardSummary = this.buildSummaryFromLoadedData(dashboardData.summary || null)
       } else {
+        nonBlockingSections.push('summary')
         nonBlockingErrors.push(this.handleApiError(dashboardResult.reason, 'Failed to load dashboard summary.'))
         shouldDeriveSummary = true
       }
@@ -1530,7 +1535,31 @@ export default {
       if (blockingErrors.length || !hasCoreData) {
         this.loadError = blockingErrors[0] || nonBlockingErrors[0] || 'Unable to load dashboard right now.'
       } else if (nonBlockingErrors.length) {
-        this.toast_show('Some dashboard sections are temporarily unavailable. Showing available data.', 'warning')
+        const failedSections = new Set(nonBlockingSections)
+        const suppressEmptyStateWarning =
+          failedSections.size === 2 &&
+          failedSections.has('applications') &&
+          failedSections.has('summary') &&
+          this.myDrives.length === 0 &&
+          this.allApplications.length === 0
+
+        const suppressApplicationsOnlyEmptyWarning =
+          failedSections.size === 1 &&
+          failedSections.has('applications') &&
+          this.myDrives.length === 0 &&
+          this.allApplications.length === 0 &&
+          Number(this.dashboardSummary?.applications_received || 0) === 0
+
+        if (suppressEmptyStateWarning || suppressApplicationsOnlyEmptyWarning) {
+          this.isLoading = false
+          return
+        }
+
+        const unavailableSections = [...new Set(nonBlockingSections)].join(', ')
+        const warningMessage = unavailableSections
+          ? `Some dashboard sections are temporarily unavailable (${unavailableSections}). Showing available data.`
+          : 'Some dashboard sections are temporarily unavailable. Showing available data.'
+        this.toast_show(warningMessage, 'warning')
       }
 
       this.isLoading = false
