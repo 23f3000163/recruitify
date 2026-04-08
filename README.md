@@ -73,8 +73,6 @@ Recent safe checkpoints on main:
 
 - Backend API performance + Redis caching closure:
 	- backend/docs/api-performance-redis-caching-closure.md
-- Company dashboard milestone gap closure:
-	- frontend/docs/company-dashboard-milestone-gap-closure.md
 - Placement tracking lifecycle closure:
 	- backend/docs/placement-tracking-milestone-closure.md
 - Reports, charts, and ATS milestone closure:
