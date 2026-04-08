@@ -61,6 +61,8 @@
           :error-message="overviewErrorMessage"
           :pending-company-actions="pendingActions.company"
           :pending-drive-actions="pendingActions.drive"
+          :is-audit-export-busy="isAdminExportBusy('audit')"
+          :audit-export-label="adminExportButtonLabel('audit')"
           :pct="pct"
           @switch-view="activeView = $event"
           @approve-item="approveItem"
@@ -84,6 +86,8 @@
           :is-loading="loading.companies"
           :error-message="loadErrors.companies"
           :pending-company-actions="pendingActions.company"
+          :is-export-busy="isAdminExportBusy('companies')"
+          :export-label="adminExportButtonLabel('companies')"
           @update-co-search="coSearch = $event"
           @set-co-search-focused="coSearchFocused = $event"
           @update-co-filter="coFilter = $event"
@@ -113,6 +117,8 @@
           :is-loading="loading.students"
           :error-message="loadErrors.students"
           :pending-student-actions="pendingActions.student"
+          :is-export-busy="isAdminExportBusy('students')"
+          :export-label="adminExportButtonLabel('students')"
           @update-stu-search="stuSearch = $event"
           @set-stu-search-focused="stuSearchFocused = $event"
           @update-stu-branch="stuBranch = $event"
@@ -140,6 +146,8 @@
           :is-loading="loading.drives"
           :error-message="loadErrors.drives"
           :pending-drive-actions="pendingActions.drive"
+          :is-export-busy="isAdminExportBusy('drives')"
+          :export-label="adminExportButtonLabel('drives')"
           @update-drive-filter="driveFilter = $event"
           @update-drive-sort-by="setDriveSortBy"
           @toggle-drive-order="toggleDriveOrder"
@@ -165,6 +173,8 @@
           :placement-rate-pct="placementRatePct"
           :donut-circ="donutCirc"
           :donut-placed-offset="donutPlacedOffset"
+          :is-export-busy="isAdminExportBusy('analytics')"
+          :export-label="adminExportButtonLabel('analytics')"
           :pct="pct"
           @retry="fetchAnalyticsOverview()"
           @export="doExport"
@@ -198,6 +208,16 @@ import StudentsTable from '../../components/admin/StudentsTable.vue'
 import Toast from '../../components/layout/Toast.vue'
 import Topbar from '../../components/admin/Topbar.vue'
 import './AdminDashboard.css'
+
+const EXPORT_POLL_INTERVAL_MS = 2500
+const EXPORT_POLL_MAX_ATTEMPTS = 48
+const ADMIN_EXPORT_SCOPE_BY_VIEW = Object.freeze({
+  dashboard: 'audit',
+  companies: 'companies',
+  students: 'students',
+  drives: 'drives',
+  analytics: 'analytics'
+})
 
 export default {
   name: 'AdminDashboard',
@@ -268,6 +288,8 @@ export default {
       isMarkingAllNotifications: false,
       toast: { show: false, message: '', icon: '', type: 'success' },
       _toastTimer: null,
+      adminExportJobs: {},
+      adminExportTimers: {},
       loading: {
         dashboard: false,
         companies: false,
@@ -603,12 +625,16 @@ export default {
     await this.retryOverviewLoad()
   },
   beforeUnmount() {
+    this.clearAdminExportPolls(null, true)
     clearTimeout(this.searchDebounceTimer)
     clearTimeout(this.coSearchDebounceTimer)
     clearTimeout(this.stuSearchDebounceTimer)
     clearTimeout(this._toastTimer)
   },
   watch: {
+    activeView(nextView) {
+      this.clearAdminExportPolls(nextView)
+    },
     coSearch(value) {
       clearTimeout(this.coSearchDebounceTimer)
       this.coSearchDebounceTimer = setTimeout(() => {
@@ -1403,29 +1429,236 @@ export default {
     showStudentApps(student) {
       this.selectedStudent = student
     },
-    doExport(scope) {
-      let rows = []
+    isAdminExportBusy(scope) {
+      const status = this.adminExportJobs[String(scope || '').toLowerCase()]?.status
+      return status === 'queued' || status === 'running'
+    },
+    adminExportButtonLabel(scope) {
+      const normalizedScope = String(scope || '').toLowerCase()
+      const status = this.adminExportJobs[normalizedScope]?.status
 
-      if (scope === 'companies') {
-        rows = ['Company,Domain,Status,Drives,Applicants', ...this.companiesWithMetrics.map((company) => `${company.name},${company.domain},${company.status},${company.drives},${company.applicants}`)]
-      } else if (scope === 'students') {
-        rows = ['Name,Roll,Branch,CGPA,Applications,Status', ...this.studentsWithMetrics.map((student) => `${student.name},${student.roll},${student.branch},${student.cgpa},${student.applications},${student.status}`)]
-      } else if (scope === 'drives') {
-        rows = ['Title,Company,Salary,Status,Deadline', ...this.filteredDrives.map((drive) => `${drive.title},${drive.company},${drive.salary},${drive.status},${drive.deadline}`)]
-      } else if (scope === 'analytics') {
-        rows = ['Company,Drives,Offers,AvgPackage,Highest', ...this.topCompanies.map((company) => `${company.name},${company.drives},${company.offers},${company.avgPkg},${company.highest}`)]
-      } else {
-        rows = ['Action,Actor,Target,Time', ...this.auditLog.map((log) => `${log.action},${log.actor},${log.target},${log.time}`)]
+      if (status === 'queued') {
+        return 'Export queued...'
+      }
+      if (status === 'running') {
+        return 'Export running...'
+      }
+      return normalizedScope === 'audit' || normalizedScope === 'analytics' ? 'Export' : 'Export CSV'
+    },
+    updateAdminExportState(scope, patch) {
+      const normalizedScope = String(scope || '').toLowerCase()
+      const current = this.adminExportJobs[normalizedScope] || {
+        jobId: '',
+        attempts: 0,
+        status: 'idle',
+        announcedRunning: false
       }
 
-      const blob = new Blob([rows.join('\n')], { type: 'text/csv' })
-      const link = Object.assign(document.createElement('a'), {
-        href: URL.createObjectURL(blob),
-        download: `recruitify-${scope}-${Date.now()}.csv`
+      this.adminExportJobs = {
+        ...this.adminExportJobs,
+        [normalizedScope]: {
+          ...current,
+          ...patch
+        }
+      }
+    },
+    clearAdminExportPoll(scope, options = {}) {
+      const { preserveState = false } = options
+      const normalizedScope = String(scope || '').toLowerCase()
+      const timerId = this.adminExportTimers[normalizedScope]
+      if (timerId) {
+        clearTimeout(timerId)
+      }
+
+      const nextTimers = { ...this.adminExportTimers }
+      delete nextTimers[normalizedScope]
+      this.adminExportTimers = nextTimers
+
+      if (!preserveState) {
+        const nextJobs = { ...this.adminExportJobs }
+        delete nextJobs[normalizedScope]
+        this.adminExportJobs = nextJobs
+      }
+    },
+    clearAdminExportPolls(viewId, clearAll = false) {
+      const allowedScope = clearAll ? null : ADMIN_EXPORT_SCOPE_BY_VIEW[viewId] || null
+      Object.keys(this.adminExportTimers).forEach((scope) => {
+        if (clearAll || scope !== allowedScope) {
+          this.clearAdminExportPoll(scope)
+        }
       })
+    },
+    scheduleAdminExportPoll(scope) {
+      const normalizedScope = String(scope || '').toLowerCase()
+      const timerId = setTimeout(() => {
+        this.pollAdminExport(normalizedScope)
+      }, EXPORT_POLL_INTERVAL_MS)
+
+      this.adminExportTimers = {
+        ...this.adminExportTimers,
+        [normalizedScope]: timerId
+      }
+    },
+    extractFilename(headers, fallback) {
+      const disposition = String(
+        headers?.['content-disposition'] || headers?.['Content-Disposition'] || ''
+      )
+      const match = disposition.match(/filename\*?=(?:UTF-8''|\")?([^\";]+)/i)
+      if (match && match[1]) {
+        return decodeURIComponent(match[1]).trim()
+      }
+      return fallback
+    },
+    triggerFileDownload(payload, filename) {
+      if (
+        typeof window === 'undefined' ||
+        !window.URL ||
+        typeof window.URL.createObjectURL !== 'function' ||
+        typeof document === 'undefined'
+      ) {
+        return
+      }
+
+      const blob = payload instanceof Blob ? payload : new Blob([payload || ''])
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
       link.click()
-      URL.revokeObjectURL(link.href)
-      this.toast_show(`${scope} data downloaded as CSV`, 'success')
+      document.body.removeChild(link)
+
+      if (typeof window.URL.revokeObjectURL === 'function') {
+        window.URL.revokeObjectURL(url)
+      }
+    },
+    async pollAdminExport(scope) {
+      const normalizedScope = String(scope || '').toLowerCase()
+      const exportJob = this.adminExportJobs[normalizedScope]
+      if (!exportJob?.jobId) {
+        this.clearAdminExportPoll(normalizedScope)
+        return
+      }
+
+      if (exportJob.attempts >= EXPORT_POLL_MAX_ATTEMPTS) {
+        this.clearAdminExportPoll(normalizedScope)
+        this.toast_show(`${normalizedScope} export timed out. Please retry.`, 'warning')
+        return
+      }
+
+      try {
+        const statusResponse = await adminApi.getExportStatus(exportJob.jobId)
+        const data = statusResponse?.data?.data || {}
+        const job = data.job || {}
+        const artifact = data.artifact || {}
+        const jobStatus = String(job.status || '').toLowerCase()
+        const artifactStatus = String(artifact.status || '').toLowerCase()
+
+        if (jobStatus === 'completed' && artifactStatus === 'ready') {
+          const downloadResponse = await adminApi.downloadExport(exportJob.jobId)
+          const fallbackName = `recruitify-admin-${normalizedScope}-${Date.now()}.csv`
+          const filename = this.extractFilename(downloadResponse?.headers, fallbackName)
+          this.triggerFileDownload(downloadResponse?.data, filename)
+          this.clearAdminExportPoll(normalizedScope)
+          this.toast_show(`${normalizedScope} export downloaded successfully.`, 'success')
+          return
+        }
+
+        const hasFailed =
+          jobStatus === 'failed' ||
+          jobStatus === 'cancelled' ||
+          artifactStatus === 'failed' ||
+          artifactStatus === 'expired'
+
+        if (hasFailed) {
+          this.clearAdminExportPoll(normalizedScope)
+          const fallbackFailureMessage = artifactStatus === 'expired'
+            ? 'Export artifact expired before download. Please retry.'
+            : `Unable to complete ${normalizedScope} export. Please retry.`
+          this.toast_show(job.error_message || fallbackFailureMessage, 'danger')
+          return
+        }
+
+        const nextStatus = jobStatus === 'running' ? 'running' : 'queued'
+        const nextAttempts = exportJob.attempts + 1
+        this.updateAdminExportState(normalizedScope, {
+          status: nextStatus,
+          attempts: nextAttempts
+        })
+
+        if (nextStatus === 'running' && !exportJob.announcedRunning) {
+          this.updateAdminExportState(normalizedScope, { announcedRunning: true })
+          this.toast_show(`${normalizedScope} export is running in the background...`, 'info')
+        }
+
+        if (nextAttempts >= EXPORT_POLL_MAX_ATTEMPTS) {
+          this.clearAdminExportPoll(normalizedScope)
+          this.toast_show(`${normalizedScope} export timed out. Please retry.`, 'warning')
+          return
+        }
+
+        this.scheduleAdminExportPoll(normalizedScope)
+      } catch (error) {
+        const nextAttempts = (exportJob.attempts || 0) + 1
+        this.updateAdminExportState(normalizedScope, { attempts: nextAttempts })
+
+        if (nextAttempts >= EXPORT_POLL_MAX_ATTEMPTS) {
+          this.clearAdminExportPoll(normalizedScope)
+          const message = error.response?.data?.error || error.response?.data?.message || 'Unable to fetch export status.'
+          this.toast_show(`${message} Please retry the export.`, 'warning')
+          return
+        }
+
+        this.scheduleAdminExportPoll(normalizedScope)
+      }
+    },
+    async doExport(scope) {
+      const normalizedScope = String(scope || '').trim().toLowerCase()
+      const supportedScopes = ['companies', 'students', 'drives', 'analytics', 'audit']
+      if (!supportedScopes.includes(normalizedScope)) {
+        this.toast_show('Export option is unavailable for this section.', 'warning')
+        return
+      }
+
+      if (this.isAdminExportBusy(normalizedScope)) {
+        this.toast_show(`${normalizedScope} export is already in progress.`, 'info')
+        return
+      }
+
+      this.clearAdminExportPoll(normalizedScope)
+
+      try {
+        const response = await adminApi.triggerExport(normalizedScope)
+        const payload = response?.data?.data || {}
+        const jobId = String(payload.job_id || '').trim()
+        if (!jobId) {
+          this.toast_show('Unable to start export job. Please retry.', 'danger')
+          return
+        }
+
+        const initialStatus = String(payload.status || 'queued').toLowerCase() === 'running'
+          ? 'running'
+          : 'queued'
+        this.updateAdminExportState(normalizedScope, {
+          jobId,
+          attempts: 0,
+          status: initialStatus,
+          announcedRunning: initialStatus === 'running'
+        })
+
+        if (payload.active_job_reused) {
+          this.toast_show(`Tracking existing ${normalizedScope} export job...`, 'info')
+        } else if (initialStatus === 'running') {
+          this.toast_show(`${normalizedScope} export is running in the background...`, 'info')
+        } else {
+          this.toast_show(`${normalizedScope} export queued. Preparing your CSV...`, 'info')
+        }
+
+        this.scheduleAdminExportPoll(normalizedScope)
+      } catch (error) {
+        const message = error.response?.data?.error || error.response?.data?.message || 'Unable to start export.'
+        this.toast_show(message, 'danger')
+      }
     },
     handleLogout() {
       localStorage.removeItem('token')

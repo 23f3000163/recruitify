@@ -27,7 +27,7 @@
           aria-label="Global search"
           autocomplete="off"
         />
-        <kbd class="rq-search-kbd" v-if="!searchQuery">K</kbd>
+
         <button v-if="searchQuery" class="rq-search-clear" @click="$emit('clear-search')" aria-label="Clear search">
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
         </button>
@@ -58,21 +58,12 @@
         </div>
       </div>
 
-      <div class="rq-topbar-sep"></div>
-
       <button class="rq-topbar-icon-btn" @click="$emit('toggle-notifications')" :aria-label="`${pendingCount} pending approvals`">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
           <path d="M13 11H3l1.5-2.5V7a3.5 3.5 0 017 0v1.5L13 11z" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
           <path d="M6.5 13a1.5 1.5 0 003 0" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
         </svg>
         <span v-if="pendingCount > 0" class="rq-topbar-badge" aria-label="pending">{{ pendingCount }}</span>
-      </button>
-
-      <button class="rq-topbar-icon-btn" aria-label="Settings">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <circle cx="8" cy="8" r="2.2" stroke="currentColor" stroke-width="1.4"/>
-          <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M3.2 12.8l1.4-1.4M11.4 4.6l1.4-1.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-        </svg>
       </button>
 
       <div class="rq-user-menu-wrap" ref="userMenuWrap" @click.stop>

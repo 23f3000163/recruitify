@@ -20,9 +20,9 @@
         <span class="rq-pager-info">Page {{ drivePage }} / {{ Math.max(drivePages, 1) }} · {{ driveTotal }}</span>
         <button class="rq-ghost rq-ghost-xs" @click="$emit('next-drive-page')" :disabled="isLoading || drivePage >= drivePages">Next</button>
       </div>
-      <button class="rq-ghost" :disabled="isLoading" @click="$emit('export', 'drives')">
+      <button class="rq-ghost" :disabled="isLoading || isExportBusy" @click="$emit('export', 'drives')">
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v7M3 6l3 3 3-3M1 11h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        Export CSV
+        {{ exportLabel }}
       </button>
     </div>
 
@@ -100,7 +100,9 @@ export default {
     driveOrder: { type: String, required: true },
     isLoading: { type: Boolean, default: false },
     errorMessage: { type: String, default: '' },
-    pendingDriveActions: { type: Object, default: () => ({}) }
+    pendingDriveActions: { type: Object, default: () => ({}) },
+    isExportBusy: { type: Boolean, default: false },
+    exportLabel: { type: String, default: 'Export CSV' }
   },
   emits: [
     'update-drive-filter',

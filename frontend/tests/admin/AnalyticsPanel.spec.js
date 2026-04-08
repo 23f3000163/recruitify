@@ -46,9 +46,10 @@ describe('AnalyticsPanel chart rendering guards', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('No placement trend data available yet.')
+    expect(wrapper.text()).toContain('No placement growth trend data available yet.')
     expect(wrapper.text()).toContain('No funnel data available yet.')
     expect(wrapper.text()).toContain('No skill demand data available yet.')
+    expect(wrapper.text()).toContain('No conversion rate data available yet.')
     expect(Chart).not.toHaveBeenCalled()
   })
 
@@ -95,6 +96,32 @@ describe('AnalyticsPanel chart rendering guards', () => {
 
     await flushPromises()
 
-    expect(Chart).toHaveBeenCalledTimes(3)
+    expect(Chart).toHaveBeenCalledTimes(4)
+
+    const conversionCall = Chart.mock.calls.find(([, config]) => (
+      config?.data?.datasets?.[0]?.label === 'Conversion %'
+    ))
+    expect(conversionCall?.[1]?.options?.indexAxis).toBe('y')
+  })
+
+  it('derives conversion rate metrics from funnel counts', async () => {
+    const wrapper = mount(AnalyticsPanel, {
+      props: makeProps({
+        analyticsOverview: {
+          application_funnel: {
+            applied: 300,
+            shortlisted: 180,
+            interview: 120,
+            offered: 42,
+            placed: 31
+          }
+        }
+      })
+    })
+
+    await flushPromises()
+
+    expect(wrapper.vm.conversionRows.map((row) => row.value)).toEqual([60, 67, 35, 74])
+    expect(wrapper.vm.hasConversionData).toBe(true)
   })
 })

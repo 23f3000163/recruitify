@@ -1194,7 +1194,7 @@ button {
 
 .rq-analytics-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 14px;
 }
 
@@ -1226,12 +1226,34 @@ button {
   gap: 10px;
 }
 
+.rq-card-hd-center {
+  justify-content: center;
+  text-align: center;
+}
+
 .rq-card-title {
   font-size: 0.67rem;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--rq-t3);
+}
+
+.rq-card-title-strong {
+  font-size: 0.74rem;
+  font-weight: 900;
+}
+
+.rq-analytics-snapshot {
+  width: 100%;
+}
+
+.rq-analytics-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2px 0 0;
 }
 
 .rq-card-body {

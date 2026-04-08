@@ -1,83 +1,9 @@
 <template>
   <section class="rq-view">
     <div class="rq-analytics-grid">
-      <div class="rq-card rq-col-2">
-        <div class="rq-card-hd">
-          <span class="rq-card-title">Placement Trends</span>
-          <span class="rq-pill rq-pill-blue">{{ monthLabel }}</span>
-        </div>
-        <div class="rq-card-body">
-          <div v-if="isLoading" class="rq-empty">
-            <div class="rq-empty-ico">⏳</div>
-            <b>Loading analytics</b>
-            <span>Building trend charts from the latest monthly data.</span>
-          </div>
-
-          <div v-else-if="errorMessage" class="rq-state rq-state-error">
-            <span>{{ errorMessage }}</span>
-            <button class="rq-ghost" type="button" @click="$emit('retry')">Retry</button>
-          </div>
-
-          <div v-else-if="!hasTrendData" class="rq-empty rq-empty-compact">
-            <span class="rq-row-sub">No placement trend data available yet.</span>
-          </div>
-
-          <div v-else class="rq-chart-wrap rq-chart-lg">
-            <canvas ref="trendChart" aria-label="Placement trend line chart" role="img"></canvas>
-          </div>
-        </div>
-      </div>
-
-      <div class="rq-card">
-        <div class="rq-card-hd">
-          <span class="rq-card-title">Application Funnel</span>
-          <span class="rq-pill rq-pill-amber">Total {{ funnelTotal }}</span>
-        </div>
-        <div class="rq-card-body">
-          <div v-if="isLoading" class="rq-empty rq-empty-compact">
-            <span class="rq-row-sub">Loading funnel metrics...</span>
-          </div>
-          <div v-else-if="errorMessage" class="rq-state rq-state-error">
-            <span>{{ errorMessage }}</span>
-            <button class="rq-ghost" type="button" @click="$emit('retry')">Retry</button>
-          </div>
-          <div v-else-if="!hasFunnelData" class="rq-empty rq-empty-compact">
-            <span class="rq-row-sub">No funnel data available yet.</span>
-          </div>
-          <div v-else class="rq-chart-wrap rq-chart-md">
-            <canvas ref="funnelChart" aria-label="Application funnel chart" role="img"></canvas>
-          </div>
-        </div>
-      </div>
-
-      <div class="rq-card">
-        <div class="rq-card-hd">
-          <span class="rq-card-title">Top Skill Demand</span>
-          <button class="rq-ghost" @click="$emit('export', 'analytics')">
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v7M3 6l3 3 3-3M1 11h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            Export
-          </button>
-        </div>
-        <div class="rq-card-body">
-          <div v-if="isLoading" class="rq-empty rq-empty-compact">
-            <span class="rq-row-sub">Loading skill demand...</span>
-          </div>
-          <div v-else-if="errorMessage" class="rq-state rq-state-error">
-            <span>{{ errorMessage }}</span>
-            <button class="rq-ghost" type="button" @click="$emit('retry')">Retry</button>
-          </div>
-          <div v-else-if="!hasSkillData" class="rq-empty rq-empty-compact">
-            <span class="rq-row-sub">No skill demand data available yet.</span>
-          </div>
-          <div v-else class="rq-chart-wrap rq-chart-md">
-            <canvas ref="skillsChart" aria-label="Skill demand bar chart" role="img"></canvas>
-          </div>
-        </div>
-      </div>
-
-      <div class="rq-card rq-col-full">
-        <div class="rq-card-hd">
-          <span class="rq-card-title">Analytics Snapshot</span>
+      <div class="rq-card rq-col-full rq-analytics-snapshot">
+        <div class="rq-card-hd rq-card-hd-center">
+          <span class="rq-card-title rq-card-title-strong">Analytics Snapshot</span>
         </div>
         <div class="rq-card-body">
           <div v-if="errorMessage" class="rq-state rq-state-error">
@@ -123,6 +49,102 @@
           </div>
         </div>
       </div>
+
+      <div class="rq-col-full rq-analytics-section-head">
+        <span class="rq-card-title rq-card-title-strong">Detailed Analytics</span>
+      </div>
+
+      <div class="rq-card">
+        <div class="rq-card-hd">
+          <span class="rq-card-title">Application Funnel</span>
+          <span class="rq-pill rq-pill-amber">Total {{ funnelTotal }}</span>
+        </div>
+        <div class="rq-card-body">
+          <div v-if="isLoading" class="rq-empty rq-empty-compact">
+            <span class="rq-row-sub">Loading funnel metrics...</span>
+          </div>
+          <div v-else-if="errorMessage" class="rq-state rq-state-error">
+            <span>{{ errorMessage }}</span>
+            <button class="rq-ghost" type="button" @click="$emit('retry')">Retry</button>
+          </div>
+          <div v-else-if="!hasFunnelData" class="rq-empty rq-empty-compact">
+            <span class="rq-row-sub">No funnel data available yet.</span>
+          </div>
+          <div v-else class="rq-chart-wrap rq-chart-md">
+            <canvas ref="funnelChart" aria-label="Application funnel chart" role="img"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="rq-card">
+        <div class="rq-card-hd">
+          <span class="rq-card-title">Top Skill Demand</span>
+          <button class="rq-ghost" :disabled="isExportBusy" @click="$emit('export', 'analytics')">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v7M3 6l3 3 3-3M1 11h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            {{ exportLabel }}
+          </button>
+        </div>
+        <div class="rq-card-body">
+          <div v-if="isLoading" class="rq-empty rq-empty-compact">
+            <span class="rq-row-sub">Loading skill demand...</span>
+          </div>
+          <div v-else-if="errorMessage" class="rq-state rq-state-error">
+            <span>{{ errorMessage }}</span>
+            <button class="rq-ghost" type="button" @click="$emit('retry')">Retry</button>
+          </div>
+          <div v-else-if="!hasSkillData" class="rq-empty rq-empty-compact">
+            <span class="rq-row-sub">No skill demand data available yet.</span>
+          </div>
+          <div v-else class="rq-chart-wrap rq-chart-md">
+            <canvas ref="skillsChart" aria-label="Skill demand bar chart" role="img"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="rq-card">
+        <div class="rq-card-hd">
+          <span class="rq-card-title">Placement Growth Trend</span>
+          <span class="rq-pill rq-pill-blue">{{ monthLabel }}</span>
+        </div>
+        <div class="rq-card-body">
+          <div v-if="isLoading" class="rq-empty rq-empty-compact">
+            <span class="rq-row-sub">Loading placement growth trend...</span>
+          </div>
+          <div v-else-if="errorMessage" class="rq-state rq-state-error">
+            <span>{{ errorMessage }}</span>
+            <button class="rq-ghost" type="button" @click="$emit('retry')">Retry</button>
+          </div>
+          <div v-else-if="!hasTrendData" class="rq-empty rq-empty-compact">
+            <span class="rq-row-sub">No placement growth trend data available yet.</span>
+          </div>
+          <div v-else class="rq-chart-wrap rq-chart-md">
+            <canvas ref="trendChart" aria-label="Placement growth trend line chart" role="img"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="rq-card">
+        <div class="rq-card-hd">
+          <span class="rq-card-title">Conversion Rate Analysis</span>
+          <span class="rq-pill rq-pill-blue">Pipeline %</span>
+        </div>
+        <div class="rq-card-body">
+          <div v-if="isLoading" class="rq-empty rq-empty-compact">
+            <span class="rq-row-sub">Loading conversion metrics...</span>
+          </div>
+          <div v-else-if="errorMessage" class="rq-state rq-state-error">
+            <span>{{ errorMessage }}</span>
+            <button class="rq-ghost" type="button" @click="$emit('retry')">Retry</button>
+          </div>
+          <div v-else-if="!hasConversionData" class="rq-empty rq-empty-compact">
+            <span class="rq-row-sub">No conversion rate data available yet.</span>
+          </div>
+          <div v-else class="rq-chart-wrap rq-chart-md">
+            <canvas ref="conversionChart" aria-label="Conversion rate analysis chart" role="img"></canvas>
+          </div>
+        </div>
+      </div>
+
     </div>
   </section>
 </template>
@@ -155,6 +177,8 @@ export default {
     placementRatePct: { type: Number, required: true },
     donutCirc: { type: Number, required: true },
     donutPlacedOffset: { type: Number, required: true },
+    isExportBusy: { type: Boolean, default: false },
+    exportLabel: { type: String, default: 'Export' },
     pct: { type: Function, required: true }
   },
   emits: ['export', 'retry'],
@@ -163,6 +187,7 @@ export default {
       trendChartInstance: null,
       funnelChartInstance: null,
       skillsChartInstance: null,
+      conversionChartInstance: null,
       renderQueued: false
     }
   },
@@ -234,6 +259,34 @@ export default {
     hasSkillData() {
       return this.skillRows.some((row) => Number(row.demand_count || 0) > 0)
     },
+    conversionRows() {
+      const funnel = this.funnelCounts
+      return [
+        {
+          label: 'Applied -> Shortlisted',
+          value: this.pct(Number(funnel.shortlisted || 0), Number(funnel.applied || 0)),
+          baseline: Number(funnel.applied || 0)
+        },
+        {
+          label: 'Shortlisted -> Interview',
+          value: this.pct(Number(funnel.interview || 0), Number(funnel.shortlisted || 0)),
+          baseline: Number(funnel.shortlisted || 0)
+        },
+        {
+          label: 'Interview -> Offered',
+          value: this.pct(Number(funnel.offered || 0), Number(funnel.interview || 0)),
+          baseline: Number(funnel.interview || 0)
+        },
+        {
+          label: 'Offered -> Placed',
+          value: this.pct(Number(funnel.placed || 0), Number(funnel.offered || 0)),
+          baseline: Number(funnel.offered || 0)
+        }
+      ]
+    },
+    hasConversionData() {
+      return this.conversionRows.some((row) => Number(row.baseline || 0) > 0)
+    },
     hasSummaryData() {
       const keys = [
         'total_students',
@@ -297,6 +350,10 @@ export default {
         this.skillsChartInstance.destroy()
         this.skillsChartInstance = null
       }
+      if (this.conversionChartInstance) {
+        this.conversionChartInstance.destroy()
+        this.conversionChartInstance = null
+      }
     },
     renderCharts() {
       this.destroyCharts()
@@ -313,6 +370,9 @@ export default {
       }
       if (this.hasSkillData) {
         this.renderSkillsChart()
+      }
+      if (this.hasConversionData) {
+        this.renderConversionChart()
       }
     },
     renderTrendChart() {
@@ -431,6 +491,10 @@ export default {
       const labels = this.skillRows.map((row) => row.skill || '-')
       const values = this.skillRows.map((row) => Number(row.demand_count || 0))
 
+      // Color palette for skills - cycle through colors
+      const skillColors = ['#D97706', '#7C3AED', '#2563EB', '#0891B2']
+      const backgroundColor = values.map((_, index) => skillColors[index % skillColors.length])
+
       this.skillsChartInstance = new Chart(canvas, {
         type: 'bar',
         data: {
@@ -439,13 +503,14 @@ export default {
             {
               label: 'Demand count',
               data: values,
-              backgroundColor: '#2563EB',
+              backgroundColor,
               borderRadius: 6,
               borderSkipped: false
             }
           ]
         },
         options: {
+          indexAxis: 'y',
           responsive: true,
           maintainAspectRatio: false,
           plugins: {
@@ -455,12 +520,56 @@ export default {
           },
           scales: {
             x: {
+              beginAtZero: true
+            },
+            y: {
               grid: {
                 display: false
               }
+            }
+          }
+        }
+      })
+    },
+    renderConversionChart() {
+      const canvas = this.$refs.conversionChart
+      if (!canvas) return
+
+      const labels = this.conversionRows.map((row) => row.label)
+      const values = this.conversionRows.map((row) => Number(row.value || 0))
+
+      this.conversionChartInstance = new Chart(canvas, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Conversion %',
+              data: values,
+              backgroundColor: ['#D97706', '#7C3AED', '#2563EB', '#0891B2'],
+              borderRadius: 6,
+              borderSkipped: false
+            }
+          ]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              display: false
+            }
+          },
+          scales: {
+            x: {
+              beginAtZero: true,
+              max: 100
             },
             y: {
-              beginAtZero: true
+              grid: {
+                display: false
+              }
             }
           }
         }

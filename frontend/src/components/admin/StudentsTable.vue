@@ -24,9 +24,9 @@
         <span class="rq-pager-info">Page {{ stuPage }} / {{ Math.max(stuPages, 1) }} · {{ stuTotal }}</span>
         <button class="rq-ghost rq-ghost-xs" @click="$emit('next-stu-page')" :disabled="isLoading || stuPage >= stuPages">Next</button>
       </div>
-      <button class="rq-ghost" :disabled="isLoading" @click="$emit('export', 'students')">
+      <button class="rq-ghost" :disabled="isLoading || isExportBusy" @click="$emit('export', 'students')">
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v7M3 6l3 3 3-3M1 11h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        Export CSV
+        {{ exportLabel }}
       </button>
     </div>
 
@@ -110,7 +110,9 @@ export default {
     stuOrder: { type: String, required: true },
     isLoading: { type: Boolean, default: false },
     errorMessage: { type: String, default: '' },
-    pendingStudentActions: { type: Object, default: () => ({}) }
+    pendingStudentActions: { type: Object, default: () => ({}) },
+    isExportBusy: { type: Boolean, default: false },
+    exportLabel: { type: String, default: 'Export CSV' }
   },
   emits: [
     'update-stu-search',
