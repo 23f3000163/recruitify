@@ -13,11 +13,11 @@
         </button>
       </div>
       <div style="flex:1"></div>
-      <button class="rq-ghost" @click="$emit('export-drives')">
+      <button class="rq-ghost" :disabled="isExportBusy" @click="$emit('export-drives')">
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
           <path d="M6 1v7M3 6l3 3 3-3M1 11h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
-        Export CSV
+        {{ exportLabel }}
       </button>
       <button
         class="rq-btn-primary"
@@ -108,6 +108,14 @@ export default {
     companyStatus: {
       type: String,
       required: true
+    },
+    isExportBusy: {
+      type: Boolean,
+      default: false
+    },
+    exportLabel: {
+      type: String,
+      default: 'Export CSV'
     }
   },
   emits: ['update:drive-filter', 'export-drives', 'request-new-drive', 'open-applications', 'close-drive'],

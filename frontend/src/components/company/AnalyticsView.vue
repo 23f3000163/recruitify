@@ -16,11 +16,11 @@
       <div class="rq-card rq-col-2">
         <div class="rq-card-hd">
           <span class="rq-card-title">Drive Performance</span>
-          <button class="rq-ghost" @click="$emit('export-analytics')">
+          <button class="rq-ghost" :disabled="isExportBusy" @click="$emit('export-analytics')">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
               <path d="M6 1v7M3 6l3 3 3-3M1 11h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
-            Export
+            {{ exportLabel }}
           </button>
         </div>
         <div class="rq-card-body">
@@ -79,6 +79,14 @@ export default {
     maxBranchCount: {
       type: Number,
       required: true
+    },
+    isExportBusy: {
+      type: Boolean,
+      default: false
+    },
+    exportLabel: {
+      type: String,
+      default: 'Export'
     }
   },
   emits: ['export-analytics'],

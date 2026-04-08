@@ -97,6 +97,8 @@
             :drive-filter="driveFilter"
             :filtered-drives="filteredDrives"
             :company-status="companyProfile.status"
+            :is-export-busy="isCompanyExportBusy('drives')"
+            :export-label="companyExportButtonLabel('drives')"
             @update:drive-filter="driveFilter = $event"
             @export-drives="doExport('drives')"
             @request-new-drive="openNewDriveModal"
@@ -117,6 +119,8 @@
             :is-scoring="isScoringResume"
             :all-page-selected="allPageSelected"
             :company-status="companyProfile.status"
+            :is-export-busy="isCompanyExportBusy('applications')"
+            :export-label="companyExportButtonLabel('applications')"
             @update:app-search="appSearch = $event"
             @set-search-focus="appSearchFocused = $event"
             @update:app-drive-filter="appDriveFilter = $event"
@@ -154,7 +158,9 @@
             :my-drives="myDrives"
             :branch-applicants="branchApplicants"
             :max-branch-count="maxBranchCount"
-            @export-analytics="doExport('analytics')"
+            :is-export-busy="isCompanyExportBusy('applications')"
+            :export-label="companyExportButtonLabel('applications')"
+            @export-analytics="doExport('applications')"
           />
         </template>
       </main>
@@ -658,6 +664,13 @@ const AVATAR_COLORS = Object.freeze([
 
 const BRANCH_COLORS = Object.freeze(['#2563EB', '#059669', '#D97706', '#7C3AED', '#DC2626'])
 const DEFAULT_OFFER_SALARY = 600000
+const EXPORT_POLL_INTERVAL_MS = 2500
+const EXPORT_POLL_MAX_ATTEMPTS = 48
+const COMPANY_EXPORT_SCOPE_BY_VIEW = Object.freeze({
+  drives: 'drives',
+  applications: 'applications',
+  analytics: 'applications'
+})
 
 const NAV_SVGS = Object.freeze({
   home: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 6.5L8 2l6 4.5V14a1 1 0 01-1 1H3a1 1 0 01-1-1V6.5z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 15V9h4v6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
@@ -822,7 +835,9 @@ export default {
       isSubmittingBulkReject: false,
 
       toast: { show: false, message: '', icon: '', type: 'success' },
-      toastTimerId: null
+      toastTimerId: null,
+      companyExportJobs: {},
+      companyExportTimers: {}
     }
   },
   computed: {
@@ -1002,12 +1017,17 @@ export default {
       if (nextValue) {
         this.profileEdit = { ...this.companyProfile }
       }
+    },
+    activeView(nextValue) {
+      this.clearCompanyExportPollsForView(nextValue)
     }
   },
   created() {
     this.bootstrapDashboard()
   },
   beforeUnmount() {
+    this.clearCompanyExportPollsForView(null, true)
+
     if (this.toastTimerId) {
       clearTimeout(this.toastTimerId)
       this.toastTimerId = null
@@ -2488,34 +2508,247 @@ export default {
         this.isMarkingAllNotifications = false
       }
     },
-    doExport(scope) {
-      let rows = []
-      if (scope === 'drives') {
-        rows = [
-          'Title,Role,Salary,Status,Applicants,Deadline',
-          ...this.myDrives.map(
-            (drive) => `${drive.title},${drive.role},${drive.salary},${drive.status},${drive.applicants},${drive.deadline}`
-          )
-        ]
-      } else {
-        rows = [
-          'Student,Roll,Branch,CGPA,Drive,Status',
-          ...this.allApplications.map(
-            (application) =>
-              `${application.student},${application.roll},${application.branch},${application.cgpa},${application.drive},${application.status}`
-          )
-        ]
+    getCompanyExportTrigger(scope) {
+      const normalizedScope = String(scope || '').trim().toLowerCase()
+      if (normalizedScope === 'drives') {
+        return companyApi.triggerDrivesExportJob
+      }
+      if (normalizedScope === 'applications') {
+        return companyApi.triggerApplicationsExportJob
+      }
+      return null
+    },
+    isCompanyExportBusy(scope) {
+      const status = this.companyExportJobs[String(scope || '').toLowerCase()]?.status
+      return status === 'queued' || status === 'running'
+    },
+    companyExportButtonLabel(scope) {
+      const normalizedScope = String(scope || '').toLowerCase()
+      const status = this.companyExportJobs[normalizedScope]?.status
+
+      if (status === 'queued') {
+        return 'Export queued...'
+      }
+      if (status === 'running') {
+        return 'Export running...'
+      }
+      return 'Export CSV'
+    },
+    updateCompanyExportState(scope, patch) {
+      const normalizedScope = String(scope || '').toLowerCase()
+      const current = this.companyExportJobs[normalizedScope] || {
+        jobId: '',
+        attempts: 0,
+        status: 'idle',
+        announcedRunning: false
       }
 
-      const blob = new Blob([rows.join('\n')], { type: 'text/csv' })
-      const link = Object.assign(document.createElement('a'), {
-        href: URL.createObjectURL(blob),
-        download: `recruitify-${scope}-${Date.now()}.csv`
-      })
+      this.companyExportJobs = {
+        ...this.companyExportJobs,
+        [normalizedScope]: {
+          ...current,
+          ...patch
+        }
+      }
+    },
+    clearCompanyExportPoll(scope, options = {}) {
+      const { preserveState = false } = options
+      const normalizedScope = String(scope || '').toLowerCase()
+      const timerId = this.companyExportTimers[normalizedScope]
+      if (timerId) {
+        clearTimeout(timerId)
+      }
 
+      const nextTimers = { ...this.companyExportTimers }
+      delete nextTimers[normalizedScope]
+      this.companyExportTimers = nextTimers
+
+      if (!preserveState) {
+        const nextJobs = { ...this.companyExportJobs }
+        delete nextJobs[normalizedScope]
+        this.companyExportJobs = nextJobs
+      }
+    },
+    clearCompanyExportPollsForView(viewId, clearAll = false) {
+      const allowedScope = clearAll ? null : COMPANY_EXPORT_SCOPE_BY_VIEW[viewId] || null
+      Object.keys(this.companyExportTimers).forEach((scope) => {
+        if (clearAll || scope !== allowedScope) {
+          this.clearCompanyExportPoll(scope)
+        }
+      })
+    },
+    scheduleCompanyExportPoll(scope) {
+      const normalizedScope = String(scope || '').toLowerCase()
+      const timerId = setTimeout(() => {
+        this.pollCompanyExport(normalizedScope)
+      }, EXPORT_POLL_INTERVAL_MS)
+
+      this.companyExportTimers = {
+        ...this.companyExportTimers,
+        [normalizedScope]: timerId
+      }
+    },
+    extractFilename(headers, fallback) {
+      const disposition = String(
+        headers?.['content-disposition'] || headers?.['Content-Disposition'] || ''
+      )
+      const match = disposition.match(/filename\*?=(?:UTF-8''|\")?([^\";]+)/i)
+      if (match && match[1]) {
+        return decodeURIComponent(match[1]).trim()
+      }
+      return fallback
+    },
+    triggerFileDownload(payload, filename) {
+      if (
+        typeof window === 'undefined' ||
+        !window.URL ||
+        typeof window.URL.createObjectURL !== 'function' ||
+        typeof document === 'undefined'
+      ) {
+        return
+      }
+
+      const blob = payload instanceof Blob ? payload : new Blob([payload || ''])
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
       link.click()
-      URL.revokeObjectURL(link.href)
-      this.toast_show(`${scope} data downloaded as CSV.`, 'success')
+      document.body.removeChild(link)
+
+      if (typeof window.URL.revokeObjectURL === 'function') {
+        window.URL.revokeObjectURL(url)
+      }
+    },
+    async pollCompanyExport(scope) {
+      const normalizedScope = String(scope || '').toLowerCase()
+      const exportJob = this.companyExportJobs[normalizedScope]
+      if (!exportJob?.jobId) {
+        this.clearCompanyExportPoll(normalizedScope)
+        return
+      }
+
+      if (exportJob.attempts >= EXPORT_POLL_MAX_ATTEMPTS) {
+        this.clearCompanyExportPoll(normalizedScope)
+        this.toast_show(`${normalizedScope} export timed out. Please retry.`, 'warning')
+        return
+      }
+
+      try {
+        const statusResponse = await companyApi.getExportStatus(exportJob.jobId)
+        const data = statusResponse?.data?.data || {}
+        const job = data.job || {}
+        const artifact = data.artifact || {}
+        const jobStatus = String(job.status || '').toLowerCase()
+        const artifactStatus = String(artifact.status || '').toLowerCase()
+
+        if (jobStatus === 'completed' && artifactStatus === 'ready') {
+          const downloadResponse = await companyApi.downloadExport(exportJob.jobId)
+          const fallbackName = `recruitify-${normalizedScope}-${Date.now()}.csv`
+          const filename = this.extractFilename(downloadResponse?.headers, fallbackName)
+          this.triggerFileDownload(downloadResponse?.data, filename)
+          this.clearCompanyExportPoll(normalizedScope)
+          this.toast_show(`${normalizedScope} export downloaded successfully.`, 'success')
+          return
+        }
+
+        const hasFailed =
+          jobStatus === 'failed' ||
+          jobStatus === 'cancelled' ||
+          artifactStatus === 'failed' ||
+          artifactStatus === 'expired'
+
+        if (hasFailed) {
+          this.clearCompanyExportPoll(normalizedScope)
+          const fallbackFailureMessage = artifactStatus === 'expired'
+            ? 'Export artifact expired before download. Please retry.'
+            : `Unable to complete ${normalizedScope} export. Please retry.`
+          this.toast_show(job.error_message || fallbackFailureMessage, 'danger')
+          return
+        }
+
+        const nextStatus = jobStatus === 'running' ? 'running' : 'queued'
+        const nextAttempts = exportJob.attempts + 1
+        this.updateCompanyExportState(normalizedScope, {
+          status: nextStatus,
+          attempts: nextAttempts
+        })
+
+        if (nextStatus === 'running' && !exportJob.announcedRunning) {
+          this.updateCompanyExportState(normalizedScope, { announcedRunning: true })
+          this.toast_show(`${normalizedScope} export is running in the background...`, 'info')
+        }
+
+        if (nextAttempts >= EXPORT_POLL_MAX_ATTEMPTS) {
+          this.clearCompanyExportPoll(normalizedScope)
+          this.toast_show(`${normalizedScope} export timed out. Please retry.`, 'warning')
+          return
+        }
+
+        this.scheduleCompanyExportPoll(normalizedScope)
+      } catch (error) {
+        const nextAttempts = (exportJob.attempts || 0) + 1
+        this.updateCompanyExportState(normalizedScope, { attempts: nextAttempts })
+
+        if (nextAttempts >= EXPORT_POLL_MAX_ATTEMPTS) {
+          this.clearCompanyExportPoll(normalizedScope)
+          const message = this.handleApiError(error, 'Unable to fetch export status.')
+          this.toast_show(`${message} Please retry the export.`, 'warning')
+          return
+        }
+
+        this.scheduleCompanyExportPoll(normalizedScope)
+      }
+    },
+    async doExport(scope) {
+      const normalizedScope = String(scope || '').trim().toLowerCase()
+      const triggerExport = this.getCompanyExportTrigger(normalizedScope)
+
+      if (!triggerExport) {
+        this.toast_show('Export option is unavailable for this section.', 'warning')
+        return
+      }
+
+      if (this.isCompanyExportBusy(normalizedScope)) {
+        this.toast_show(`${normalizedScope} export is already in progress.`, 'info')
+        return
+      }
+
+      this.clearCompanyExportPoll(normalizedScope)
+
+      try {
+        const response = await triggerExport()
+        const payload = response?.data?.data || {}
+        const jobId = String(payload.job_id || '').trim()
+        if (!jobId) {
+          this.toast_show('Unable to start export job. Please retry.', 'danger')
+          return
+        }
+
+        const initialStatus = String(payload.status || 'queued').toLowerCase() === 'running'
+          ? 'running'
+          : 'queued'
+        this.updateCompanyExportState(normalizedScope, {
+          jobId,
+          attempts: 0,
+          status: initialStatus,
+          announcedRunning: initialStatus === 'running'
+        })
+
+        if (payload.active_job_reused) {
+          this.toast_show(`Tracking existing ${normalizedScope} export job...`, 'info')
+        } else if (initialStatus === 'running') {
+          this.toast_show(`${normalizedScope} export is running in the background...`, 'info')
+        } else {
+          this.toast_show(`${normalizedScope} export queued. Preparing your CSV...`, 'info')
+        }
+
+        this.scheduleCompanyExportPoll(normalizedScope)
+      } catch (error) {
+        const message = this.handleApiError(error, 'Unable to start export.')
+        this.toast_show(message, 'danger')
+      }
     },
     toast_show(message, type = 'success') {
       const icons = {
