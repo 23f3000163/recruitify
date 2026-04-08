@@ -251,6 +251,8 @@ def test_student_history_and_documents_are_available(app, client):
     assert history_payload['summary']['offers_received'] == 1
     assert history_payload['summary']['placements_count'] == 1
     assert history_payload['summary']['highest_package'] == 2100000.0
+    assert len(history_payload['items']) == 2
+    assert all(item['drive']['salary_lpa'] == 14.0 for item in history_payload['items'])
 
     offer_document = client.get(f'/student/offers/{offer_id}/document', headers=headers)
     assert offer_document.status_code == 200

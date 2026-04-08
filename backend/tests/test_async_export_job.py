@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from flask_jwt_extended import create_access_token
 
@@ -8,6 +9,7 @@ from app.models import (
     ExportArtifact,
     Placement,
     PlacementDrive,
+    PlacementOffer,
     Student,
     User,
     db,
@@ -181,12 +183,90 @@ def test_expired_export_artifact_returns_410(app, client, tmp_path):
             .first()
         )
         assert artifact is not None
+        artifact_path = artifact.storage_path
         artifact.expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
         db.session.commit()
 
     expired_response = client.get(f"/jobs/exports/{job_id}/download", headers=headers)
     assert expired_response.status_code == 410
     assert expired_response.get_json()["error"] == "Export artifact has expired"
+    assert not Path(artifact_path).exists()
+
+
+def test_student_history_export_trigger_status_and_download(app, client, tmp_path):
+    with app.app_context():
+        app.config.update(
+            JOBS_EAGER_EXECUTION=True,
+            JOBS_EXPORT_OUTPUT_DIR=str(tmp_path / "exports-history"),
+            JOBS_EXPORT_ARTIFACT_TTL_HOURS=24,
+        )
+
+        company_user = _make_user("company.export.4", "company.export.4@example.com", "company")
+        company = _make_company_profile(
+            company_user.user_id,
+            "History Export Labs",
+            "hr.export.4@example.com",
+        )
+
+        student_user = _make_user("student.export.4", "student.export.4@example.com", "student")
+        student = _make_student_profile(student_user.user_id, "CS21E1004")
+
+        drive = _make_drive(company.company_id, title="History Export Engineer")
+        application = Application(
+            student_id=student.student_id,
+            drive_id=drive.drive_id,
+            status="selected",
+        )
+        db.session.add(application)
+        db.session.flush()
+
+        offer = PlacementOffer(
+            application_id=application.application_id,
+            student_id=student.student_id,
+            company_id=company.company_id,
+            drive_id=drive.drive_id,
+            salary=1500000,
+            position="History Engineer",
+            joining_date=datetime.now(timezone.utc).date(),
+            status="accepted",
+        )
+        db.session.add(offer)
+        db.session.flush()
+
+        db.session.add(
+            Placement(
+                student_id=student.student_id,
+                company_id=company.company_id,
+                drive_id=drive.drive_id,
+                position="History Engineer",
+                salary=15.0,
+                joining_date=datetime.now(timezone.utc).date(),
+            )
+        )
+        db.session.commit()
+
+        student_headers = _auth_headers(student_user.user_id, "student")
+
+    trigger_response = client.post("/jobs/exports/history", headers=student_headers)
+    assert trigger_response.status_code in {200, 202}
+
+    job_id = trigger_response.get_json()["data"]["job_id"]
+
+    status_response = client.get(f"/jobs/exports/{job_id}", headers=student_headers)
+    assert status_response.status_code == 200
+    status_payload = status_response.get_json()["data"]
+    assert status_payload["job"]["status"] == "completed"
+
+    download_response = client.get(
+        f"/jobs/exports/{job_id}/download",
+        headers=student_headers,
+    )
+    assert download_response.status_code == 200
+
+    csv_content = download_response.data.decode("utf-8")
+    assert "Application ID,Drive Title,Company Name,Application Status,Outcome" in csv_content
+    assert "History Export Labs" in csv_content
+    assert "placed" in csv_content
 
 
 def test_company_exports_applications_and_placements(app, client, tmp_path):
@@ -265,5 +345,63 @@ def test_company_exports_applications_and_placements(app, client, tmp_path):
     assert "Student ID,Student Name,Student Email,Drive Title,Position,Salary,Joining Date,Placement Date" in placements_csv
     assert "Software Engineer" in placements_csv
 
+    drives_trigger = client.post("/jobs/exports/company/drives", headers=company_headers)
+    assert drives_trigger.status_code in {200, 202}
+
+    drives_job_id = drives_trigger.get_json()["data"]["job_id"]
+    drives_download = client.get(
+        f"/jobs/exports/company/{drives_job_id}/download",
+        headers=company_headers,
+    )
+    assert drives_download.status_code == 200
+    drives_csv = drives_download.data.decode("utf-8")
+    assert "Drive ID,Job Title,Status,Salary LPA,Applications Count,Application Deadline,Created Date" in drives_csv
+    assert "Company Export Engineer" in drives_csv
+
     forbidden_student_access = client.post("/jobs/exports/company/applications", headers=student_headers)
     assert forbidden_student_access.status_code == 403
+
+
+def test_admin_exports_companies_async_job(app, client, tmp_path):
+    with app.app_context():
+        app.config.update(
+            JOBS_EAGER_EXECUTION=True,
+            JOBS_EXPORT_OUTPUT_DIR=str(tmp_path / "exports-admin"),
+            JOBS_EXPORT_ARTIFACT_TTL_HOURS=24,
+        )
+
+        admin_user = _make_user("admin.export.1", "admin.export.1@example.com", "admin")
+
+        company_user = _make_user("company.export.6", "company.export.6@example.com", "company")
+        company = _make_company_profile(
+            company_user.user_id,
+            "Admin Export Labs",
+            "hr.export.6@example.com",
+        )
+        db.session.commit()
+        company_name = company.company_name
+
+        admin_headers = _auth_headers(admin_user.user_id, "admin")
+
+    trigger_response = client.post("/jobs/exports/admin/companies", headers=admin_headers)
+    assert trigger_response.status_code in {200, 202}
+
+    job_id = trigger_response.get_json()["data"]["job_id"]
+
+    status_response = client.get(
+        f"/jobs/exports/admin/jobs/{job_id}",
+        headers=admin_headers,
+    )
+    assert status_response.status_code == 200
+    status_payload = status_response.get_json()["data"]
+    assert status_payload["job"]["status"] == "completed"
+
+    download_response = client.get(
+        f"/jobs/exports/admin/jobs/{job_id}/download",
+        headers=admin_headers,
+    )
+    assert download_response.status_code == 200
+
+    csv_content = download_response.data.decode("utf-8")
+    assert "Company ID,Company Name,Industry,Website,HR Contact Name,HR Contact Email" in csv_content
+    assert company_name in csv_content

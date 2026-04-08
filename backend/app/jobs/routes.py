@@ -1,6 +1,6 @@
 """Routes for background jobs health and operational checks."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -9,8 +9,16 @@ from flask_jwt_extended import get_jwt_identity
 
 from app.auth.utils import role_required
 from app.jobs.exports import (
+    EXPORT_SCOPE_ADMIN_ANALYTICS,
+    EXPORT_SCOPE_ADMIN_AUDIT,
+    EXPORT_SCOPE_ADMIN_COMPANIES,
+    EXPORT_SCOPE_ADMIN_DRIVES,
+    EXPORT_SCOPE_ADMIN_STUDENTS,
     EXPORT_SCOPE_COMPANY_APPLICATIONS,
+    EXPORT_SCOPE_COMPANY_DRIVES,
     EXPORT_SCOPE_COMPANY_PLACEMENTS,
+    EXPORT_SCOPE_STUDENT_HISTORY,
+    create_admin_export_job,
     create_company_export_job,
     create_student_export_job,
     dispatch_export_job,
@@ -19,6 +27,14 @@ from app.jobs.monthly_report import execute_monthly_activity_report
 from app.models import BackgroundJob, Company, ExportArtifact, Student, db
 
 jobs_bp = Blueprint("jobs", __name__, url_prefix="/jobs")
+
+ADMIN_EXPORT_SCOPE_MAP = {
+    "companies": EXPORT_SCOPE_ADMIN_COMPANIES,
+    "students": EXPORT_SCOPE_ADMIN_STUDENTS,
+    "drives": EXPORT_SCOPE_ADMIN_DRIVES,
+    "analytics": EXPORT_SCOPE_ADMIN_ANALYTICS,
+    "audit": EXPORT_SCOPE_ADMIN_AUDIT,
+}
 
 
 def _sanitize_broker_url(raw_url):
@@ -87,18 +103,146 @@ def _job_matches_owner(job, owner_key):
     return payload.get("export_owner") == owner_key
 
 
+def _coerce_utc(value):
+    if not value:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _delete_artifact_file(storage_path):
+    if not storage_path:
+        return False
+
+    file_path = Path(storage_path)
+    try:
+        if file_path.exists() and file_path.is_file():
+            file_path.unlink()
+            return True
+    except OSError:
+        return False
+
+    return False
+
+
+def _mark_artifact_failed_if_missing(artifact):
+    if not artifact or artifact.status != "ready":
+        return False
+    if not artifact.storage_path:
+        return False
+
+    if Path(artifact.storage_path).exists():
+        return False
+
+    artifact.status = "failed"
+    db.session.commit()
+    return True
+
+
+def _run_export_artifact_cleanup(limit=20):
+    now_utc = datetime.now(timezone.utc)
+
+    ready_artifacts = ExportArtifact.query.filter(ExportArtifact.status == "ready").all()
+    active_paths = set()
+    for artifact in ready_artifacts:
+        expires_at = _coerce_utc(artifact.expires_at)
+        if expires_at and expires_at <= now_utc:
+            continue
+
+        if not artifact.storage_path:
+            continue
+
+        try:
+            active_paths.add(str(Path(artifact.storage_path).resolve()))
+        except OSError:
+            continue
+
+    expired_updates = 0
+    for artifact in ready_artifacts:
+        if expired_updates >= limit:
+            break
+
+        expires_at = _coerce_utc(artifact.expires_at)
+        if not expires_at or expires_at > now_utc:
+            continue
+
+        artifact.status = "expired"
+        _delete_artifact_file(artifact.storage_path)
+        expired_updates += 1
+
+    if expired_updates:
+        db.session.commit()
+
+    output_dir = Path(current_app.config.get("JOBS_EXPORT_OUTPUT_DIR") or "")
+    if not output_dir.exists() or not output_dir.is_dir():
+        return
+
+    ttl_hours = max(1, int(current_app.config.get("JOBS_EXPORT_ARTIFACT_TTL_HOURS", 24)))
+    stale_cutoff = now_utc - timedelta(hours=ttl_hours + 1)
+
+    orphan_deleted = 0
+    try:
+        entries = sorted(
+            [entry for entry in output_dir.iterdir() if entry.is_file()],
+            key=lambda path: path.stat().st_mtime,
+        )
+    except OSError:
+        return
+
+    for entry in entries:
+        if orphan_deleted >= limit:
+            break
+        if entry.suffix.lower() != ".csv":
+            continue
+
+        try:
+            modified_at = datetime.fromtimestamp(entry.stat().st_mtime, tz=timezone.utc)
+        except OSError:
+            continue
+        if modified_at > stale_cutoff:
+            continue
+
+        try:
+            resolved_path = str(entry.resolve())
+        except OSError:
+            continue
+        if resolved_path in active_paths:
+            continue
+
+        try:
+            entry.unlink()
+            orphan_deleted += 1
+        except OSError:
+            continue
+
+
+def _export_job_response(job, user_id, reused_existing):
+    dispatch_result = {"status": job.status}
+    if not reused_existing:
+        dispatch_result = dispatch_export_job(job.job_id)
+
+    latest_job = db.session.get(BackgroundJob, job.job_id)
+    payload = {
+        "job_id": job.job_id,
+        "status": latest_job.status if latest_job else job.status,
+        "requested_by_user_id": user_id,
+        "dispatched": dispatch_result.get("status") in {"queued", "running", "completed"},
+        "active_job_reused": bool(reused_existing),
+    }
+    status_code = 200 if payload["active_job_reused"] else 202
+    return jsonify({"success": True, "data": payload}), status_code
+
+
 def _expire_if_needed(artifact):
     if not artifact or not artifact.expires_at:
         return False
 
-    expires_at = artifact.expires_at
-    if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    else:
-        expires_at = expires_at.astimezone(timezone.utc)
+    expires_at = _coerce_utc(artifact.expires_at)
 
     if artifact.status == "ready" and expires_at <= datetime.now(timezone.utc):
         artifact.status = "expired"
+        _delete_artifact_file(artifact.storage_path)
         db.session.commit()
         return True
     return False
@@ -275,6 +419,8 @@ def trigger_company_monthly_report_run():
 @jobs_bp.post("/exports/applications")
 @role_required("student")
 def trigger_applications_export():
+    _run_export_artifact_cleanup()
+
     user_id = _current_user_id()
     if user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
@@ -287,25 +433,37 @@ def trigger_applications_export():
     if error_message:
         return jsonify({"success": False, "error": error_message}), 400
 
-    dispatch_result = {"status": job.status}
-    if not reused_existing:
-        dispatch_result = dispatch_export_job(job.job_id)
+    return _export_job_response(job, user_id, reused_existing)
 
-    latest_job = db.session.get(BackgroundJob, job.job_id)
-    payload = {
-        "job_id": job.job_id,
-        "status": latest_job.status if latest_job else job.status,
-        "requested_by_user_id": user_id,
-        "dispatched": dispatch_result.get("status") in {"queued", "running", "completed"},
-        "active_job_reused": bool(reused_existing),
-    }
-    status_code = 200 if payload["active_job_reused"] else 202
-    return jsonify({"success": True, "data": payload}), status_code
+
+@jobs_bp.post("/exports/history")
+@role_required("student")
+def trigger_history_export():
+    _run_export_artifact_cleanup()
+
+    user_id = _current_user_id()
+    if user_id is None:
+        return jsonify({"success": False, "error": "Invalid token identity"}), 401
+
+    student = Student.query.filter_by(user_id=user_id).first()
+    if not student:
+        return jsonify({"success": False, "error": "Student profile not found"}), 404
+
+    job, error_message, reused_existing = create_student_export_job(
+        user_id,
+        EXPORT_SCOPE_STUDENT_HISTORY,
+    )
+    if error_message:
+        return jsonify({"success": False, "error": error_message}), 400
+
+    return _export_job_response(job, user_id, reused_existing)
 
 
 @jobs_bp.get("/exports/<string:job_id>")
 @role_required("student")
 def get_export_status(job_id):
+    _run_export_artifact_cleanup()
+
     user_id = _current_user_id()
     if user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
@@ -317,6 +475,8 @@ def get_export_status(job_id):
     artifact = _latest_export_artifact(job.job_id)
     if artifact:
         _expire_if_needed(artifact)
+        _mark_artifact_failed_if_missing(artifact)
+        artifact = _latest_export_artifact(job.job_id)
 
     payload = {
         "job": job.to_dict(),
@@ -328,6 +488,8 @@ def get_export_status(job_id):
 @jobs_bp.get("/exports/<string:job_id>/download")
 @role_required("student")
 def download_export_artifact(job_id):
+    _run_export_artifact_cleanup()
+
     user_id = _current_user_id()
     if user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
@@ -362,6 +524,8 @@ def download_export_artifact(job_id):
 @jobs_bp.post("/exports/company/applications")
 @role_required("company")
 def trigger_company_applications_export():
+    _run_export_artifact_cleanup()
+
     if not current_app.config.get("JOBS_COMPANY_EXPORT_ENABLED", False):
         return jsonify({"success": False, "error": "Company export feature is disabled"}), 403
 
@@ -380,25 +544,40 @@ def trigger_company_applications_export():
     if error_message:
         return jsonify({"success": False, "error": error_message}), 400
 
-    dispatch_result = {"status": job.status}
-    if not reused_existing:
-        dispatch_result = dispatch_export_job(job.job_id)
+    return _export_job_response(job, user_id, reused_existing)
 
-    latest_job = db.session.get(BackgroundJob, job.job_id)
-    payload = {
-        "job_id": job.job_id,
-        "status": latest_job.status if latest_job else job.status,
-        "requested_by_user_id": user_id,
-        "dispatched": dispatch_result.get("status") in {"queued", "running", "completed"},
-        "active_job_reused": bool(reused_existing),
-    }
-    status_code = 200 if payload["active_job_reused"] else 202
-    return jsonify({"success": True, "data": payload}), status_code
+
+@jobs_bp.post("/exports/company/drives")
+@role_required("company")
+def trigger_company_drives_export():
+    _run_export_artifact_cleanup()
+
+    if not current_app.config.get("JOBS_COMPANY_EXPORT_ENABLED", False):
+        return jsonify({"success": False, "error": "Company export feature is disabled"}), 403
+
+    user_id = _current_user_id()
+    if user_id is None:
+        return jsonify({"success": False, "error": "Invalid token identity"}), 401
+
+    company = _company_for_user(user_id)
+    if not company:
+        return jsonify({"success": False, "error": "Company profile not found"}), 404
+
+    job, error_message, reused_existing = create_company_export_job(
+        user_id,
+        EXPORT_SCOPE_COMPANY_DRIVES,
+    )
+    if error_message:
+        return jsonify({"success": False, "error": error_message}), 400
+
+    return _export_job_response(job, user_id, reused_existing)
 
 
 @jobs_bp.post("/exports/company/placements")
 @role_required("company")
 def trigger_company_placements_export():
+    _run_export_artifact_cleanup()
+
     if not current_app.config.get("JOBS_COMPANY_EXPORT_ENABLED", False):
         return jsonify({"success": False, "error": "Company export feature is disabled"}), 403
     if not current_app.config.get("JOBS_EXPORT_ALLOW_PLACEMENT_HISTORY", False):
@@ -419,25 +598,14 @@ def trigger_company_placements_export():
     if error_message:
         return jsonify({"success": False, "error": error_message}), 400
 
-    dispatch_result = {"status": job.status}
-    if not reused_existing:
-        dispatch_result = dispatch_export_job(job.job_id)
-
-    latest_job = db.session.get(BackgroundJob, job.job_id)
-    payload = {
-        "job_id": job.job_id,
-        "status": latest_job.status if latest_job else job.status,
-        "requested_by_user_id": user_id,
-        "dispatched": dispatch_result.get("status") in {"queued", "running", "completed"},
-        "active_job_reused": bool(reused_existing),
-    }
-    status_code = 200 if payload["active_job_reused"] else 202
-    return jsonify({"success": True, "data": payload}), status_code
+    return _export_job_response(job, user_id, reused_existing)
 
 
 @jobs_bp.get("/exports/company/<string:job_id>")
 @role_required("company")
 def get_company_export_status(job_id):
+    _run_export_artifact_cleanup()
+
     user_id = _current_user_id()
     if user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
@@ -449,6 +617,8 @@ def get_company_export_status(job_id):
     artifact = _latest_export_artifact(job.job_id)
     if artifact:
         _expire_if_needed(artifact)
+        _mark_artifact_failed_if_missing(artifact)
+        artifact = _latest_export_artifact(job.job_id)
 
     payload = {
         "job": job.to_dict(),
@@ -460,12 +630,96 @@ def get_company_export_status(job_id):
 @jobs_bp.get("/exports/company/<string:job_id>/download")
 @role_required("company")
 def download_company_export_artifact(job_id):
+    _run_export_artifact_cleanup()
+
     user_id = _current_user_id()
     if user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
 
     job = _job_for_user(job_id, user_id)
     if not job or not _job_matches_owner(job, "company"):
+        return jsonify({"success": False, "error": "Export job not found"}), 404
+
+    artifact = _latest_export_artifact(job.job_id)
+    if not artifact:
+        return jsonify({"success": False, "error": "Export artifact not ready"}), 404
+
+    if _expire_if_needed(artifact) or artifact.status == "expired":
+        return jsonify({"success": False, "error": "Export artifact has expired"}), 410
+
+    if artifact.status != "ready":
+        return jsonify({"success": False, "error": "Export artifact not ready"}), 409
+
+    if not Path(artifact.storage_path).exists():
+        artifact.status = "failed"
+        db.session.commit()
+        return jsonify({"success": False, "error": "Export artifact is unavailable"}), 410
+
+    return send_file(
+        artifact.storage_path,
+        mimetype=artifact.content_type or "text/csv",
+        as_attachment=True,
+        download_name=artifact.filename,
+    )
+
+
+@jobs_bp.post("/exports/admin/<string:export_scope>")
+@role_required("admin")
+def trigger_admin_export(export_scope):
+    _run_export_artifact_cleanup()
+
+    user_id = _current_user_id()
+    if user_id is None:
+        return jsonify({"success": False, "error": "Invalid token identity"}), 401
+
+    normalized_scope = ADMIN_EXPORT_SCOPE_MAP.get(str(export_scope or "").strip().lower())
+    if not normalized_scope:
+        return jsonify({"success": False, "error": "Invalid admin export scope"}), 400
+
+    job, error_message, reused_existing = create_admin_export_job(user_id, normalized_scope)
+    if error_message:
+        return jsonify({"success": False, "error": error_message}), 400
+
+    return _export_job_response(job, user_id, reused_existing)
+
+
+@jobs_bp.get("/exports/admin/jobs/<string:job_id>")
+@role_required("admin")
+def get_admin_export_status(job_id):
+    _run_export_artifact_cleanup()
+
+    user_id = _current_user_id()
+    if user_id is None:
+        return jsonify({"success": False, "error": "Invalid token identity"}), 401
+
+    job = _job_for_user(job_id, user_id)
+    if not job or not _job_matches_owner(job, "admin"):
+        return jsonify({"success": False, "error": "Export job not found"}), 404
+
+    artifact = _latest_export_artifact(job.job_id)
+    if artifact:
+        _expire_if_needed(artifact)
+        _mark_artifact_failed_if_missing(artifact)
+        artifact = _latest_export_artifact(job.job_id)
+
+    payload = {
+        "job": job.to_dict(),
+        "artifact": artifact.to_dict() if artifact else None,
+    }
+    return jsonify({"success": True, "data": payload}), 200
+
+
+@jobs_bp.get("/exports/admin/jobs/<string:job_id>/download")
+@role_required("admin")
+def download_admin_export_artifact(job_id):
+    _run_export_artifact_cleanup()
+
+    user_id = _current_user_id()
+    if user_id is None:
+        return jsonify({"success": False, "error": "Invalid token identity"}), 401
+
+    job = _job_for_user(job_id, user_id)
+    if not job or not _job_matches_owner(job, "admin"):
         return jsonify({"success": False, "error": "Export job not found"}), 404
 
     artifact = _latest_export_artifact(job.job_id)

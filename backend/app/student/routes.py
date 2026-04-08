@@ -1,11 +1,16 @@
 """Student profile and dashboard routes."""
 
+import os
+import re
 from datetime import datetime, timezone
 from math import ceil
+from urllib.parse import quote, unquote
+from uuid import uuid4
 
-from flask import Blueprint, current_app, jsonify, make_response, request
-from flask_jwt_extended import get_jwt_identity
+from flask import Blueprint, current_app, jsonify, make_response, request, send_from_directory
+from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 from sqlalchemy import func, or_
+from werkzeug.utils import secure_filename
 
 from app.applications.status_engine import (
     ATS_TO_LEGACY_STATUS,
@@ -59,6 +64,12 @@ ALLOWED_APPLICATION_STATUSES = {
     "waitlisted",
 }
 ALLOWED_OFFER_RESPONSE_STATUSES = {"accepted", "rejected"}
+ALLOWED_RESUME_FILE_EXTENSIONS = {"pdf", "doc", "docx"}
+DEFAULT_MAX_RESUME_UPLOAD_BYTES = 5 * 1024 * 1024
+RESUME_FILENAME_PATTERN = re.compile(
+    r"^student-(?P<student_id>\d+)-[a-f0-9]{32}\.(pdf|doc|docx)$",
+    re.IGNORECASE,
+)
 
 
 def _json_error(message, status_code=400):
@@ -78,6 +89,133 @@ def _normalized_json_payload():
         key: value.strip() if isinstance(value, str) else value
         for key, value in data.items()
     }
+
+
+def _resume_upload_directory():
+    configured_dir = str(
+        current_app.config.get("STUDENT_RESUME_UPLOAD_DIR") or ""
+    ).strip()
+    upload_dir = configured_dir or os.path.join(current_app.instance_path, "resumes")
+    os.makedirs(upload_dir, exist_ok=True)
+    return upload_dir
+
+
+def _resume_upload_limit_bytes():
+    configured_limit = current_app.config.get(
+        "STUDENT_RESUME_MAX_BYTES",
+        DEFAULT_MAX_RESUME_UPLOAD_BYTES,
+    )
+    try:
+        parsed_limit = int(configured_limit)
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_RESUME_UPLOAD_BYTES
+    return parsed_limit if parsed_limit > 0 else DEFAULT_MAX_RESUME_UPLOAD_BYTES
+
+
+def _resume_extension(filename):
+    if "." not in filename:
+        return ""
+    return filename.rsplit(".", 1)[-1].lower()
+
+
+def _resume_public_url(student_id):
+    return f"{request.url_root.rstrip('/')}/student/resume/{int(student_id)}"
+
+
+def _current_role():
+    claims = get_jwt()
+    return str(claims.get("role") or "").strip().lower()
+
+
+def _student_id_from_resume_filename(filename):
+    match = RESUME_FILENAME_PATTERN.match(str(filename or "").strip())
+    if not match:
+        return None
+
+    try:
+        return int(match.group("student_id"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _latest_resume_filename_for_student(student_id):
+    prefix = f"student-{int(student_id)}-"
+    upload_dir = _resume_upload_directory()
+
+    latest_file_name = None
+    latest_modified_at = -1.0
+
+    try:
+        for entry in os.scandir(upload_dir):
+            if not entry.is_file():
+                continue
+
+            file_name = entry.name
+            if not file_name.startswith(prefix):
+                continue
+            if _resume_extension(file_name) not in ALLOWED_RESUME_FILE_EXTENSIONS:
+                continue
+
+            modified_at = entry.stat().st_mtime
+            if modified_at > latest_modified_at:
+                latest_modified_at = modified_at
+                latest_file_name = file_name
+    except OSError:
+        return None
+
+    return latest_file_name
+
+
+def _company_can_access_student_resume(company_user_id, student_id):
+    company = Company.query.filter_by(user_id=company_user_id).first()
+    if not company:
+        return False
+
+    existing_application = (
+        db.session.query(Application.application_id)
+        .join(PlacementDrive, Application.drive_id == PlacementDrive.drive_id)
+        .filter(
+            Application.student_id == student_id,
+            PlacementDrive.company_id == company.company_id,
+        )
+        .first()
+    )
+    return existing_application is not None
+
+
+def _can_access_student_resume(role, user_id, student):
+    if role == "admin":
+        return True
+    if role == "student":
+        return bool(student and student.user_id == user_id)
+    if role == "company":
+        return _company_can_access_student_resume(user_id, student.student_id)
+    return False
+
+
+def _resolve_uploaded_resume_filename(student):
+    if not student:
+        return None
+
+    raw_resume_url = str(student.resume_url or "").strip()
+    if raw_resume_url:
+        parsed_url = unquote(raw_resume_url)
+        parsed_path = parsed_url.split("?", 1)[0]
+        direct_name = parsed_path.rsplit("/", 1)[-1].strip()
+        if direct_name and RESUME_FILENAME_PATTERN.match(direct_name):
+            direct_path = os.path.join(_resume_upload_directory(), direct_name)
+            if os.path.isfile(direct_path):
+                return direct_name
+
+    return _latest_resume_filename_for_student(student.student_id)
+
+
+def _serve_student_resume_file(student):
+    file_name = _resolve_uploaded_resume_filename(student)
+    if not file_name:
+        return _json_error("Resume file not found", 404)
+
+    return send_from_directory(_resume_upload_directory(), file_name)
 
 
 def _validate_student_profile_payload(data):
@@ -542,6 +680,136 @@ def get_student_profile():
             {
                 "success": True,
                 "data": {
+                    "student": _student_profile_payload(student),
+                },
+            }
+        ),
+        200,
+    )
+
+
+@student_bp.get("/resume-files/<path:filename>")
+@jwt_required()
+def get_uploaded_resume(filename):
+    user_id = _current_user_id()
+    if user_id is None:
+        return _json_error("Invalid token identity", 401)
+
+    role = _current_role()
+    normalized_name = secure_filename(str(filename or "").strip())
+    if not normalized_name:
+        return _json_error("Resume file not found", 404)
+
+    student_id = _student_id_from_resume_filename(normalized_name)
+    if student_id is None:
+        return _json_error("Resume file not found", 404)
+
+    student = db.session.get(Student, student_id)
+    if not student:
+        return _json_error("Student profile not found", 404)
+
+    if not _can_access_student_resume(role, user_id, student):
+        return _json_error("Forbidden: resume access denied", 403)
+
+    resolved_name = _resolve_uploaded_resume_filename(student)
+    if resolved_name != normalized_name:
+        return _json_error("Resume file not found", 404)
+
+    return send_from_directory(_resume_upload_directory(), normalized_name)
+
+
+@student_bp.get("/resume/<int:student_id>")
+@jwt_required()
+def get_student_resume(student_id):
+    user_id = _current_user_id()
+    if user_id is None:
+        return _json_error("Invalid token identity", 401)
+
+    student = db.session.get(Student, int(student_id))
+    if not student:
+        return _json_error("Student profile not found", 404)
+
+    role = _current_role()
+    if not _can_access_student_resume(role, user_id, student):
+        return _json_error("Forbidden: resume access denied", 403)
+
+    return _serve_student_resume_file(student)
+
+
+@student_bp.post("/profile/resume")
+@role_required("student")
+def upload_student_resume():
+    user_id = _current_user_id()
+    if user_id is None:
+        return _json_error("Invalid token identity", 401)
+
+    student = _student_for_user(user_id)
+    if not student:
+        return _json_error("Student profile not found", 404)
+
+    uploaded_file = request.files.get("resume")
+    if uploaded_file is None:
+        return _json_error("Resume file is required", 400)
+
+    original_filename = secure_filename(str(uploaded_file.filename or "").strip())
+    if not original_filename:
+        return _json_error("Resume file name is required", 400)
+
+    extension = _resume_extension(original_filename)
+    if extension not in ALLOWED_RESUME_FILE_EXTENSIONS:
+        return _json_error("Only PDF, DOC, or DOCX files are allowed", 400)
+
+    try:
+        uploaded_file.stream.seek(0, os.SEEK_END)
+        file_size = uploaded_file.stream.tell()
+        uploaded_file.stream.seek(0)
+    except (AttributeError, OSError):
+        file_size = 0
+
+    if file_size <= 0:
+        return _json_error("Uploaded resume file is empty", 400)
+
+    max_size_bytes = _resume_upload_limit_bytes()
+    if file_size > max_size_bytes:
+        max_size_mb = max_size_bytes / (1024 * 1024)
+        size_label = (
+            f"{int(max_size_mb)} MB"
+            if float(max_size_mb).is_integer()
+            else f"{max_size_mb:.1f} MB"
+        )
+        return _json_error(f"Resume file must be {size_label} or smaller", 400)
+
+    upload_dir = _resume_upload_directory()
+    stored_filename = f"student-{student.student_id}-{uuid4().hex}.{extension}"
+    stored_path = os.path.join(upload_dir, stored_filename)
+
+    try:
+        uploaded_file.save(stored_path)
+    except Exception:
+        return _json_error("Unable to store uploaded resume", 500)
+
+    student.resume_url = _resume_public_url(student.student_id)
+    student.resume_uploaded_at = datetime.now(timezone.utc)
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        if os.path.exists(stored_path):
+            try:
+                os.remove(stored_path)
+            except OSError:
+                pass
+        return _json_error("Unable to update resume details", 500)
+
+    _invalidate_admin_cache(CACHE_NAMESPACE_ADMIN_STUDENT_SEARCH)
+
+    return (
+        jsonify(
+            {
+                "success": True,
+                "data": {
+                    "message": "Resume uploaded successfully",
                     "student": _student_profile_payload(student),
                 },
             }
@@ -1361,6 +1629,7 @@ def student_history():
                     "drive_id": drive.drive_id,
                     "job_title": drive.job_title,
                     "job_location": drive.job_location,
+                    "salary_lpa": drive.salary_lpa,
                 },
                 "company": {
                     "company_id": company.company_id,

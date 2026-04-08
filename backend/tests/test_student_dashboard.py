@@ -1,4 +1,6 @@
+import io
 from datetime import date, datetime, timedelta, timezone
+from urllib.parse import urlparse
 
 from flask_jwt_extended import create_access_token
 
@@ -362,3 +364,165 @@ def test_student_profile_supports_resume_skills_and_experience(app, client):
             == "Completed two internships in platform engineering."
         )
         assert refreshed.resume_uploaded_at is not None
+
+
+def test_student_can_upload_resume_file_and_access_it(app, client, tmp_path):
+    upload_dir = tmp_path / "resumes"
+    app.config["STUDENT_RESUME_UPLOAD_DIR"] = str(upload_dir)
+
+    with app.app_context():
+        student_user = _make_user(
+            "student.upload.resume",
+            "student.upload.resume@example.com",
+            "student",
+        )
+        student = _make_student_profile(student_user.user_id, "CS21B9211")
+        db.session.commit()
+
+        headers = _auth_headers(student_user.user_id, "student")
+        student_id = student.student_id
+
+    upload_response = client.post(
+        "/student/profile/resume",
+        data={
+            "resume": (io.BytesIO(b"%PDF-1.4 resume payload"), "resume.pdf"),
+        },
+        headers=headers,
+        content_type="multipart/form-data",
+    )
+    assert upload_response.status_code == 200
+
+    payload = upload_response.get_json()["data"]
+    resume_url = payload["student"]["resume_url"]
+    assert "/student/resume/" in resume_url
+
+    resume_path = urlparse(resume_url).path
+    download_response = client.get(resume_path, headers=headers)
+    assert download_response.status_code == 200
+    assert download_response.data == b"%PDF-1.4 resume payload"
+
+    with app.app_context():
+        refreshed = db.session.get(Student, student_id)
+        assert refreshed is not None
+        assert refreshed.resume_url == resume_url
+        assert refreshed.resume_uploaded_at is not None
+
+    uploaded_files = list(upload_dir.glob("*"))
+    assert len(uploaded_files) == 1
+
+
+def test_student_resume_download_requires_auth(app, client, tmp_path):
+    app.config["STUDENT_RESUME_UPLOAD_DIR"] = str(tmp_path / "resumes")
+
+    with app.app_context():
+        student_user = _make_user(
+            "student.resume.auth",
+            "student.resume.auth@example.com",
+            "student",
+        )
+        _make_student_profile(student_user.user_id, "CS21B9214")
+        db.session.commit()
+
+        headers = _auth_headers(student_user.user_id, "student")
+
+    upload_response = client.post(
+        "/student/profile/resume",
+        data={"resume": (io.BytesIO(b"%PDF-1.4 payload"), "resume.pdf")},
+        headers=headers,
+        content_type="multipart/form-data",
+    )
+    assert upload_response.status_code == 200
+
+    resume_url = upload_response.get_json()["data"]["student"]["resume_url"]
+    resume_path = urlparse(resume_url).path
+
+    unauthorized_response = client.get(resume_path)
+    assert unauthorized_response.status_code == 401
+
+
+def test_student_resume_download_forbidden_for_other_student(app, client, tmp_path):
+    app.config["STUDENT_RESUME_UPLOAD_DIR"] = str(tmp_path / "resumes")
+
+    with app.app_context():
+        owner_user = _make_user(
+            "student.resume.owner",
+            "student.resume.owner@example.com",
+            "student",
+        )
+        _make_student_profile(owner_user.user_id, "CS21B9215")
+
+        other_user = _make_user(
+            "student.resume.other",
+            "student.resume.other@example.com",
+            "student",
+        )
+        _make_student_profile(other_user.user_id, "CS21B9216")
+        db.session.commit()
+
+        owner_headers = _auth_headers(owner_user.user_id, "student")
+        other_headers = _auth_headers(other_user.user_id, "student")
+
+    upload_response = client.post(
+        "/student/profile/resume",
+        data={"resume": (io.BytesIO(b"%PDF-1.4 payload"), "resume.pdf")},
+        headers=owner_headers,
+        content_type="multipart/form-data",
+    )
+    assert upload_response.status_code == 200
+
+    resume_url = upload_response.get_json()["data"]["student"]["resume_url"]
+    resume_path = urlparse(resume_url).path
+
+    forbidden_response = client.get(resume_path, headers=other_headers)
+    assert forbidden_response.status_code == 403
+
+
+def test_student_resume_upload_rejects_invalid_extension(app, client, tmp_path):
+    app.config["STUDENT_RESUME_UPLOAD_DIR"] = str(tmp_path / "resumes")
+
+    with app.app_context():
+        student_user = _make_user(
+            "student.upload.invalid",
+            "student.upload.invalid@example.com",
+            "student",
+        )
+        _make_student_profile(student_user.user_id, "CS21B9212")
+        db.session.commit()
+
+        headers = _auth_headers(student_user.user_id, "student")
+
+    response = client.post(
+        "/student/profile/resume",
+        data={"resume": (io.BytesIO(b"binary-data"), "resume.exe")},
+        headers=headers,
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "Only PDF, DOC, or DOCX files are allowed"
+
+
+def test_student_resume_upload_rejects_files_larger_than_limit(app, client, tmp_path):
+    app.config["STUDENT_RESUME_UPLOAD_DIR"] = str(tmp_path / "resumes")
+    app.config["STUDENT_RESUME_MAX_BYTES"] = 10
+
+    with app.app_context():
+        student_user = _make_user(
+            "student.upload.limit",
+            "student.upload.limit@example.com",
+            "student",
+        )
+        _make_student_profile(student_user.user_id, "CS21B9213")
+        db.session.commit()
+
+        headers = _auth_headers(student_user.user_id, "student")
+
+    response = client.post(
+        "/student/profile/resume",
+        data={"resume": (io.BytesIO(b"12345678901"), "resume.pdf")},
+        headers=headers,
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 400
+    assert "Resume file must be" in response.get_json()["error"]

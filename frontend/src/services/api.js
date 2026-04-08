@@ -391,6 +391,28 @@ export const companyApi = {
     return apiClient.put('/company/notifications/read-all')
   },
 
+  triggerApplicationsExportJob() {
+    return apiClient.post('/jobs/exports/company/applications')
+  },
+
+  triggerDrivesExportJob() {
+    return apiClient.post('/jobs/exports/company/drives')
+  },
+
+  triggerPlacementsExportJob() {
+    return apiClient.post('/jobs/exports/company/placements')
+  },
+
+  getExportStatus(jobId) {
+    return apiClient.get(`/jobs/exports/company/${jobId}`)
+  },
+
+  downloadExport(jobId) {
+    return apiClient.get(`/jobs/exports/company/${jobId}/download`, {
+      responseType: 'blob'
+    })
+  },
+
   mapDashboardSummary
 }
 
@@ -466,6 +488,17 @@ export const adminApi = {
   },
   markAllNotificationsRead() {
     return apiClient.put('/admin/notifications/read-all')
+  },
+  triggerExport(scope) {
+    return apiClient.post(`/jobs/exports/admin/${scope}`)
+  },
+  getExportStatus(jobId) {
+    return apiClient.get(`/jobs/exports/admin/jobs/${jobId}`)
+  },
+  downloadExport(jobId) {
+    return apiClient.get(`/jobs/exports/admin/jobs/${jobId}/download`, {
+      responseType: 'blob'
+    })
   }
 }
 
@@ -510,6 +543,20 @@ export const studentApi = {
   getHistory(params = {}) {
     return apiClient.get('/student/history', { params })
   },
+  triggerApplicationsExportJob() {
+    return apiClient.post('/jobs/exports/applications')
+  },
+  triggerHistoryExportJob() {
+    return apiClient.post('/jobs/exports/history')
+  },
+  getExportStatus(jobId) {
+    return apiClient.get(`/jobs/exports/${jobId}`)
+  },
+  downloadExport(jobId) {
+    return apiClient.get(`/jobs/exports/${jobId}/download`, {
+      responseType: 'blob'
+    })
+  },
   getNotifications(params = {}) {
     return apiClient.get('/student/notifications', { params })
   },
@@ -543,6 +590,16 @@ export const studentApi = {
       () => apiClient.patch('/student/profile', payload),
       () => apiClient.put('/student/profile', payload)
     ])
+  },
+  uploadResume(file) {
+    const formData = new FormData()
+    formData.append('resume', file)
+
+    return apiClient.post('/student/profile/resume', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    })
   }
 }
 

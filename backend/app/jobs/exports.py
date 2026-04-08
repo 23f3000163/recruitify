@@ -1,4 +1,4 @@
-"""Asynchronous CSV export workflow for student and company history."""
+"""Asynchronous CSV export workflow for student, company, and admin scopes."""
 
 import csv
 import hashlib
@@ -7,8 +7,10 @@ from io import StringIO
 from pathlib import Path
 
 from flask import current_app
+from sqlalchemy import func
 
 from app.models import (
+    ActivityLog,
     Application,
     BackgroundJob,
     Company,
@@ -24,8 +26,32 @@ from app.models import (
 
 ACTIVE_JOB_STATUSES = {"queued", "running"}
 EXPORT_SCOPE_STUDENT_APPLICATIONS = "student_applications"
+EXPORT_SCOPE_STUDENT_HISTORY = "student_history"
 EXPORT_SCOPE_COMPANY_APPLICATIONS = "company_applications"
 EXPORT_SCOPE_COMPANY_PLACEMENTS = "company_placements"
+EXPORT_SCOPE_COMPANY_DRIVES = "company_drives"
+EXPORT_SCOPE_ADMIN_COMPANIES = "admin_companies"
+EXPORT_SCOPE_ADMIN_STUDENTS = "admin_students"
+EXPORT_SCOPE_ADMIN_DRIVES = "admin_drives"
+EXPORT_SCOPE_ADMIN_ANALYTICS = "admin_analytics"
+EXPORT_SCOPE_ADMIN_AUDIT = "admin_audit"
+
+STUDENT_EXPORT_SCOPES = {
+    EXPORT_SCOPE_STUDENT_APPLICATIONS,
+    EXPORT_SCOPE_STUDENT_HISTORY,
+}
+COMPANY_EXPORT_SCOPES = {
+    EXPORT_SCOPE_COMPANY_APPLICATIONS,
+    EXPORT_SCOPE_COMPANY_PLACEMENTS,
+    EXPORT_SCOPE_COMPANY_DRIVES,
+}
+ADMIN_EXPORT_SCOPES = {
+    EXPORT_SCOPE_ADMIN_COMPANIES,
+    EXPORT_SCOPE_ADMIN_STUDENTS,
+    EXPORT_SCOPE_ADMIN_DRIVES,
+    EXPORT_SCOPE_ADMIN_ANALYTICS,
+    EXPORT_SCOPE_ADMIN_AUDIT,
+}
 
 
 def _utcnow():
@@ -58,13 +84,15 @@ def _active_export_job_for_user(user_id, export_scope):
     return None
 
 
-def create_student_export_job(user_id):
-    """Create a new student applications export job unless one is already active."""
+def create_student_export_job(user_id, export_scope=EXPORT_SCOPE_STUDENT_APPLICATIONS):
+    """Create a new student export job unless one is already active for the same scope."""
+    if export_scope not in STUDENT_EXPORT_SCOPES:
+        return None, "Invalid export scope", None
+
     student = _student_for_user(user_id)
     if not student:
         return None, "Student profile not found", None
 
-    export_scope = EXPORT_SCOPE_STUDENT_APPLICATIONS
     active_job = _active_export_job_for_user(user_id, export_scope)
     if active_job:
         return active_job, None, True
@@ -74,7 +102,10 @@ def create_student_export_job(user_id):
         job_type="export_csv",
         status="queued",
         requested_by_user_id=user_id,
-        idempotency_key=f"export:student:{student.student_id}:{now_utc.strftime('%Y%m%d%H%M%S')}",
+        idempotency_key=(
+            f"export:student:{student.student_id}:{export_scope}:"
+            f"{now_utc.strftime('%Y%m%d%H%M%S')}"
+        ),
         payload={
             "export_owner": "student",
             "export_scope": export_scope,
@@ -90,7 +121,7 @@ def create_student_export_job(user_id):
 
 def create_company_export_job(user_id, export_scope):
     """Create a new company export job unless one is already active for the same scope."""
-    if export_scope not in {EXPORT_SCOPE_COMPANY_APPLICATIONS, EXPORT_SCOPE_COMPANY_PLACEMENTS}:
+    if export_scope not in COMPANY_EXPORT_SCOPES:
         return None, "Invalid export scope", None
 
     company = _company_for_user(user_id)
@@ -114,6 +145,39 @@ def create_company_export_job(user_id, export_scope):
             "export_owner": "company",
             "export_scope": export_scope,
             "company_id": company.company_id,
+            "requested_at": now_utc.isoformat(),
+        },
+    )
+    db.session.add(job)
+    db.session.commit()
+
+    return job, None, False
+
+
+def create_admin_export_job(user_id, export_scope):
+    """Create a new admin export job unless one is already active for the same scope."""
+    if export_scope not in ADMIN_EXPORT_SCOPES:
+        return None, "Invalid export scope", None
+
+    user = db.session.get(User, user_id)
+    if not user or user.role != "admin":
+        return None, "Admin profile not found", None
+
+    active_job = _active_export_job_for_user(user_id, export_scope)
+    if active_job:
+        return active_job, None, True
+
+    now_utc = _utcnow()
+    job = BackgroundJob(
+        job_type="export_csv",
+        status="queued",
+        requested_by_user_id=user_id,
+        idempotency_key=(
+            f"export:admin:{user_id}:{export_scope}:{now_utc.strftime('%Y%m%d%H%M%S')}"
+        ),
+        payload={
+            "export_owner": "admin",
+            "export_scope": export_scope,
             "requested_at": now_utc.isoformat(),
         },
     )
@@ -216,12 +280,222 @@ def _build_company_placements_csv(rows):
     return output.getvalue()
 
 
-def _write_export_artifact(file_prefix, csv_content):
+def _build_company_drives_csv(rows):
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "Drive ID",
+            "Job Title",
+            "Status",
+            "Salary LPA",
+            "Applications Count",
+            "Application Deadline",
+            "Created Date",
+        ]
+    )
+
+    for drive, applications_count in rows:
+        writer.writerow(
+            [
+                drive.drive_id,
+                drive.job_title,
+                drive.status,
+                drive.salary_lpa if drive.salary_lpa is not None else "",
+                applications_count,
+                drive.application_deadline.isoformat() if drive.application_deadline else "",
+                drive.created_at.isoformat() if drive.created_at else "",
+            ]
+        )
+
+    return output.getvalue()
+
+
+def _build_student_history_csv(rows):
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "Application ID",
+            "Drive Title",
+            "Company Name",
+            "Application Status",
+            "Outcome",
+            "Offer Status",
+            "Offer Position",
+            "Offer Salary",
+            "Placement Position",
+            "Placement Salary",
+            "Updated Date",
+        ]
+    )
+
+    for application, drive, company, offer, placement, outcome in rows:
+        writer.writerow(
+            [
+                application.application_id,
+                drive.job_title if drive else "",
+                company.company_name if company else "",
+                application.status,
+                outcome,
+                offer.status if offer else "",
+                offer.position if offer else "",
+                offer.salary if offer else "",
+                placement.position if placement else "",
+                placement.salary if placement else "",
+                application.updated_at.isoformat() if application.updated_at else "",
+            ]
+        )
+
+    return output.getvalue()
+
+
+def _build_admin_companies_csv(rows):
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "Company ID",
+            "Company Name",
+            "Industry",
+            "Website",
+            "HR Contact Name",
+            "HR Contact Email",
+            "Approval Status",
+            "Blacklisted",
+            "Created Date",
+        ]
+    )
+
+    for company, _user in rows:
+        writer.writerow(
+            [
+                company.company_id,
+                company.company_name,
+                company.industry or "",
+                company.website or "",
+                company.hr_contact_name,
+                company.hr_contact_email,
+                company.approval_status,
+                "yes" if company.is_blacklisted else "no",
+                company.created_at.isoformat() if company.created_at else "",
+            ]
+        )
+
+    return output.getvalue()
+
+
+def _build_admin_students_csv(rows):
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "Student ID",
+            "Student Name",
+            "Student Email",
+            "Roll Number",
+            "Branch",
+            "Year",
+            "CGPA",
+            "Profile Completed",
+            "Blacklisted",
+            "Created Date",
+        ]
+    )
+
+    for student, user in rows:
+        writer.writerow(
+            [
+                student.student_id,
+                user.username if user else "",
+                user.email if user else "",
+                student.roll_number or "",
+                student.branch or "",
+                student.year or "",
+                student.cgpa if student.cgpa is not None else "",
+                "yes" if student.profile_completed else "no",
+                "yes" if student.is_blacklisted else "no",
+                student.created_at.isoformat() if student.created_at else "",
+            ]
+        )
+
+    return output.getvalue()
+
+
+def _build_admin_drives_csv(rows):
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "Drive ID",
+            "Drive Title",
+            "Company Name",
+            "Status",
+            "Salary LPA",
+            "Applications Count",
+            "Application Deadline",
+            "Created Date",
+        ]
+    )
+
+    for drive, company, applications_count in rows:
+        writer.writerow(
+            [
+                drive.drive_id,
+                drive.job_title,
+                company.company_name if company else "",
+                drive.status,
+                drive.salary_lpa if drive.salary_lpa is not None else "",
+                applications_count,
+                drive.application_deadline.isoformat() if drive.application_deadline else "",
+                drive.created_at.isoformat() if drive.created_at else "",
+            ]
+        )
+
+    return output.getvalue()
+
+
+def _build_admin_analytics_csv(rows):
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Metric", "Value"])
+
+    for metric, value in rows:
+        writer.writerow([metric, value])
+
+    return output.getvalue()
+
+
+def _build_admin_audit_csv(rows):
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Action", "Actor", "Target", "Status", "Timestamp"])
+
+    for activity, user in rows:
+        writer.writerow(
+            [
+                activity.action,
+                user.username if user else "",
+                activity.target or "",
+                activity.status,
+                activity.timestamp.isoformat() if activity.timestamp else "",
+            ]
+        )
+
+    return output.getvalue()
+
+
+def _write_export_artifact(file_prefix, csv_content, job_id=None):
     output_dir = Path(current_app.config.get("JOBS_EXPORT_OUTPUT_DIR"))
     output_dir.mkdir(parents=True, exist_ok=True)
 
     now_utc = _utcnow()
-    filename = f"{file_prefix}-{now_utc.strftime('%Y%m%d%H%M%S')}.csv"
+    timestamp = now_utc.strftime('%Y%m%d%H%M%S')
+    if job_id:
+        compact_job_id = str(job_id).replace("-", "")[:12]
+        timestamp = f"{timestamp}-{compact_job_id}"
+
+    filename = f"{file_prefix}-{timestamp}.csv"
     output_file = output_dir / filename
     output_file.write_text(csv_content, encoding="utf-8")
 
@@ -268,6 +542,129 @@ def _company_placement_rows(company_id):
     )
 
 
+def _company_drive_rows(company_id):
+    drive_counts = (
+        db.session.query(
+            Application.drive_id,
+            func.count(Application.application_id).label("applications_count"),
+        )
+        .group_by(Application.drive_id)
+        .subquery()
+    )
+
+    return (
+        db.session.query(
+            PlacementDrive,
+            func.coalesce(drive_counts.c.applications_count, 0),
+        )
+        .outerjoin(drive_counts, PlacementDrive.drive_id == drive_counts.c.drive_id)
+        .filter(PlacementDrive.company_id == company_id)
+        .order_by(PlacementDrive.created_at.desc(), PlacementDrive.drive_id.desc())
+        .all()
+    )
+
+
+def _student_history_rows(student_id):
+    history_rows = []
+    for application, drive, company in _student_application_rows(student_id):
+        offer = application.placement_offer
+        placement = (
+            Placement.query.filter_by(
+                student_id=student_id,
+                company_id=company.company_id if company else None,
+                drive_id=drive.drive_id if drive else None,
+            )
+            .order_by(Placement.created_at.desc(), Placement.placement_id.desc())
+            .first()
+        )
+
+        outcome = "in_progress"
+        if placement or (offer and offer.status == "accepted"):
+            outcome = "placed"
+        elif offer and offer.status == "offered":
+            outcome = "offer_released"
+        elif application.status == "rejected":
+            outcome = "rejected"
+
+        history_rows.append((application, drive, company, offer, placement, outcome))
+
+    return history_rows
+
+
+def _admin_company_rows():
+    return (
+        db.session.query(Company, User)
+        .join(User, Company.user_id == User.user_id)
+        .order_by(Company.created_at.desc(), Company.company_id.desc())
+        .all()
+    )
+
+
+def _admin_student_rows():
+    return (
+        db.session.query(Student, User)
+        .join(User, Student.user_id == User.user_id)
+        .order_by(Student.created_at.desc(), Student.student_id.desc())
+        .all()
+    )
+
+
+def _admin_drive_rows():
+    drive_counts = (
+        db.session.query(
+            Application.drive_id,
+            func.count(Application.application_id).label("applications_count"),
+        )
+        .group_by(Application.drive_id)
+        .subquery()
+    )
+
+    return (
+        db.session.query(
+            PlacementDrive,
+            Company,
+            func.coalesce(drive_counts.c.applications_count, 0),
+        )
+        .join(Company, PlacementDrive.company_id == Company.company_id)
+        .outerjoin(drive_counts, PlacementDrive.drive_id == drive_counts.c.drive_id)
+        .order_by(PlacementDrive.created_at.desc(), PlacementDrive.drive_id.desc())
+        .all()
+    )
+
+
+def _admin_analytics_rows():
+    total_students = Student.query.count()
+    total_companies = Company.query.count()
+    total_drives = PlacementDrive.query.count()
+    total_applications = Application.query.count()
+    total_placements = Placement.query.count()
+    pending_companies = Company.query.filter_by(approval_status="pending").count()
+    pending_drives = PlacementDrive.query.filter_by(status="pending").count()
+    placed_students = (
+        db.session.query(func.count(func.distinct(Placement.student_id))).scalar() or 0
+    )
+
+    return [
+        ("Total Students", total_students),
+        ("Total Companies", total_companies),
+        ("Total Drives", total_drives),
+        ("Total Applications", total_applications),
+        ("Total Placements", total_placements),
+        ("Placed Students", placed_students),
+        ("Pending Company Approvals", pending_companies),
+        ("Pending Drive Approvals", pending_drives),
+    ]
+
+
+def _admin_audit_rows():
+    return (
+        db.session.query(ActivityLog, User)
+        .join(User, ActivityLog.user_id == User.user_id)
+        .order_by(ActivityLog.timestamp.desc(), ActivityLog.log_id.desc())
+        .all()
+    )
+
+
 def _build_export_payload(job):
     payload = job.payload or {}
     export_scope = payload.get("export_scope")
@@ -284,6 +681,21 @@ def _build_export_payload(job):
             "row_count": len(rows),
             "file_prefix": f"applications-export-student-{student.student_id}",
             "message": "Your applications export is ready for download.",
+            "scope": export_scope,
+        }
+
+    if export_scope == EXPORT_SCOPE_STUDENT_HISTORY:
+        student_id = int(payload.get("student_id"))
+        student = db.session.get(Student, student_id)
+        if not student:
+            raise ValueError("Student profile not found")
+
+        rows = _student_history_rows(student.student_id)
+        return {
+            "csv_content": _build_student_history_csv(rows),
+            "row_count": len(rows),
+            "file_prefix": f"history-export-student-{student.student_id}",
+            "message": "Your placement history export is ready for download.",
             "scope": export_scope,
         }
 
@@ -317,6 +729,71 @@ def _build_export_payload(job):
             "scope": export_scope,
         }
 
+    if export_scope == EXPORT_SCOPE_COMPANY_DRIVES:
+        company_id = int(payload.get("company_id"))
+        company = db.session.get(Company, company_id)
+        if not company:
+            raise ValueError("Company profile not found")
+
+        rows = _company_drive_rows(company.company_id)
+        return {
+            "csv_content": _build_company_drives_csv(rows),
+            "row_count": len(rows),
+            "file_prefix": f"drives-export-company-{company.company_id}",
+            "message": "Your company drives export is ready for download.",
+            "scope": export_scope,
+        }
+
+    if export_scope == EXPORT_SCOPE_ADMIN_COMPANIES:
+        rows = _admin_company_rows()
+        return {
+            "csv_content": _build_admin_companies_csv(rows),
+            "row_count": len(rows),
+            "file_prefix": "admin-export-companies",
+            "message": "Your admin companies export is ready for download.",
+            "scope": export_scope,
+        }
+
+    if export_scope == EXPORT_SCOPE_ADMIN_STUDENTS:
+        rows = _admin_student_rows()
+        return {
+            "csv_content": _build_admin_students_csv(rows),
+            "row_count": len(rows),
+            "file_prefix": "admin-export-students",
+            "message": "Your admin students export is ready for download.",
+            "scope": export_scope,
+        }
+
+    if export_scope == EXPORT_SCOPE_ADMIN_DRIVES:
+        rows = _admin_drive_rows()
+        return {
+            "csv_content": _build_admin_drives_csv(rows),
+            "row_count": len(rows),
+            "file_prefix": "admin-export-drives",
+            "message": "Your admin drives export is ready for download.",
+            "scope": export_scope,
+        }
+
+    if export_scope == EXPORT_SCOPE_ADMIN_ANALYTICS:
+        rows = _admin_analytics_rows()
+        return {
+            "csv_content": _build_admin_analytics_csv(rows),
+            "row_count": len(rows),
+            "file_prefix": "admin-export-analytics",
+            "message": "Your admin analytics export is ready for download.",
+            "scope": export_scope,
+        }
+
+    if export_scope == EXPORT_SCOPE_ADMIN_AUDIT:
+        rows = _admin_audit_rows()
+        return {
+            "csv_content": _build_admin_audit_csv(rows),
+            "row_count": len(rows),
+            "file_prefix": "admin-export-audit",
+            "message": "Your admin audit export is ready for download.",
+            "scope": export_scope,
+        }
+
     raise ValueError("Unsupported export scope")
 
 
@@ -337,6 +814,7 @@ def execute_export_job(job_id):
         artifact_file = _write_export_artifact(
             export_payload["file_prefix"],
             export_payload["csv_content"],
+            job_id=job.job_id,
         )
 
         ttl_hours = max(1, int(current_app.config.get("JOBS_EXPORT_ARTIFACT_TTL_HOURS", 24)))
