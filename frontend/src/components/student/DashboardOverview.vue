@@ -12,10 +12,26 @@
     </div>
 
     <div class="rq-kpi-grid">
-      <article v-for="card in statCards" :key="card.id" class="rq-kpi">
+      <article
+        v-for="card in statCards"
+        :key="card.id"
+        class="rq-kpi"
+        :class="kpiClass(card.id)"
+      >
+        <div class="rq-kpi-header">
+          <div class="rq-kpi-icon" v-html="kpiIconSvg(card.id)"></div>
+          <span class="rq-kpi-pill" :class="kpiPillClass(card.id)">{{ kpiPillText(card) }}</span>
+        </div>
         <div class="rq-kpi-val">{{ card.value }}</div>
         <div class="rq-kpi-label">{{ card.label }}</div>
         <div class="rq-kpi-sub">{{ card.sub }}</div>
+        <div class="rq-kpi-bar">
+          <div
+            class="rq-kpi-bar-fill"
+            :class="kpiBarClass(card.id)"
+            :style="{ width: kpiBarWidth(card.value) }"
+          ></div>
+        </div>
       </article>
     </div>
 
@@ -43,15 +59,33 @@
             </div>
             <div v-else-if="drives.length" class="rq-drive-list">
               <div v-for="drive in drives.slice(0, 4)" :key="drive.id" class="rq-drive-row">
-                <div class="rq-drive-main">
-                  <p class="rq-list-title">{{ drive.role }}</p>
-                  <p class="rq-list-sub">{{ drive.company }}</p>
-                  <div class="rq-drive-meta">
-                    <span class="rq-drive-chip">{{ drive.salary || '-' }}</span>
-                    <span class="rq-drive-chip">{{ drive.deadline || '-' }}</span>
+                <div class="rq-drive-left">
+                  <div class="rq-drive-avatar" :style="driveAvatarStyle(drive)">{{ driveInitials(drive) }}</div>
+                  <div class="rq-drive-main">
+                    <p class="rq-list-title">{{ drive.role }}</p>
+                    <div class="rq-drive-company-row">
+                      <p class="rq-list-sub">{{ drive.company }}</p>
+                      <span class="rq-status-pill" :class="driveStateClass(drive)">{{ driveStateLabel(drive) }}</span>
+                    </div>
                   </div>
                 </div>
-                <span class="rq-status-pill" :class="driveStateClass(drive)">{{ driveStateLabel(drive) }}</span>
+                <div class="rq-drive-meta">
+                  <span v-for="chip in driveChips(drive)" :key="chip.key" class="rq-drive-chip">
+                    <span class="rq-drive-chip-icon" aria-hidden="true">{{ chip.icon }}</span>
+                    {{ chip.label }}
+                  </span>
+                </div>
+                <div class="rq-drive-right">
+                  <button
+                    class="rq-btn-primary rq-drive-apply-btn"
+                    :class="{ 'is-applied': drive.applied }"
+                    type="button"
+                    :disabled="!canApplyDrive(drive)"
+                    @click="$emit('apply-drive', drive)"
+                  >
+                    {{ driveApplyButtonLabel(drive) }}
+                  </button>
+                </div>
               </div>
             </div>
             <div v-else class="rq-drive-empty" role="status" aria-live="polite">
@@ -102,7 +136,7 @@
                     <p class="rq-row-sub">{{ row.company }}</p>
                   </td>
                   <td class="rq-row-sub">{{ row.appliedOn || '-' }}</td>
-                  <td class="rq-row-sub">{{ row.package || '-' }}</td>
+                  <td class="rq-dashboard-package">{{ row.package || '-' }}</td>
                   <td>
                     <span class="rq-status-pill" :class="statusClass(row.status)">{{ row.statusLabel }}</span>
                   </td>
@@ -266,7 +300,7 @@ export default {
       default: () => ({})
     }
   },
-  emits: ['switch-view'],
+  emits: ['switch-view', 'apply-drive'],
   computed: {
     greetingSubline() {
       const count = this.newDrivesCount
@@ -394,6 +428,94 @@ export default {
     }
   },
   methods: {
+    kpiClass(cardId) {
+      return `rq-kpi-${String(cardId || '').toLowerCase()}`
+    },
+    kpiIconSvg(cardId) {
+      const iconMap = {
+        applied:
+          '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="5" r="2.5" stroke="currentColor" stroke-width="1.4"/><path d="M3 13c0-2.6 2.1-4 5-4s5 1.4 5 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>',
+        shortlisted:
+          '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="3" y="2" width="10" height="12" rx="2" stroke="currentColor" stroke-width="1.4"/><path d="M6 6h4M6 9h4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>',
+        interviewed:
+          '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="2" stroke="currentColor" stroke-width="1.4"/><path d="M5 1.8v2M11 1.8v2M2 6h12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>',
+        offers:
+          '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2.2l1.7 3.4 3.7.5-2.7 2.6.6 3.7L8 10.6l-3.3 1.8.6-3.7L2.6 6.1l3.7-.5L8 2.2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>'
+      }
+
+      return iconMap[cardId] || iconMap.applied
+    },
+    kpiPillClass(cardId) {
+      const pillMap = {
+        applied: 'pill-applied',
+        shortlisted: 'pill-shortlisted',
+        interviewed: 'pill-interview',
+        offers: 'pill-offer'
+      }
+
+      return pillMap[cardId] || 'pill-applied'
+    },
+    kpiPillText(card) {
+      const parsedValue = Number(String(card?.value || '0').replace(/,/g, '')) || 0
+      if (card?.id === 'applied') return `${parsedValue} in progress`
+      if (card?.id === 'shortlisted') return `${parsedValue} pending`
+      if (card?.id === 'interviewed') return `${parsedValue} scheduled`
+      if (card?.id === 'offers') return `${parsedValue} processed`
+      return `${parsedValue} total`
+    },
+    kpiBarClass(cardId) {
+      const barMap = {
+        applied: 'kpi-bar-applied',
+        shortlisted: 'kpi-bar-shortlisted',
+        interviewed: 'kpi-bar-interviewed',
+        offers: 'kpi-bar-offers'
+      }
+
+      return barMap[cardId] || 'kpi-bar-applied'
+    },
+    kpiBarWidth(value) {
+      const current = Number(String(value || '0').replace(/,/g, '')) || 0
+      const maxValue = Math.max(
+        1,
+        ...this.statCards.map((card) => Number(String(card?.value || '0').replace(/,/g, '')) || 0)
+      )
+
+      return `${Math.max(8, Math.round((current / maxValue) * 100))}%`
+    },
+    driveInitials(drive) {
+      const company = String(drive?.company || '').trim()
+      if (!company) return 'D'
+
+      const segments = company.split(/\s+/).filter(Boolean)
+      if (segments.length === 1) return segments[0].slice(0, 1).toUpperCase()
+      return `${segments[0][0] || ''}${segments[1][0] || ''}`.toUpperCase()
+    },
+    driveAvatarStyle(drive) {
+      const palette = ['#2563EB', '#059669', '#D97706', '#EF4444']
+      const idSeed = Number(drive?.id || 0)
+      const color = palette[Math.abs(idSeed) % palette.length]
+      return { background: color }
+    },
+    driveChips(drive) {
+      const chips = [
+        { key: 'salary', icon: '💰', label: drive?.salary || '-' },
+        { key: 'branch', icon: '🎓', label: drive?.branchLabel || '-' },
+        { key: 'cgpa', icon: '📊', label: drive?.cgpaLabel || 'CGPA -' },
+        { key: 'year', icon: '📚', label: drive?.yearLabel || 'Year -' },
+        { key: 'deadline', icon: '📅', label: drive?.deadline || '-' }
+      ]
+
+      return chips.filter((chip) => String(chip.label || '').trim())
+    },
+    canApplyDrive(drive) {
+      return !drive?.applied && drive?.isOpen !== false && drive?.isEligible !== false
+    },
+    driveApplyButtonLabel(drive) {
+      if (drive?.applied) return 'Applied'
+      if (drive?.isOpen === false) return 'Closed'
+      if (drive?.isEligible === false) return 'Not eligible'
+      return 'Apply'
+    },
     normalizeStatus(status) {
       const normalized = String(status || '').toLowerCase()
       if (normalized === 'interviewed') return 'interview'
@@ -431,12 +553,10 @@ export default {
       return Math.ceil((deadlineStart - todayStart) / 86400000)
     },
     driveStateClass(drive) {
-      if (drive?.applied) return 'pill-shortlisted'
       if (drive?.isOpen === false) return 'pill-rejected'
-      return 'pill-applied'
+      return 'pill-shortlisted'
     },
     driveStateLabel(drive) {
-      if (drive?.applied) return 'Applied'
       if (drive?.isOpen === false) return 'Closed'
       return 'Open'
     },

@@ -6,22 +6,22 @@
       </header>
 
       <div class="rq-card-body">
-        <div class="rq-summary-grid">
-          <article class="rq-summary-card">
-            <p class="rq-summary-label">Total Applied</p>
-            <p class="rq-summary-value">{{ Number(summary.total_applied || 0).toLocaleString() }}</p>
+        <div class="rq-summary-grid rq-history-summary-grid">
+          <article class="rq-summary-card rq-history-summary-card rq-history-summary-applied">
+            <p class="rq-summary-value rq-history-summary-value">{{ Number(summary.total_applied || 0).toLocaleString() }}</p>
+            <p class="rq-summary-label rq-history-summary-label">Total Applied</p>
           </article>
-          <article class="rq-summary-card">
-            <p class="rq-summary-label">Offers Received</p>
-            <p class="rq-summary-value">{{ Number(summary.offers_received || 0).toLocaleString() }}</p>
+          <article class="rq-summary-card rq-history-summary-card rq-history-summary-offers">
+            <p class="rq-summary-value rq-history-summary-value">{{ Number(summary.offers_received || 0).toLocaleString() }}</p>
+            <p class="rq-summary-label rq-history-summary-label">Offers Received</p>
           </article>
-          <article class="rq-summary-card">
-            <p class="rq-summary-label">Placements</p>
-            <p class="rq-summary-value">{{ Number(summary.placements_count || 0).toLocaleString() }}</p>
+          <article class="rq-summary-card rq-history-summary-card rq-history-summary-placements">
+            <p class="rq-summary-value rq-history-summary-value">{{ Number(summary.placements_count || 0).toLocaleString() }}</p>
+            <p class="rq-summary-label rq-history-summary-label">Placements</p>
           </article>
-          <article class="rq-summary-card">
-            <p class="rq-summary-label">Highest Package</p>
-            <p class="rq-summary-value">{{ formatPackage(summary.highest_package) }}</p>
+          <article class="rq-summary-card rq-history-summary-card rq-history-summary-package">
+            <p class="rq-summary-value rq-history-summary-value">{{ formatPackage(summary.highest_package) }}</p>
+            <p class="rq-summary-label rq-history-summary-label">Highest Package</p>
           </article>
         </div>
 
@@ -40,12 +40,28 @@
           <button class="rq-ghost" type="button" @click="$emit('apply-filters')">
             Apply
           </button>
+
+          <button
+            class="rq-ghost"
+            type="button"
+            :disabled="isHistoryExportBusy"
+            @click="$emit('export-history')"
+          >
+            {{ historyExportButtonLabel }}
+          </button>
         </div>
+
+        <p v-if="historyExportStatus === 'completed'" class="rq-row-sub" aria-live="polite">
+          Export completed and downloaded.
+        </p>
+        <p v-else-if="historyExportStatus === 'failed'" class="rq-error-text" aria-live="assertive">
+          Export failed. Please retry.
+        </p>
 
         <p v-if="errorMessage" class="rq-error-text" role="alert" aria-live="assertive">{{ errorMessage }}</p>
 
         <div class="rq-table-wrap" :aria-busy="isLoading ? 'true' : 'false'" aria-live="polite">
-          <table class="rq-table">
+          <table class="rq-table rq-history-table">
             <caption class="rq-sr-only">Placement history with downloadable documents</caption>
             <thead>
               <tr>
@@ -53,17 +69,18 @@
                 <th scope="col">Company</th>
                 <th scope="col">Outcome</th>
                 <th scope="col">Status</th>
+                <th scope="col">Package</th>
                 <th scope="col">Updated</th>
                 <th scope="col">Documents</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="isLoading">
-                <td colspan="6" class="rq-empty-row">Loading placement history...</td>
+                <td colspan="7" class="rq-empty-row">Loading placement history...</td>
               </tr>
 
               <tr v-else-if="!historyItems.length">
-                <td colspan="6" class="rq-empty-row">No history records found.</td>
+                <td colspan="7" class="rq-empty-row">No history records found.</td>
               </tr>
 
               <tr v-for="row in historyItems" :key="row.application_id">
@@ -82,6 +99,7 @@
                     {{ row.status_label || statusLabel(row.status) }}
                   </span>
                 </td>
+                <td class="rq-history-package-cell">{{ packageLabel(row) }}</td>
                 <td>{{ formatDateTime(row.updated_at) }}</td>
                 <td>
                   <div class="rq-inline-actions">
@@ -154,6 +172,7 @@
 
             <div class="rq-mobile-meta">
               <p class="rq-row-sub">Location: {{ row.drive?.job_location || '-' }}</p>
+              <p class="rq-row-sub">Package: {{ packageLabel(row) }}</p>
               <p class="rq-row-sub">Updated: {{ formatDateTime(row.updated_at) }}</p>
 
               <div>
@@ -250,6 +269,14 @@ export default {
     isDownloading: {
       type: Object,
       default: () => ({})
+    },
+    historyExportStatus: {
+      type: String,
+      default: 'idle'
+    },
+    isHistoryExportBusy: {
+      type: Boolean,
+      default: false
     }
   },
   emits: [
@@ -257,15 +284,67 @@ export default {
     'apply-filters',
     'page-change',
     'download-offer',
-    'download-placement'
+    'download-placement',
+    'export-history'
   ],
+  computed: {
+    historyExportButtonLabel() {
+      const status = String(this.historyExportStatus || 'idle').toLowerCase()
+      if (status === 'queued') {
+        return 'Export queued...'
+      }
+      if (status === 'running') {
+        return 'Export running...'
+      }
+      return 'Export CSV'
+    }
+  },
   methods: {
     formatPackage(value) {
-      const parsed = Number(value)
-      if (Number.isNaN(parsed) || parsed <= 0) {
+      const lpa = this.normalizePackageLpa(value)
+      if (!lpa) {
         return '-'
       }
-      return `INR ${parsed.toLocaleString('en-IN')}`
+
+      const formatted = Number.isInteger(lpa)
+        ? lpa.toLocaleString('en-IN')
+        : lpa.toLocaleString('en-IN', { maximumFractionDigits: 1 })
+
+      return `₹${formatted} LPA`
+    },
+    normalizePackageLpa(value) {
+      const parsed = Number(value)
+      if (Number.isNaN(parsed) || parsed <= 0) {
+        return 0
+      }
+
+      // Backend values can be annual INR or already in LPA.
+      if (parsed >= 100000) {
+        return parsed / 100000
+      }
+      return parsed
+    },
+    packageLabel(row) {
+      const candidates = [
+        row?.drive?.salary_lpa,
+        row?.drive?.ctc_lpa,
+        row?.drive?.package_lpa,
+        row?.salary_lpa,
+        row?.offer?.salary_lpa,
+        row?.offer?.salary,
+        row?.placement?.salary_lpa,
+        row?.placement?.salary,
+        row?.placement?.package_lpa
+      ]
+
+      for (const candidate of candidates) {
+        const lpa = this.normalizePackageLpa(candidate)
+        if (lpa > 0) {
+          return this.formatPackage(candidate)
+        }
+      }
+
+      return '-'
     },
     formatDateTime(value) {
       if (!value) return '-'

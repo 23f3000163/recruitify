@@ -40,6 +40,7 @@
           :applications="dashboardApplications"
           :summary="summary"
           @switch-view="navigate"
+          @apply-drive="openDriveModal"
         />
 
         <StudentDrivesPanel
@@ -100,8 +101,12 @@
           v-else-if="activeView === 'profile'"
           :profile-form="profileForm"
           :is-saving="isSavingProfile"
+          :is-uploading-resume="isUploadingResume"
+          :resume-file-name="resumeFileName"
+          :student-name="student.name"
           :error-message="profileError"
           @update-field="updateProfileField"
+          @upload-resume="uploadResume"
           @save-profile="saveProfile"
         />
 
@@ -114,11 +119,14 @@
           :is-loading="isLoadingHistory"
           :error-message="historyError"
           :is-downloading="isDownloadingDocument"
+          :history-export-status="historyExportStatus"
+          :is-history-export-busy="isHistoryExportBusy"
           @update:query-text="historyQuery = $event"
           @apply-filters="applyHistoryFilters"
           @page-change="loadHistory"
           @download-offer="downloadOfferDocument"
           @download-placement="downloadPlacementDocument"
+          @export-history="startHistoryExport"
         />
 
         <StudentSectionPlaceholder
@@ -128,19 +136,25 @@
         />
       </main>
 
-      <Transition name="rq-modal">
-        <StudentDriveModal
-          v-if="selectedDrive && activeView === 'drives'"
-          :drive="selectedDrive"
-          @close="selectedDrive = null"
-          @apply="applyToDriveFromModal"
-        />
-      </Transition>
+      <DriveApplyModal
+        :show="showDriveModal"
+        :drive="selectedDrive"
+        :student="studentData"
+        :profile-complete="isProfileComplete()"
+        @close="closeDriveModal"
+        @apply="applyToDrive"
+        @navigate-profile="goToProfile"
+      />
 
       <StudentApplicationModal
         :application="selectedApplication"
         :screening-result="selectedApplicationScore"
-        @close="selectedApplication = null"
+        :score-note="selectedApplicationScoreNote"
+        :is-scoring="isSelectedApplicationScoring"
+        :is-responding="isSelectedOfferResponding"
+        @close="closeApplicationDetails"
+        @score-application="scoreApplicationMatch"
+        @respond-offer="respondToOffer"
       />
     </div>
   </div>
@@ -148,11 +162,11 @@
 
 <script>
 import { authApi, studentApi } from '../../api/api'
+import DriveApplyModal from '../../components/DriveApplyModal.vue'
 import StudentApplicationModal from '../../components/student/ApplicationModal.vue'
 import StudentApplicationsPanel from '../../components/student/ApplicationsView.vue'
 import StudentDashboardHome from '../../components/student/DashboardOverview.vue'
 import StudentDrivesPanel from '../../components/student/DrivesView.vue'
-import StudentDriveModal from '../../components/student/DriveModal.vue'
 import StudentHistoryPanel from '../../components/student/HistoryView.vue'
 import StudentNotificationsPanel from '../../components/student/NotificationsView.vue'
 import StudentProfilePanel from '../../components/student/ProfileView.vue'
@@ -168,6 +182,10 @@ const STORAGE_KEYS = Object.freeze({
 })
 
 const ACTION_NOTE_TIMEOUT_MS = 3200
+const MAX_RESUME_UPLOAD_BYTES = 5 * 1024 * 1024
+const ALLOWED_RESUME_FILE_EXTENSIONS = ['pdf', 'doc', 'docx']
+const EXPORT_POLL_INTERVAL_MS = 2500
+const EXPORT_POLL_MAX_ATTEMPTS = 48
 
 export default {
   name: 'StudentDashboard',
@@ -182,7 +200,7 @@ export default {
     StudentNotificationsPanel,
     StudentProfilePanel,
     StudentSectionPlaceholder,
-    StudentDriveModal,
+    DriveApplyModal,
     StudentApplicationModal
   },
   data() {
@@ -200,15 +218,20 @@ export default {
       isLoadingNotifications: false,
       isLoadingHistory: false,
       isSavingProfile: false,
+      isUploadingResume: false,
       dashboardError: '',
       drivesError: '',
       applicationsError: '',
       notificationsError: '',
       historyError: '',
       profileError: '',
+      resumeFileName: '',
       actionNote: '',
       actionTone: 'info',
       actionNoteTimerId: null,
+      atsScoreNotice: '',
+      atsScoreNoticeTimerId: null,
+      atsScoreNoticeApplicationId: 0,
       timeOfDay: hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening',
       todayDate: now.toLocaleDateString('en-IN', {
         weekday: 'long',
@@ -243,7 +266,7 @@ export default {
         {
           id: 'dashboard',
           label: 'Dashboard',
-          svg: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="1" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.4"/><rect x="1" y="9" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="9" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.4"/></svg>'
+          svg: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 6.5L8 2l6 4.5V14a1 1 0 01-1 1H3a1 1 0 01-1-1V6.5z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 15V9h4v6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'
         },
         {
           id: 'drives',
@@ -324,7 +347,12 @@ export default {
         limit: 10
       },
       historyQuery: '',
+      historyExportStatus: 'idle',
+      historyExportJobId: '',
+      historyExportAttempts: 0,
+      historyExportTimerId: null,
       isDownloadingDocument: {},
+      showDriveModal: false,
       selectedDrive: null,
       selectedApplication: null,
       profileForm: {
@@ -430,6 +458,44 @@ export default {
         return null
       }
       return this.atsScoresByApplication[applicationId] || null
+    },
+    selectedApplicationScoreNote() {
+      const applicationId = Number(this.selectedApplication?.application_id || this.selectedApplication?.id || 0)
+      if (!applicationId || this.atsScoreNoticeApplicationId !== applicationId) {
+        return ''
+      }
+
+      return this.atsScoreNotice
+    },
+    selectedOfferId() {
+      return Number(this.selectedApplication?.offer?.offer_id || 0)
+    },
+    isSelectedOfferResponding() {
+      if (!this.selectedOfferId) {
+        return false
+      }
+      return Boolean(this.isRespondingOffer[this.selectedOfferId])
+    },
+    isSelectedApplicationScoring() {
+      const applicationId = Number(this.selectedApplication?.application_id || this.selectedApplication?.id || 0)
+      if (!applicationId) {
+        return false
+      }
+      return Boolean(this.isScoringMatch[applicationId])
+    },
+    studentData() {
+      return {
+        full_name: String(this.student?.name || '').trim(),
+        email: String(this.student?.email || '').trim(),
+        phone: String(this.profileForm?.phone || '').trim(),
+        branch: String(this.profileForm?.branch || this.student?.branch || '').trim(),
+        year: this.profileForm?.year ?? this.student?.year ?? '',
+        cgpa: this.profileForm?.cgpa ?? '',
+        resume_url: String(this.profileForm?.resume_url || '').trim()
+      }
+    },
+    isHistoryExportBusy() {
+      return this.historyExportStatus === 'queued' || this.historyExportStatus === 'running'
     }
   },
   watch: {
@@ -446,10 +512,14 @@ export default {
     this.bootstrap()
   },
   beforeUnmount() {
+    this.clearHistoryExportPolling()
+
     if (this.actionNoteTimerId) {
       clearTimeout(this.actionNoteTimerId)
       this.actionNoteTimerId = null
     }
+
+    this.clearAtsScoreNotice()
   },
   methods: {
     async bootstrap() {
@@ -559,8 +629,12 @@ export default {
           company: row.company?.name || '-',
           salary: salaryLpa > 0 ? `${salaryLpa.toLocaleString()} LPA` : '-',
           deadline: this.formatShortDate(row.drive?.application_deadline),
+          branchLabel: this.resolveDriveBranchLabel(row.drive || {}),
+          cgpaLabel: this.resolveDriveCgpaLabel(row.drive || {}),
+          yearLabel: this.resolveDriveYearLabel(row.drive || {}),
           applied: true,
-          isOpen: true
+          isOpen: true,
+          isEligible: true
         })
       })
 
@@ -580,9 +654,61 @@ export default {
           '-',
         salary: salaryLpa > 0 ? `${salaryLpa.toLocaleString()} LPA` : '-',
         deadline: this.formatShortDate(drive.application_deadline || drive.drive?.application_deadline),
+        branchLabel: this.resolveDriveBranchLabel(drive),
+        cgpaLabel: this.resolveDriveCgpaLabel(drive),
+        yearLabel: this.resolveDriveYearLabel(drive),
         applied: Boolean(drive.already_applied || drive.applied),
-        isOpen: drive.is_open !== false
+        isOpen: drive.is_open !== false,
+        isEligible: drive.is_eligible !== false
       }
+    },
+    resolveDriveBranchLabel(drive) {
+      const branchArray = Array.isArray(drive?.eligible_branches)
+        ? drive.eligible_branches
+        : Array.isArray(drive?.eligibleBranches)
+          ? drive.eligibleBranches
+          : []
+
+      if (branchArray.length) {
+        return branchArray.slice(0, 2).join(', ')
+      }
+
+      const branchText = String(drive?.branch || drive?.branches || '').trim()
+      return branchText || '-'
+    },
+    resolveDriveCgpaLabel(drive) {
+      const minCgpa = Number(
+        drive?.min_cgpa ||
+        drive?.minCgpa ||
+        drive?.required_cgpa ||
+        drive?.cgpa_cutoff ||
+        0
+      )
+
+      if (!Number.isNaN(minCgpa) && minCgpa > 0) {
+        return `CGPA ${minCgpa}+`
+      }
+
+      const existingLabel = String(drive?.cgpa_label || drive?.cgpa_requirement || '').trim()
+      return existingLabel || 'CGPA -'
+    },
+    resolveDriveYearLabel(drive) {
+      const years = Array.isArray(drive?.eligible_years)
+        ? drive.eligible_years
+        : Array.isArray(drive?.eligibleYears)
+          ? drive.eligibleYears
+          : []
+
+      const normalizedYears = years
+        .map((value) => Number(value))
+        .filter((value) => Number.isInteger(value) && value > 0)
+
+      if (normalizedYears.length) {
+        return `Year ${normalizedYears.join(', ')}`
+      }
+
+      const existingLabel = String(drive?.year_label || drive?.year_requirement || '').trim()
+      return existingLabel || 'Year -'
     },
     async loadDrives(page = 1) {
       this.isLoadingDrives = true
@@ -755,7 +881,7 @@ export default {
         this.selectedApplication = application
 
         const score = Number(scorePayload?.analysis?.score || 0)
-        this.publishActionNote(`ATS match score: ${score}%`, 'success')
+        this.setAtsScoreNotice(applicationId, score)
       } catch (error) {
         const message =
           error?.response?.data?.error ||
@@ -887,6 +1013,7 @@ export default {
           skills: studentPayload.skills || '',
           experience_summary: studentPayload.experience_summary || ''
         }
+        this.resumeFileName = this.deriveResumeFileName(studentPayload.resume_url)
 
         this.student = {
           ...this.student,
@@ -937,6 +1064,166 @@ export default {
     },
     async applyHistoryFilters() {
       await this.loadHistory(1)
+    },
+    clearHistoryExportPolling({ resetState = true } = {}) {
+      if (this.historyExportTimerId) {
+        clearTimeout(this.historyExportTimerId)
+        this.historyExportTimerId = null
+      }
+
+      if (resetState) {
+        this.historyExportStatus = 'idle'
+        this.historyExportJobId = ''
+        this.historyExportAttempts = 0
+      }
+    },
+    scheduleHistoryExportPoll() {
+      if (this.historyExportTimerId) {
+        clearTimeout(this.historyExportTimerId)
+      }
+
+      this.historyExportTimerId = setTimeout(() => {
+        this.pollHistoryExportStatus()
+      }, EXPORT_POLL_INTERVAL_MS)
+    },
+    async startHistoryExport() {
+      if (this.isHistoryExportBusy) {
+        this.publishActionNote('History export is already in progress.', 'info')
+        return
+      }
+
+      this.clearHistoryExportPolling()
+
+      try {
+        const response = await studentApi.triggerHistoryExportJob()
+        const payload = response?.data?.data || {}
+        const jobId = String(payload.job_id || '').trim()
+
+        if (!jobId) {
+          this.publishActionNote('Unable to start history export. Please retry.', 'error')
+          return
+        }
+
+        const initialStatus = String(payload.status || 'queued').toLowerCase() === 'running'
+          ? 'running'
+          : 'queued'
+        this.historyExportStatus = initialStatus
+        this.historyExportJobId = jobId
+        this.historyExportAttempts = 0
+
+        if (payload.active_job_reused) {
+          this.publishActionNote('Tracking existing history export job...', 'info')
+        } else if (initialStatus === 'running') {
+          this.publishActionNote('History export is running in the background...', 'info')
+        } else {
+          this.publishActionNote('History export queued. Preparing your CSV...', 'info')
+        }
+
+        this.scheduleHistoryExportPoll()
+      } catch (error) {
+        const message =
+          error.response?.data?.error ||
+          error.response?.data?.message ||
+          'Unable to start history export.'
+        this.historyExportStatus = 'failed'
+        this.publishActionNote(message, 'error')
+      }
+    },
+    async pollHistoryExportStatus() {
+      const jobId = String(this.historyExportJobId || '').trim()
+      if (!jobId) {
+        this.clearHistoryExportPolling()
+        return
+      }
+
+      if (this.historyExportAttempts >= EXPORT_POLL_MAX_ATTEMPTS) {
+        this.historyExportStatus = 'failed'
+        this.historyExportJobId = ''
+        this.historyExportAttempts = 0
+        this.publishActionNote('History export timed out. Please retry.', 'warning')
+        return
+      }
+
+      try {
+        const statusResponse = await studentApi.getExportStatus(jobId)
+        const data = statusResponse?.data?.data || {}
+        const job = data.job || {}
+        const artifact = data.artifact || {}
+        const jobStatus = String(job.status || '').toLowerCase()
+        const artifactStatus = String(artifact.status || '').toLowerCase()
+
+        if (jobStatus === 'completed' && artifactStatus === 'ready') {
+          const downloadResponse = await studentApi.downloadExport(jobId)
+          const fallbackName = `history-export-${Date.now()}.csv`
+          const filename = this.extractFilename(downloadResponse?.headers, fallbackName)
+          this.triggerFileDownload(downloadResponse?.data, filename)
+          this.historyExportStatus = 'completed'
+          this.historyExportJobId = ''
+          this.historyExportAttempts = 0
+          this.historyExportTimerId = null
+          this.publishActionNote(`Downloaded ${filename}.`, 'success')
+          return
+        }
+
+        const hasFailed =
+          jobStatus === 'failed' ||
+          jobStatus === 'cancelled' ||
+          artifactStatus === 'failed' ||
+          artifactStatus === 'expired'
+        if (hasFailed) {
+          this.historyExportStatus = 'failed'
+          this.historyExportJobId = ''
+          this.historyExportAttempts = 0
+          this.historyExportTimerId = null
+
+          const fallbackFailureMessage = artifactStatus === 'expired'
+            ? 'History export artifact expired. Please retry.'
+            : 'Unable to complete history export. Please retry.'
+          const errorMessage = job.error_message || fallbackFailureMessage
+          this.publishActionNote(errorMessage, 'error')
+          return
+        }
+
+        const nextStatus = jobStatus === 'running' ? 'running' : 'queued'
+        if (nextStatus !== this.historyExportStatus) {
+          this.publishActionNote(
+            nextStatus === 'running'
+              ? 'History export is running in the background...'
+              : 'History export queued. Preparing your CSV...',
+            'info'
+          )
+        }
+
+        this.historyExportStatus = nextStatus
+        this.historyExportAttempts += 1
+
+        if (this.historyExportAttempts >= EXPORT_POLL_MAX_ATTEMPTS) {
+          this.historyExportStatus = 'failed'
+          this.historyExportJobId = ''
+          this.historyExportAttempts = 0
+          this.historyExportTimerId = null
+          this.publishActionNote('History export timed out. Please retry.', 'warning')
+          return
+        }
+
+        this.scheduleHistoryExportPoll()
+      } catch (error) {
+        this.historyExportAttempts += 1
+        if (this.historyExportAttempts >= EXPORT_POLL_MAX_ATTEMPTS) {
+          this.historyExportStatus = 'failed'
+          this.historyExportJobId = ''
+          this.historyExportAttempts = 0
+          this.historyExportTimerId = null
+          const message =
+            error.response?.data?.error ||
+            error.response?.data?.message ||
+            'Unable to fetch history export status.'
+          this.publishActionNote(`${message} Please retry export.`, 'warning')
+          return
+        }
+
+        this.scheduleHistoryExportPoll()
+      }
     },
     async downloadOfferDocument(offerId) {
       await this.downloadDocument('offer', Number(offerId))
@@ -1020,19 +1307,171 @@ export default {
       }
     },
     openDriveDetails(drive) {
+      this.openDriveModal(drive)
+    },
+    openDriveModal(drive) {
       this.selectedDrive = drive || null
+      this.showDriveModal = Boolean(drive)
+    },
+    closeDriveModal() {
+      this.showDriveModal = false
+      this.selectedDrive = null
+    },
+    isProfileComplete() {
+      const s = this.studentData
+      return Boolean(
+        s.full_name &&
+        s.email &&
+        s.phone &&
+        s.branch &&
+        s.cgpa &&
+        s.resume_url
+      )
+    },
+    goToProfile() {
+      this.closeDriveModal()
+      this.navigate('profile')
     },
     openApplicationDetails(application) {
+      const applicationId = Number(application?.application_id || application?.id || 0)
+      this.clearApplicationScore(applicationId)
       this.selectedApplication = application || null
     },
-    applyToDriveFromModal(driveId) {
-      this.applyToDrive(driveId)
-      this.selectedDrive = null
+    closeApplicationDetails() {
+      const applicationId = Number(this.selectedApplication?.application_id || this.selectedApplication?.id || 0)
+      this.clearApplicationScore(applicationId)
+      this.selectedApplication = null
+    },
+    clearApplicationScore(applicationId) {
+      const parsedId = Number(applicationId)
+      if (!parsedId) {
+        return
+      }
+
+      if (Object.prototype.hasOwnProperty.call(this.atsScoresByApplication, parsedId)) {
+        const nextScores = { ...this.atsScoresByApplication }
+        delete nextScores[parsedId]
+        this.atsScoresByApplication = nextScores
+      }
+
+      if (this.atsScoreNoticeApplicationId === parsedId) {
+        this.clearAtsScoreNotice()
+      }
+    },
+    clearAtsScoreNotice() {
+      if (this.atsScoreNoticeTimerId) {
+        clearTimeout(this.atsScoreNoticeTimerId)
+        this.atsScoreNoticeTimerId = null
+      }
+
+      this.atsScoreNotice = ''
+      this.atsScoreNoticeApplicationId = 0
+    },
+    setAtsScoreNotice(applicationId, score) {
+      const parsedId = Number(applicationId)
+      if (!parsedId) {
+        return
+      }
+
+      this.clearAtsScoreNotice()
+      this.atsScoreNoticeApplicationId = parsedId
+      this.atsScoreNotice = `ATS match score: ${Number(score || 0)}%`
+      this.atsScoreNoticeTimerId = setTimeout(() => {
+        this.atsScoreNotice = ''
+        this.atsScoreNoticeApplicationId = 0
+        this.atsScoreNoticeTimerId = null
+      }, ACTION_NOTE_TIMEOUT_MS)
     },
     updateProfileField(field, value) {
       this.profileForm = {
         ...this.profileForm,
         [field]: value
+      }
+
+      if (field === 'resume_url') {
+        this.resumeFileName = this.deriveResumeFileName(value)
+      }
+    },
+    deriveResumeFileName(resumeUrl) {
+      const normalizedUrl = String(resumeUrl || '').trim()
+      if (!normalizedUrl) {
+        return ''
+      }
+
+      const sanitizedUrl = normalizedUrl.split('?')[0].split('#')[0]
+      const segments = sanitizedUrl.split('/').filter(Boolean)
+      if (!segments.length) {
+        return ''
+      }
+
+      const finalSegment = segments[segments.length - 1]
+      try {
+        return decodeURIComponent(finalSegment)
+      } catch (error) {
+        return finalSegment
+      }
+    },
+    validateResumeFile(file) {
+      if (!file) {
+        return 'Please choose a resume file to upload.'
+      }
+
+      const fileName = String(file.name || '').trim()
+      const extension = fileName.includes('.')
+        ? fileName.split('.').pop().toLowerCase()
+        : ''
+
+      if (!ALLOWED_RESUME_FILE_EXTENSIONS.includes(extension)) {
+        return 'Only PDF, DOC, or DOCX files are allowed.'
+      }
+
+      const fileSize = Number(file.size || 0)
+      if (fileSize <= 0) {
+        return 'Uploaded resume file is empty.'
+      }
+
+      if (fileSize > MAX_RESUME_UPLOAD_BYTES) {
+        return 'Resume file must be 5 MB or smaller.'
+      }
+
+      return ''
+    },
+    async uploadResume(file) {
+      if (this.isUploadingResume || this.isSavingProfile) {
+        return
+      }
+
+      const validationError = this.validateResumeFile(file)
+      if (validationError) {
+        this.profileError = validationError
+        this.publishActionNote(validationError, 'error')
+        return
+      }
+
+      this.isUploadingResume = true
+      this.profileError = ''
+
+      try {
+        const response = await studentApi.uploadResume(file)
+        const studentPayload = response?.data?.data?.student || {}
+        const resolvedResumeUrl =
+          studentPayload.resume_url || this.profileForm.resume_url || ''
+
+        this.profileForm = {
+          ...this.profileForm,
+          resume_url: resolvedResumeUrl
+        }
+        this.resumeFileName = this.deriveResumeFileName(resolvedResumeUrl)
+
+        this.publishActionNote('Resume uploaded successfully.', 'success')
+      } catch (error) {
+        this.profileError =
+          error.response?.data?.error ||
+          error.response?.data?.message ||
+          'Unable to upload resume.'
+        this.publishActionNote(this.profileError, 'error')
+      } finally {
+        this.isUploadingResume = false
       }
     },
     validateStudentProfilePayload(payload) {
@@ -1068,6 +1507,27 @@ export default {
 
       return ''
     },
+    normalizeSkillsForSave(rawSkills) {
+      const parts = String(rawSkills || '')
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean)
+
+      const deduped = []
+      const seen = new Set()
+
+      parts.forEach((item) => {
+        const key = item.toLowerCase()
+        if (seen.has(key)) {
+          return
+        }
+
+        seen.add(key)
+        deduped.push(item)
+      })
+
+      return deduped.join(', ')
+    },
     async saveProfile() {
       this.isSavingProfile = true
       this.profileError = ''
@@ -1082,7 +1542,7 @@ export default {
         roll_number: String(this.profileForm.roll_number || '').trim(),
         phone: String(this.profileForm.phone || '').trim(),
         resume_url: String(this.profileForm.resume_url || '').trim(),
-        skills: String(this.profileForm.skills || '').trim(),
+        skills: this.normalizeSkillsForSave(this.profileForm.skills),
         experience_summary: String(this.profileForm.experience_summary || '').trim()
       }
 
@@ -1111,6 +1571,7 @@ export default {
           experience_summary:
             studentPayload.experience_summary || payload.experience_summary
         }
+        this.resumeFileName = this.deriveResumeFileName(this.profileForm.resume_url)
 
         this.student = {
           ...this.student,
@@ -1251,13 +1712,18 @@ export default {
     },
     navigate(viewId) {
       const nextView = typeof viewId === 'string' && viewId ? viewId : 'dashboard'
-      const isViewChanging = nextView !== this.activeView
+      const previousView = this.activeView
+      const isViewChanging = nextView !== previousView
 
       this.activeView = nextView
 
       if (isViewChanging) {
-        this.selectedDrive = null
-        this.selectedApplication = null
+        this.closeDriveModal()
+        this.closeApplicationDetails()
+
+        if (previousView === 'history' && nextView !== 'history') {
+          this.clearHistoryExportPolling()
+        }
       }
 
       if (nextView === 'drives' && !this.drives.length) {

@@ -35,6 +35,7 @@
     </div>
 
     <div class="rq-sb-role" v-show="!sidebarCollapsed">
+
       <span class="rq-role-pill rq-role-student">Student</span>
     </div>
 

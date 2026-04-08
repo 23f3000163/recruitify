@@ -67,82 +67,7 @@
 
         <p v-if="errorMessage" class="rq-error-text" role="alert" aria-live="assertive">{{ errorMessage }}</p>
 
-        <div class="rq-table-wrap" :aria-busy="isLoading ? 'true' : 'false'" aria-live="polite">
-          <table class="rq-table">
-            <caption class="rq-sr-only">Available placement drives and apply actions</caption>
-            <thead>
-              <tr>
-                <th scope="col">Role</th>
-                <th scope="col">Company</th>
-                <th scope="col">Eligibility</th>
-                <th scope="col">Package</th>
-                <th scope="col">Deadline</th>
-                <th scope="col">State</th>
-                <th scope="col">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-if="isLoading">
-                <td colspan="7" class="rq-empty-row">Loading drives...</td>
-              </tr>
-
-              <tr v-else-if="!drives.length">
-                <td colspan="7" class="rq-empty-row">No drives found for this filter.</td>
-              </tr>
-
-              <tr v-for="row in drives" :key="row.drive_id">
-                <td>
-                  <p class="rq-row-title">{{ row.job_title || 'Role unavailable' }}</p>
-                  <p class="rq-row-sub">{{ row.job_location || '-' }}</p>
-                </td>
-                <td>
-                  <p class="rq-row-title">{{ row.company?.name || '-' }}</p>
-                  <p class="rq-row-sub">{{ row.company?.industry || '-' }}</p>
-                </td>
-                <td>
-                  <span class="rq-status-pill" :class="eligibilityClass(row)">
-                    {{ eligibilityLabel(row) }}
-                  </span>
-                  <p v-if="!row.is_eligible && row.ineligibility_reasons?.length" class="rq-inline-note">
-                    {{ row.ineligibility_reasons.join('; ') }}
-                  </p>
-                </td>
-                <td>{{ formatSalary(row.salary_lpa) }}</td>
-                <td>{{ formatDate(row.application_deadline) }}</td>
-                <td>
-                  <span class="rq-status-pill" :class="driveStateClass(row)">
-                    {{ driveStateLabel(row) }}
-                  </span>
-                </td>
-                <td>
-                  <div class="rq-inline-actions">
-                    <button
-                      class="rq-ghost"
-                      type="button"
-                      :aria-label="`Open details for ${row.job_title || 'drive'}`"
-                      @click.stop="$emit('open-drive', row)"
-                    >
-                      Open
-                    </button>
-                    <button
-                      v-if="canApply(row)"
-                      class="rq-btn-primary"
-                      type="button"
-                      :disabled="isApplying[row.drive_id]"
-                      :aria-label="`Apply for ${row.job_title || 'drive'}`"
-                      @click.stop="$emit('apply-drive', row.drive_id)"
-                    >
-                      {{ isApplying[row.drive_id] ? 'Applying...' : 'Apply Now' }}
-                    </button>
-                    <span v-else class="rq-offer-state">{{ blockedActionLabel(row) }}</span>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div class="rq-mobile-list" :aria-busy="isLoading ? 'true' : 'false'" aria-live="polite">
+        <div class="rq-drive-catalog" :aria-busy="isLoading ? 'true' : 'false'" aria-live="polite">
           <article v-if="isLoading" class="rq-mobile-empty">
             Loading drives...
           </article>
@@ -151,62 +76,48 @@
             No drives found for this filter.
           </article>
 
-          <details
-            v-for="row in drives"
-            :key="`mobile-${row.drive_id}`"
-            class="rq-mobile-item"
-          >
-            <summary class="rq-mobile-summary">
-              <div class="rq-mobile-head">
-                <p class="rq-mobile-title">{{ row.job_title || 'Role unavailable' }}</p>
-                <p class="rq-mobile-sub">{{ row.company?.name || '-' }}</p>
+          <article v-for="row in drives" :key="row.drive_id" class="rq-drive-catalog-card">
+            <div class="rq-drive-catalog-left">
+              <div class="rq-drive-catalog-avatar" :style="avatarStyle(row)">
+                {{ companyInitials(row) }}
               </div>
 
-              <div class="rq-mobile-primary">
-                <span class="rq-status-pill" :class="driveStateClass(row)">
-                  {{ driveStateLabel(row) }}
-                </span>
+              <div class="rq-drive-catalog-body">
+                <p class="rq-row-title">{{ row.job_title || 'Role unavailable' }}</p>
 
-                <button
-                  class="rq-ghost rq-btn-primary-compact"
-                  type="button"
-                  :aria-label="`Open details for ${row.job_title || 'drive'}`"
-                  @click.stop.prevent="$emit('open-drive', row)"
-                >
-                  Open
-                </button>
+                <div class="rq-drive-catalog-company-row">
+                  <p class="rq-row-sub">{{ row.company?.name || '-' }}</p>
+                  <span class="rq-status-pill" :class="driveStateClass(row)">
+                    {{ driveStateLabel(row) }}
+                  </span>
+                </div>
 
-                <button
-                  v-if="canApply(row)"
-                  class="rq-btn-primary rq-btn-primary-compact"
-                  type="button"
-                  :disabled="isApplying[row.drive_id]"
-                  :aria-label="`Apply for ${row.job_title || 'drive'}`"
-                  @click.stop.prevent="$emit('apply-drive', row.drive_id)"
-                >
-                  {{ isApplying[row.drive_id] ? 'Applying...' : 'Apply' }}
-                </button>
-                <span v-else class="rq-offer-state">{{ blockedActionLabel(row) }}</span>
-              </div>
-            </summary>
+                <div class="rq-drive-meta">
+                  <span v-for="chip in driveChips(row)" :key="`${row.drive_id}-${chip.key}`" class="rq-drive-chip">
+                    <span class="rq-drive-chip-icon" aria-hidden="true">{{ chip.icon }}</span>
+                    {{ chip.label }}
+                  </span>
+                </div>
 
-            <div class="rq-mobile-meta">
-              <p class="rq-row-sub">Location: {{ row.job_location || '-' }}</p>
-              <p class="rq-row-sub">Package: {{ formatSalary(row.salary_lpa) }}</p>
-              <p class="rq-row-sub">Deadline: {{ formatDate(row.application_deadline) }}</p>
-              <div>
-                <span class="rq-status-pill" :class="eligibilityClass(row)">
-                  {{ eligibilityLabel(row) }}
-                </span>
-                <p
-                  v-if="!row.is_eligible && row.ineligibility_reasons?.length"
-                  class="rq-inline-note"
-                >
+                <p v-if="!row.is_eligible && row.ineligibility_reasons?.length" class="rq-inline-note">
                   {{ row.ineligibility_reasons.join('; ') }}
                 </p>
               </div>
             </div>
-          </details>
+
+            <div class="rq-drive-catalog-actions">
+              <button
+                class="rq-btn-primary rq-drive-catalog-apply"
+                :class="applyButtonClass(row)"
+                type="button"
+                :disabled="isApplyDisabled(row)"
+                :aria-label="`${applyButtonLabel(row)} for ${row.job_title || 'drive'}`"
+                @click.stop="$emit('open-drive', row)"
+              >
+                {{ applyButtonLabel(row) }}
+              </button>
+            </div>
+          </article>
         </div>
 
         <footer class="rq-panel-footer" v-if="pagination.pages > 1">
@@ -290,28 +201,58 @@ export default {
     'open-drive'
   ],
   methods: {
-    canApply(row) {
-      return !row.already_applied && row.is_open && row.is_eligible
+    companyInitials(row) {
+      const company = String(row?.company?.name || '').trim()
+      if (!company) return 'D'
+
+      const chunks = company.split(/\s+/).filter(Boolean)
+      if (chunks.length === 1) {
+        return chunks[0].slice(0, 1).toUpperCase()
+      }
+
+      return `${chunks[0][0] || ''}${chunks[1][0] || ''}`.toUpperCase()
     },
-    blockedActionLabel(row) {
+    avatarStyle(row) {
+      const palette = ['#2563EB', '#059669', '#D97706', '#EF4444', '#7C3AED']
+      const seed = Number(row?.drive_id || 0)
+      return { background: palette[Math.abs(seed) % palette.length] }
+    },
+    driveChips(row) {
+      const chips = [
+        { key: 'salary', icon: '💰', label: this.formatSalary(row.salary_lpa) },
+        { key: 'branch', icon: '🎓', label: this.formatBranches(row.eligible_branches) },
+        { key: 'cgpa', icon: '📊', label: this.formatCgpa(row.min_cgpa) },
+        { key: 'year', icon: '📚', label: this.formatYears(row.eligible_years) },
+        { key: 'deadline', icon: '📅', label: this.formatShortDate(row.application_deadline) }
+      ]
+
+      const seatCount = Number(row?.openings || row?.total_openings || row?.seats || row?.vacancies || 0)
+      if (!Number.isNaN(seatCount) && seatCount > 0) {
+        chips.push({ key: 'seats', icon: '👥', label: `${seatCount} seats` })
+      }
+
+      return chips.filter((chip) => String(chip.label || '').trim() && chip.label !== '-')
+    },
+    applyButtonLabel(row) {
+      if (this.isApplying[row.drive_id]) return 'Applying...'
       if (row.already_applied) return 'Applied'
       if (!row.is_open) return 'Closed'
       if (!row.is_eligible) return 'Not eligible'
-      return '-'
+      return 'Apply Now'
     },
-    eligibilityLabel(row) {
-      if (row.already_applied) return 'Submitted'
-      return row.is_eligible ? 'Eligible' : 'Not eligible'
+    applyButtonClass(row) {
+      if (row.already_applied) return 'is-applied'
+      if (!row.is_open || !row.is_eligible) return 'is-disabled'
+      return ''
     },
-    eligibilityClass(row) {
-      if (row.already_applied) return 'pill-offer'
-      return row.is_eligible ? 'pill-shortlisted' : 'pill-rejected'
+    isApplyDisabled(row) {
+      return Boolean(this.isApplying[row.drive_id] || row.already_applied || !row.is_open || !row.is_eligible)
     },
     driveStateLabel(row) {
       return row.is_open ? 'Open' : 'Closed'
     },
     driveStateClass(row) {
-      return row.is_open ? 'pill-applied' : 'pill-rejected'
+      return row.is_open ? 'pill-shortlisted' : 'pill-rejected'
     },
     formatDate(value) {
       if (!value) return '-'
@@ -327,6 +268,36 @@ export default {
       const parsed = Number(value)
       if (Number.isNaN(parsed) || parsed <= 0) return '-'
       return `${parsed.toLocaleString('en-IN')} LPA`
+    },
+    formatShortDate(value) {
+      if (!value) return '-'
+      const parsed = new Date(value)
+      if (Number.isNaN(parsed.getTime())) return '-'
+      return parsed.toLocaleDateString('en-IN', {
+        month: 'short',
+        day: 'numeric'
+      })
+    },
+    formatBranches(value) {
+      const list = Array.isArray(value)
+        ? value.map((item) => String(item || '').trim()).filter(Boolean)
+        : []
+      if (list.length) {
+        return list.length > 2 ? `${list.slice(0, 2).join(', ')}` : list.join(', ')
+      }
+      return '-'
+    },
+    formatCgpa(value) {
+      const minCgpa = Number(value)
+      if (Number.isNaN(minCgpa) || minCgpa <= 0) return '-'
+      return `CGPA ${minCgpa}+`
+    },
+    formatYears(value) {
+      const list = Array.isArray(value)
+        ? value.map((item) => Number(item)).filter((item) => Number.isInteger(item) && item > 0)
+        : []
+      if (!list.length) return '-'
+      return `Year ${list.join(', ')}`
     }
   }
 }

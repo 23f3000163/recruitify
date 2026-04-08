@@ -22,7 +22,8 @@ vi.mock('../../src/api/api', () => ({
     respondToOffer: vi.fn(),
     downloadOfferDocument: vi.fn(),
     downloadPlacementDocument: vi.fn(),
-    updateProfile: vi.fn()
+    updateProfile: vi.fn(),
+    uploadResume: vi.fn()
   }
 }))
 
@@ -301,7 +302,17 @@ describe('StudentDashboard step 3B wiring', () => {
           student: {
             branch: 'CSE',
             year: 3,
-            roll_number: 'CS21B042'
+            roll_number: 'CS21B042',
+            resume_url: 'https://example.com/resume.pdf'
+          }
+        }
+      }
+    })
+    studentApi.uploadResume.mockResolvedValue({
+      data: {
+        data: {
+          student: {
+            resume_url: 'http://127.0.0.1:5000/student/resume-files/student-1-new.pdf'
           }
         }
       }
@@ -329,7 +340,15 @@ describe('StudentDashboard step 3B wiring', () => {
     await wrapper.get('.to-applications').trigger('click')
     await flushPromises()
 
-    const acceptButton = wrapper.findAll('button').find((node) => node.text() === 'Accept')
+    const viewButton = wrapper.findAll('button').find((node) => node.text() === 'View')
+    expect(viewButton).toBeTruthy()
+    await viewButton.trigger('click')
+    await flushPromises()
+
+    const modal = wrapper.find('.rq-application-modal')
+    expect(modal.exists()).toBe(true)
+
+    const acceptButton = modal.findAll('button').find((node) => node.text() === 'Accept')
     expect(acceptButton).toBeTruthy()
 
     await acceptButton.trigger('click')
@@ -355,12 +374,20 @@ describe('StudentDashboard step 3B wiring', () => {
 
     await applyButton.trigger('click')
     await flushPromises()
+
+    const modal = wrapper.find('.rq-modal')
+    expect(modal.exists()).toBe(true)
+
+    const modalApplyButton = modal.findAll('button').find((node) => node.text() === 'Apply Now')
+    expect(modalApplyButton).toBeTruthy()
+    await modalApplyButton.trigger('click')
+    await flushPromises()
     await flushPromises()
 
     expect(studentApi.applyToDrive).toHaveBeenCalledWith(63)
   })
 
-  it('opens drive details from the Open action and clears it on section change', async () => {
+  it('opens drive details from the Apply action and clears it on section change', async () => {
     const wrapper = mountWrapper()
     await flushPromises()
     await flushPromises()
@@ -368,10 +395,10 @@ describe('StudentDashboard step 3B wiring', () => {
     await wrapper.get('.to-drives').trigger('click')
     await flushPromises()
 
-    const openButton = wrapper.findAll('button').find((node) => node.text() === 'Open')
-    expect(openButton).toBeTruthy()
+    const applyButton = wrapper.findAll('button').find((node) => node.text() === 'Apply Now')
+    expect(applyButton).toBeTruthy()
 
-    await openButton.trigger('click')
+    await applyButton.trigger('click')
     await flushPromises()
 
     expect(wrapper.vm.selectedDrive?.drive_id).toBe(63)
@@ -392,9 +419,9 @@ describe('StudentDashboard step 3B wiring', () => {
     await wrapper.get('.to-drives').trigger('click')
     await flushPromises()
 
-    const openButton = wrapper.findAll('button').find((node) => node.text() === 'Open')
-    expect(openButton).toBeTruthy()
-    await openButton.trigger('click')
+    const applyButton = wrapper.findAll('button').find((node) => node.text() === 'Apply Now')
+    expect(applyButton).toBeTruthy()
+    await applyButton.trigger('click')
     await flushPromises()
 
     const modal = wrapper.find('.rq-modal')
@@ -443,7 +470,7 @@ describe('StudentDashboard step 3B wiring', () => {
     await wrapper.get('.to-notifications').trigger('click')
     await flushPromises()
 
-    const markReadButton = wrapper.findAll('button').find((node) => node.text() === 'Mark read')
+    const markReadButton = wrapper.find('button[aria-label^="Mark notification"]')
     expect(markReadButton).toBeTruthy()
 
     await markReadButton.trigger('click')
@@ -454,17 +481,17 @@ describe('StudentDashboard step 3B wiring', () => {
     await wrapper.get('.to-profile').trigger('click')
     await flushPromises()
 
-    const inputs = wrapper.findAll('.rq-form-grid input')
-    const textareas = wrapper.findAll('.rq-form-grid textarea')
-    await inputs[0].setValue('My Engineering College')
-    await inputs[1].setValue('ECE')
-    await inputs[2].setValue('4')
-    await inputs[3].setValue('8.9')
-    await inputs[4].setValue('CS21B099')
-    await inputs[5].setValue('9876543210')
-    await inputs[6].setValue('https://example.com/new-resume.pdf')
-    await inputs[7].setValue('Vue, Flask, SQL')
-    await textareas[0].setValue('Built and shipped two production student portals.')
+    await wrapper.find('input[placeholder="College name"]').setValue('My Engineering College')
+    await wrapper.find('input[placeholder="Branch"]').setValue('ECE')
+    await wrapper.find('input[placeholder="Year"]').setValue('4')
+    await wrapper.find('input[placeholder="CGPA"]').setValue('8.9')
+    await wrapper.find('input[placeholder="Roll number"]').setValue('CS21B099')
+    await wrapper.find('input[placeholder="Phone number"]').setValue('9876543210')
+    await wrapper.find('input[placeholder="https://example.com/resume.pdf"]').setValue('https://example.com/new-resume.pdf')
+    await wrapper.find('input[placeholder="Python, SQL, Vue, DSA"]').setValue('Vue, Flask, SQL')
+    await wrapper.find('textarea[placeholder="Summarize internships, projects, and key responsibilities"]').setValue(
+      'Built and shipped two production student portals.'
+    )
 
     const saveButton = wrapper.findAll('button').find((node) => node.text() === 'Save Profile')
     expect(saveButton).toBeTruthy()
@@ -483,6 +510,50 @@ describe('StudentDashboard step 3B wiring', () => {
       skills: 'Vue, Flask, SQL',
       experience_summary: 'Built and shipped two production student portals.'
     })
+  })
+
+  it('keeps comma while typing skills input', async () => {
+    const wrapper = mountWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    await wrapper.get('.to-profile').trigger('click')
+    await flushPromises()
+
+    const skillsInput = wrapper.find('input[placeholder="Python, SQL, Vue, DSA"]')
+    await skillsInput.setValue('DSA, ')
+    await flushPromises()
+
+    expect(wrapper.vm.profileForm.skills).toBe('DSA, ')
+
+    await skillsInput.setValue('DSA, React')
+    await flushPromises()
+
+    expect(wrapper.vm.profileForm.skills).toBe('DSA, React')
+  })
+
+  it('uploads resume file from profile view and updates resume URL', async () => {
+    const wrapper = mountWrapper()
+    await flushPromises()
+    await flushPromises()
+
+    await wrapper.get('.to-profile').trigger('click')
+    await flushPromises()
+
+    const fileInput = wrapper.find('input[type="file"]')
+    const resumeFile = new File(['resume-content'], 'resume.pdf', { type: 'application/pdf' })
+
+    Object.defineProperty(fileInput.element, 'files', {
+      value: [resumeFile],
+      configurable: true
+    })
+    await fileInput.trigger('change')
+    await flushPromises()
+    await flushPromises()
+
+    expect(studentApi.uploadResume).toHaveBeenCalledTimes(1)
+    expect(studentApi.uploadResume).toHaveBeenCalledWith(expect.any(File))
+    expect(wrapper.vm.profileForm.resume_url).toContain('/student/resume-files/')
   })
 
   it('blocks profile save when CGPA is out of range', async () => {

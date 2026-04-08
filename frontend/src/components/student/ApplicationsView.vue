@@ -39,17 +39,17 @@
         <p v-if="errorMessage" class="rq-error-text" role="alert" aria-live="assertive">{{ errorMessage }}</p>
 
         <div class="rq-table-wrap" :aria-busy="isLoading ? 'true' : 'false'" aria-live="polite">
-          <table class="rq-table">
+          <table class="rq-table rq-applications-table">
             <caption class="rq-sr-only">Student applications with offer response actions</caption>
             <thead>
               <tr>
-                <th scope="col">Role</th>
-                <th scope="col">Company</th>
+                <th scope="col">Company / Role</th>
+                <th scope="col">Applied On</th>
+                <th scope="col">Package</th>
+                <th scope="col">Type</th>
                 <th scope="col">Status</th>
-                <th scope="col">Interview</th>
-                <th scope="col">Updated</th>
-                <th scope="col">ATS Match</th>
-                <th scope="col">Offer Action</th>
+                <th scope="col">Next Step</th>
+                <th scope="col">Details</th>
               </tr>
             </thead>
             <tbody>
@@ -61,12 +61,23 @@
                 <td colspan="7" class="rq-empty-row">No applications found for this filter.</td>
               </tr>
 
-              <tr v-for="row in applications" :key="row.application_id" @click="$emit('open-application', row)">
+              <tr v-for="row in applications" :key="row.application_id">
                 <td>
-                  <p class="rq-row-title">{{ row.drive?.title || 'Role unavailable' }}</p>
-                  <p class="rq-row-sub">{{ row.drive?.location || '-' }}</p>
+                  <div class="rq-app-role-cell">
+                    <div class="rq-app-avatar" :style="avatarStyle(row)">{{ companyInitials(row) }}</div>
+                    <div class="rq-app-role-copy">
+                      <p class="rq-row-title">{{ roleTitle(row) }}</p>
+                      <p class="rq-row-sub">{{ companyName(row) }}</p>
+                    </div>
+                  </div>
                 </td>
-                <td>{{ row.company?.name || '-' }}</td>
+                <td>{{ formatShortDate(row.application_date || row.applied_at || row.updated_at) }}</td>
+                <td>
+                  <span class="rq-app-package">{{ packageLabel(row) }}</span>
+                </td>
+                <td>
+                  <span class="rq-status-pill rq-pill-neutral">{{ jobTypeLabel(row) }}</span>
+                </td>
                 <td>
                   <span class="rq-status-pill" :class="statusClass(row.status)">
                     {{ row.status_label || statusLabel(row.status) }}
@@ -75,66 +86,19 @@
                   <p v-if="row.rejection_reason" class="rq-inline-note">Reason: {{ row.rejection_reason }}</p>
                 </td>
                 <td>
-                  <div v-if="row.latest_interview" class="rq-interview-cell">
-                    <p class="rq-row-title">{{ formatDateTime(row.latest_interview.interview_date) }}</p>
-                    <p class="rq-row-sub">
-                      {{ interviewModeLabel(row.latest_interview.interview_mode) }}
-                      <template v-if="row.latest_interview.interviewer_name">
-                        • {{ row.latest_interview.interviewer_name }}
-                      </template>
-                    </p>
-                    <p
-                      v-if="row.latest_interview.feedback"
-                      class="rq-inline-note"
-                    >
-                      Feedback: {{ row.latest_interview.feedback }}
-                    </p>
-                    <span
-                      class="rq-status-pill"
-                      :class="interviewResultClass(row.latest_interview.result)"
-                    >
-                      {{ interviewResultLabel(row.latest_interview.result) }}
-                    </span>
-                  </div>
-                  <span v-else class="rq-row-sub">Not scheduled</span>
+                  <span class="rq-app-next-step" :class="{ 'is-highlight': isNextStepHighlighted(row) }">
+                    {{ nextStepLabel(row) }}
+                  </span>
                 </td>
-                <td>{{ formatDateTime(row.updated_at) }}</td>
                 <td>
                   <button
-                    class="rq-ghost rq-ghost-xs"
+                    class="rq-ghost rq-ghost-xs rq-app-detail-btn"
                     type="button"
-                    :disabled="isScoring[row.application_id]"
-                    :aria-label="`Run ATS match for ${row.drive?.title || 'this role'}`"
-                    @click.stop="$emit('score-application', row)"
+                    :aria-label="`View details for ${roleTitle(row)}`"
+                    @click.stop="$emit('open-application', row)"
                   >
-                    {{ isScoring[row.application_id] ? 'Scoring...' : 'Check Match' }}
+                    View
                   </button>
-                </td>
-                <td>
-                  <div v-if="canRespondToOffer(row.offer)" class="rq-inline-actions">
-                    <button
-                      class="rq-ghost"
-                      type="button"
-                      :disabled="isResponding[row.offer.offer_id]"
-                      :aria-label="`Accept offer for ${row.drive?.title || 'selected role'}`"
-                      @click.stop="$emit('respond-offer', row.offer.offer_id, 'accepted')"
-                    >
-                      {{ isResponding[row.offer.offer_id] ? 'Saving...' : 'Accept' }}
-                    </button>
-                    <button
-                      class="rq-ghost rq-ghost-danger"
-                      type="button"
-                      :disabled="isResponding[row.offer.offer_id]"
-                      :aria-label="`Reject offer for ${row.drive?.title || 'selected role'}`"
-                      @click.stop="$emit('respond-offer', row.offer.offer_id, 'rejected')"
-                    >
-                      {{ isResponding[row.offer.offer_id] ? 'Saving...' : 'Reject' }}
-                    </button>
-                  </div>
-                  <span v-else-if="row.offer" class="rq-offer-state">
-                    {{ statusLabel(row.offer.status) }}
-                  </span>
-                  <span v-else class="rq-row-sub">-</span>
                 </td>
               </tr>
             </tbody>
@@ -157,8 +121,8 @@
           >
             <summary class="rq-mobile-summary">
               <div class="rq-mobile-head">
-                <p class="rq-mobile-title">{{ row.drive?.title || 'Role unavailable' }}</p>
-                <p class="rq-mobile-sub">{{ row.company?.name || '-' }}</p>
+                <p class="rq-mobile-title">{{ roleTitle(row) }}</p>
+                <p class="rq-mobile-sub">{{ companyName(row) }}</p>
               </div>
 
               <div class="rq-mobile-primary">
@@ -169,69 +133,24 @@
                 <button
                   class="rq-ghost rq-ghost-xs"
                   type="button"
-                  :disabled="isScoring[row.application_id]"
-                  :aria-label="`Run ATS match for ${row.drive?.title || 'this role'}`"
-                  @click.stop.prevent="$emit('score-application', row)"
+                  :aria-label="`View details for ${roleTitle(row)}`"
+                  @click.stop.prevent="$emit('open-application', row)"
                 >
-                  {{ isScoring[row.application_id] ? 'Scoring...' : 'Check Match' }}
-                </button>
-
-                <button
-                  v-if="canRespondToOffer(row.offer)"
-                  class="rq-btn-primary rq-btn-primary-compact"
-                  type="button"
-                  :disabled="isResponding[row.offer.offer_id]"
-                  :aria-label="`Accept offer for ${row.drive?.title || 'selected role'}`"
-                  @click.stop.prevent="$emit('respond-offer', row.offer.offer_id, 'accepted')"
-                >
-                  {{ isResponding[row.offer.offer_id] ? 'Saving...' : 'Accept' }}
+                  View
                 </button>
               </div>
             </summary>
 
             <div class="rq-mobile-meta">
-              <p class="rq-row-sub">Location: {{ row.drive?.location || '-' }}</p>
-              <p class="rq-row-sub">Updated: {{ formatDateTime(row.updated_at) }}</p>
+              <p class="rq-row-sub">Applied On: {{ formatShortDate(row.application_date || row.applied_at || row.updated_at) }}</p>
+              <p class="rq-row-sub">Package: {{ packageLabel(row) }}</p>
+              <p class="rq-row-sub">Type: {{ jobTypeLabel(row) }}</p>
+              <p class="rq-row-sub">Next Step: {{ nextStepLabel(row) }}</p>
 
               <div>
                 <p v-if="row.notes" class="rq-inline-note">Note: {{ row.notes }}</p>
                 <p v-if="row.rejection_reason" class="rq-inline-note">Reason: {{ row.rejection_reason }}</p>
               </div>
-
-              <div v-if="row.latest_interview" class="rq-interview-cell">
-                <p class="rq-row-title">{{ formatDateTime(row.latest_interview.interview_date) }}</p>
-                <p class="rq-row-sub">
-                  {{ interviewModeLabel(row.latest_interview.interview_mode) }}
-                  <template v-if="row.latest_interview.interviewer_name">
-                    • {{ row.latest_interview.interviewer_name }}
-                  </template>
-                </p>
-                <p v-if="row.latest_interview.feedback" class="rq-inline-note">
-                  Feedback: {{ row.latest_interview.feedback }}
-                </p>
-                <span class="rq-status-pill" :class="interviewResultClass(row.latest_interview.result)">
-                  {{ interviewResultLabel(row.latest_interview.result) }}
-                </span>
-              </div>
-              <p v-else class="rq-row-sub">Interview: Not scheduled</p>
-
-              <div
-                v-if="canRespondToOffer(row.offer)"
-                class="rq-mobile-aux-actions"
-              >
-                <button
-                  class="rq-ghost rq-ghost-danger"
-                  type="button"
-                  :disabled="isResponding[row.offer.offer_id]"
-                  :aria-label="`Reject offer for ${row.drive?.title || 'selected role'}`"
-                  @click.stop.prevent="$emit('respond-offer', row.offer.offer_id, 'rejected')"
-                >
-                  {{ isResponding[row.offer.offer_id] ? 'Saving...' : 'Reject' }}
-                </button>
-              </div>
-              <span v-else-if="row.offer" class="rq-offer-state">
-                Offer: {{ statusLabel(row.offer.status) }}
-              </span>
             </div>
           </details>
         </div>
@@ -307,36 +226,120 @@ export default {
     'score-application'
   ],
   methods: {
-    canRespondToOffer(offer) {
-      return String(offer?.status || '').toLowerCase() === 'offered'
+    roleTitle(row) {
+      return row?.drive?.title || row?.drive?.job_title || 'Role unavailable'
     },
-    interviewModeLabel(mode) {
-      const normalized = String(mode || '').toLowerCase()
-      const labels = {
-        online: 'Online Interview',
-        offline: 'On-site Interview',
-        both: 'Hybrid Interview'
+    companyName(row) {
+      return row?.company?.name || row?.company?.company_name || '-'
+    },
+    companyInitials(row) {
+      const company = String(this.companyName(row) || '').trim()
+      if (!company || company === '-') return 'CO'
+
+      const chunks = company.split(/\s+/).filter(Boolean)
+      if (chunks.length === 1) {
+        return (chunks[0][0] || 'C').toUpperCase()
       }
-      return labels[normalized] || 'Interview'
+      return `${chunks[0][0] || ''}${chunks[1][0] || ''}`.toUpperCase()
     },
-    interviewResultLabel(result) {
-      const normalized = String(result || '').toLowerCase()
-      if (!normalized || normalized === 'pending') return 'Pending'
-      if (normalized === 'pass') return 'Passed'
-      if (normalized === 'fail') return 'Not Selected'
-      return normalized
-    },
-    interviewResultClass(result) {
-      const normalized = String(result || '').toLowerCase()
-      if (normalized === 'pass') return 'pill-shortlisted'
-      if (normalized === 'fail') return 'pill-rejected'
-      return 'pill-applied'
+    avatarStyle(row) {
+      const palette = [
+        ['#0284C7', '#38BDF8'],
+        ['#2563EB', '#60A5FA'],
+        ['#4338CA', '#818CF8'],
+        ['#0F766E', '#2DD4BF'],
+        ['#B45309', '#F59E0B']
+      ]
+      const seed = Number(row?.application_id || row?.id || 0)
+      const [base, edge] = palette[Math.abs(seed) % palette.length]
+      return {
+        background: `linear-gradient(145deg, ${base}, ${edge})`
+      }
     },
     formatDateTime(value) {
       if (!value) return '-'
       const parsed = new Date(value)
       if (Number.isNaN(parsed.getTime())) return '-'
       return parsed.toLocaleString()
+    },
+    formatShortDate(value) {
+      if (!value) return '-'
+      const parsed = new Date(value)
+      if (Number.isNaN(parsed.getTime())) return '-'
+      return parsed.toLocaleDateString('en-IN', {
+        month: 'short',
+        day: 'numeric'
+      })
+    },
+    formatTime(value) {
+      if (!value) return ''
+      const parsed = new Date(value)
+      if (Number.isNaN(parsed.getTime())) return ''
+      return parsed.toLocaleTimeString('en-IN', {
+        hour: 'numeric',
+        minute: '2-digit'
+      })
+    },
+    packageLabel(row) {
+      const driveSalary = Number(row?.drive?.salary_lpa || row?.salary_lpa || 0)
+      if (!Number.isNaN(driveSalary) && driveSalary > 0) {
+        return `₹${driveSalary.toLocaleString('en-IN')} LPA`
+      }
+
+      const offerSalary = Number(row?.offer?.salary || 0)
+      if (!Number.isNaN(offerSalary) && offerSalary > 0) {
+        const lpa = offerSalary / 100000
+        const normalized = Number.isInteger(lpa)
+          ? lpa.toLocaleString('en-IN')
+          : lpa.toLocaleString('en-IN', { maximumFractionDigits: 1 })
+        return `₹${normalized} LPA`
+      }
+
+      return '-'
+    },
+    jobTypeLabel(row) {
+      return (
+        row?.drive?.job_type ||
+        row?.drive?.type ||
+        row?.drive?.employment_type ||
+        row?.job_type ||
+        'Full-time'
+      )
+    },
+    nextStepLabel(row) {
+      const status = String(row?.status || '').toLowerCase()
+
+      if (status === 'interviewed' || status === 'interview') {
+        const interviewAt = row?.latest_interview?.interview_date
+        const dateLabel = this.formatShortDate(interviewAt)
+        const timeLabel = this.formatTime(interviewAt)
+        if (dateLabel !== '-') {
+          return timeLabel ? `${dateLabel} ${timeLabel}` : dateLabel
+        }
+        return 'Interview update pending'
+      }
+
+      if (status === 'shortlisted') {
+        return 'Awaiting interview date'
+      }
+
+      if (status === 'selected' || status === 'offered') {
+        const joiningDate = this.formatShortDate(row?.offer?.joining_date)
+        if (joiningDate !== '-') {
+          return `Accept by ${joiningDate}`
+        }
+        return 'Awaiting response'
+      }
+
+      if (status === 'rejected') {
+        return '-'
+      }
+
+      return 'Awaiting shortlist'
+    },
+    isNextStepHighlighted(row) {
+      const status = String(row?.status || '').toLowerCase()
+      return status === 'interviewed' || status === 'interview'
     },
     statusLabel(status) {
       const normalized = String(status || '').toLowerCase()

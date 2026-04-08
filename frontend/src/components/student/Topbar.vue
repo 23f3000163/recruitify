@@ -35,7 +35,7 @@
           @keydown.escape="$emit('update:search-query', '')"
         />
 
-        <kbd class="rq-search-kbd" v-if="!searchQuery">Ctrl+K</kbd>
+
 
         <button
           v-if="searchQuery"
