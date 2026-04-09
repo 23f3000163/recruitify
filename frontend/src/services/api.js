@@ -292,8 +292,8 @@ export const companyApi = {
 
   createDrive(payload) {
     return requestWithFallback([
-      () => apiClient.post('/drives', payload),
-      () => apiClient.post('/company/drives', payload)
+      () => apiClient.post('/company/drives', payload),
+      () => apiClient.post('/drives', payload)
     ])
   },
 

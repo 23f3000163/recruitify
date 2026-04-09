@@ -29,6 +29,7 @@
   --rq-r-sm: 8px;
   --rq-r-full: 999px;
   --rq-ease: 0.22s ease;
+  --rq-ease-fast: 0.16s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .rq-student-app *,
@@ -78,7 +79,8 @@
   display: flex;
   flex-direction: column;
   overflow: visible;
-  transition: width var(--rq-ease);
+  transition: width var(--rq-ease-fast);
+  will-change: width;
 }
 
 .rq-student-app.is-collapsed .rq-sidebar {
@@ -120,12 +122,15 @@
   display: flex;
   align-items: center;
   border-bottom: 1px solid var(--rq-border);
+  flex-shrink: 0;
+  overflow: hidden;
 }
 
 .rq-student-app .rq-logo {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
 }
 
 .rq-student-app .rq-logo-mark {
@@ -177,6 +182,8 @@
   flex-direction: column;
   padding: 6px 0;
   gap: 2px;
+  overflow: hidden;
+  flex: 1;
 }
 
 .rq-student-app .rq-nav-section {
@@ -238,6 +245,10 @@
 
 .rq-student-app .rq-nav-label {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rq-student-app .rq-nav-badge {
@@ -327,6 +338,9 @@
 .rq-student-app .rq-topbar-uname {
   font-size: 0.82rem;
   font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .rq-student-app .rq-user-info {
@@ -338,6 +352,9 @@
 .rq-student-app .rq-topbar-urole {
   font-size: 0.68rem;
   color: var(--rq-t4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .rq-student-app .rq-main {
@@ -678,6 +695,12 @@
   padding: 16px 16px 0;
   position: relative;
   overflow: hidden;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.rq-student-app .rq-kpi:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
 }
 
 .rq-student-app .rq-kpi::after {

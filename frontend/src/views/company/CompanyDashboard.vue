@@ -704,6 +704,9 @@ function createDefaultNewDrive() {
     deadline: '',
     minCgpa: 7.5,
     branches: 'CSE',
+    eligible_years: [],
+    required_skills: [],
+    experience_required: '',
     description: ''
   }
 }
@@ -1170,6 +1173,21 @@ export default {
         day: 'numeric'
       })
     },
+    formatEligibleYears(rawYears) {
+      const years = Array.isArray(rawYears)
+        ? rawYears
+            .map((year) => Number(year))
+            .filter((year) => year >= 1 && year <= 4)
+        : []
+
+      const normalized = [...new Set(years)].sort((left, right) => left - right)
+      if (!normalized.length) {
+        return 'All Years'
+      }
+
+      const suffixByYear = { 1: 'st', 2: 'nd', 3: 'rd', 4: 'th' }
+      return normalized.map((year) => `${year}${suffixByYear[year] || 'th'} Year`).join(', ')
+    },
     formatRelativeTime(rawValue) {
       if (!rawValue) {
         return 'recently'
@@ -1252,6 +1270,7 @@ export default {
       const branches = Array.isArray(item.eligible_branches) && item.eligible_branches.length
         ? item.eligible_branches.join(', ')
         : 'CSE'
+      const years = this.formatEligibleYears(item.eligible_years || item.eligibleYears)
 
       return {
         id,
@@ -1266,6 +1285,7 @@ export default {
         avatarColor: this.companyProfile.avatarColor,
         minCgpa: Number(item.min_cgpa || 0),
         branches,
+        years,
         stages: this.buildDriveStages(id)
       }
     },
@@ -1425,6 +1445,19 @@ export default {
       const deadlineDate = new Date(`${newDrive.deadline}T00:00:00`)
       if (Number.isNaN(deadlineDate.getTime())) {
         return 'Enter a valid application deadline.'
+      }
+
+      const eligibleYears = Array.isArray(newDrive.eligible_years)
+        ? [...new Set(newDrive.eligible_years.map((year) => Number(year)).filter((year) => year >= 1 && year <= 4))]
+        : []
+
+      if (!eligibleYears.length) {
+        return 'Select at least one eligible year.'
+      }
+
+      const experienceRequired = String(newDrive.experience_required || '').trim()
+      if (!experienceRequired) {
+        return 'Please select experience required.'
       }
 
       const today = new Date()
@@ -2385,15 +2418,25 @@ export default {
         return
       }
 
+      const eligibleYears = Array.isArray(this.newDrive.eligible_years)
+        ? [...new Set(this.newDrive.eligible_years.map((year) => Number(year)).filter((year) => year >= 1 && year <= 4))]
+        : []
+
+      const requiredSkills = Array.isArray(this.newDrive.required_skills)
+        ? this.newDrive.required_skills
+            .map((skill) => String(skill || '').trim())
+            .filter(Boolean)
+        : []
+
       const payload = {
         job_title: String(this.newDrive.title || '').trim(),
         job_description: this.newDrive.description || 'Role details shared during screening.',
-        required_skills: '',
-        experience_required: '0-2 years',
+        required_skills: requiredSkills.join(','),
+        experience_required: String(this.newDrive.experience_required || '').trim(),
         benefits: 'As per company policy',
         min_cgpa: Number(this.newDrive.minCgpa || 0),
         eligible_branches: this.parseBranches(this.newDrive.branches),
-        eligible_years: [3, 4],
+        eligible_years: eligibleYears,
         salary_lpa: salaryLpa,
         job_location: this.companyProfile.location === '-' ? '' : this.companyProfile.location,
         application_deadline: `${this.newDrive.deadline}T23:59:59+00:00`,

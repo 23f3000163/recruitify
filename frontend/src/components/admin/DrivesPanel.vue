@@ -64,6 +64,7 @@
             <span class="rq-dc">📅 {{ d.deadline }}</span>
             <span class="rq-dc">🎓 CGPA ≥ {{ d.minCgpa }}</span>
             <span class="rq-dc">🏫 {{ d.branches }}</span>
+            <span class="rq-dc">📚 {{ d.years || 'All Years' }}</span>
           </div>
           <div class="rq-drive-actions">
             <template v-if="d.status === 'pending'">

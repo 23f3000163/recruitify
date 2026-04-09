@@ -724,6 +724,19 @@ export default {
       if (Number.isNaN(date.getTime())) return '—'
       return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
     },
+    formatEligibleYears(rawYears) {
+      const years = Array.isArray(rawYears)
+        ? rawYears
+            .map((year) => Number(year))
+            .filter((year) => year >= 1 && year <= 4)
+        : []
+
+      const normalized = [...new Set(years)].sort((left, right) => left - right)
+      if (!normalized.length) return 'All Years'
+
+      const suffixByYear = { 1: 'st', 2: 'nd', 3: 'rd', 4: 'th' }
+      return normalized.map((year) => `${year}${suffixByYear[year] || 'th'} Year`).join(', ')
+    },
     formatRelativeTime(value) {
       if (!value) return 'recently'
 
@@ -1073,6 +1086,7 @@ export default {
             color: this.colorFromKey(drive.id || drive.drive_id),
             minCgpa: drive.min_cgpa || '-',
             branches: Array.isArray(drive.eligible_branches) ? drive.eligible_branches.join(', ') : 'All',
+            years: this.formatEligibleYears(drive.eligible_years || drive.eligibleYears),
             createdAtLabel: this.formatDateLabel(drive.created_at)
           }
         })

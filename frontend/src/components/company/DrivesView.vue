@@ -53,6 +53,7 @@
           <span class="rq-dc">📅 {{ drive.deadline }}</span>
           <span class="rq-dc">🎓 CGPA ≥ {{ drive.minCgpa }}</span>
           <span class="rq-dc">🏫 {{ drive.branches }}</span>
+          <span class="rq-dc">📚 {{ drive.years || 'All Years' }}</span>
         </div>
 
         <div class="rq-drive-stages">

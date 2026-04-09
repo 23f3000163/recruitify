@@ -3,7 +3,7 @@
     <button
       class="rq-sidebar-toggle"
       type="button"
-      @click.stop="$emit('toggle-sidebar')"
+      @click.stop="onToggleSidebar"
       :aria-label="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
       :title="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
     >
@@ -182,6 +182,10 @@ export default {
   },
   emits: ['toggle-sidebar', 'navigate', 'request-logout'],
   methods: {
+    onToggleSidebar() {
+      this.userMenuOpen = false
+      this.$emit('toggle-sidebar')
+    },
     handleSidebarTap(event) {
       const target = event.target
       if (!(target instanceof Element)) return
@@ -192,7 +196,7 @@ export default {
       if (target.closest('.rq-user-menu')) return
 
       this.userMenuOpen = false
-      this.$emit('toggle-sidebar')
+      this.onToggleSidebar()
     },
     toggleUserMenu() {
       this.userMenuOpen = !this.userMenuOpen
