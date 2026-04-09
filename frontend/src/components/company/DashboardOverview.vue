@@ -101,8 +101,8 @@
         </div>
         <button class="rq-ghost" @click="$emit('open-view', 'applications')">View all →</button>
       </div>
-      <div class="rq-tbl-wrap">
-        <table class="rq-tbl" aria-label="Recent applications">
+      <div class="rq-tbl-wrap" :class="{ 'rq-tbl-wrap-empty': recentApplications.length === 0 }">
+        <table v-if="recentApplications.length > 0" class="rq-tbl" aria-label="Recent applications">
           <thead>
             <tr>
               <th scope="col">Student</th>
@@ -153,6 +153,17 @@
             </tr>
           </tbody>
         </table>
+        <div v-else class="rq-empty rq-empty-table" role="status" aria-live="polite">
+          <div class="rq-empty-ico rq-empty-ico-apps" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M9 4h6l3 3v11a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V7l3-3Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+              <path d="M9 4v3h6V4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M9.5 11.5h5M9.5 14.5h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <b>No recent applications yet</b>
+          <span>New candidate applications will appear here as soon as students apply.</span>
+        </div>
       </div>
     </div>
   </section>

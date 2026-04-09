@@ -328,6 +328,16 @@ export default {
 
       return []
     },
+    requiredSkillsList() {
+      const skillSource = this.drive?.required_skills || this.drive?.requiredSkills
+      const entries = Array.isArray(skillSource)
+        ? skillSource
+        : String(skillSource || '').split(',')
+
+      return [...new Set(entries
+        .map((item) => String(item || '').trim())
+        .filter(Boolean))]
+    },
     studentYear() {
       const parsed = Number(this.student?.year)
       if (!Number.isInteger(parsed) || parsed <= 0) {
@@ -430,6 +440,9 @@ export default {
       const yearLabel =
         this.drive?.yearLabel ||
         this.formatYears(this.eligibleYears)
+      const skillsLabel =
+        this.drive?.skillsLabel ||
+        this.formatSkills(this.requiredSkillsList)
       const salaryLabel =
         this.drive?.salary ||
         this.formatSalary(this.drive?.salary_lpa)
@@ -439,6 +452,7 @@ export default {
         { key: 'branch', icon: '🎓', label: branchLabel || '-', variant: 'chip-branch' },
         { key: 'cgpa', icon: '📊', label: cgpaLabel, variant: 'chip-cgpa' },
         { key: 'year', icon: '📚', label: yearLabel, variant: 'chip-year' },
+        { key: 'skills', icon: '🛠️', label: skillsLabel, variant: 'chip-skill' },
         { key: 'deadline', icon: '📅', label: this.deadlineLabel, variant: 'chip-deadline' }
       ]
     },
@@ -486,6 +500,23 @@ export default {
       }
 
       return `Year ${years.join(', ')}`
+    },
+    formatSkills(values) {
+      const skills = Array.isArray(values)
+        ? values
+            .map((item) => String(item || '').trim())
+            .filter(Boolean)
+        : []
+
+      if (!skills.length) {
+        return 'Skills -'
+      }
+
+      if (skills.length <= 2) {
+        return skills.join(', ')
+      }
+
+      return `${skills.slice(0, 2).join(', ')} +${skills.length - 2}`
     },
     onApply() {
       if (!this.driveId || this.alreadyApplied || !this.isEligible) {
@@ -604,6 +635,12 @@ export default {
   background: #EEF2FF;
   color: #1E3A8A;
   border-color: rgba(79, 70, 229, 0.22);
+}
+
+.chip-skill {
+  background: #FFF7ED;
+  color: #9A3412;
+  border-color: rgba(234, 88, 12, 0.25);
 }
 
 .chip-deadline {

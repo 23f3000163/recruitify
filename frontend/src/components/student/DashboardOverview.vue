@@ -502,6 +502,7 @@ export default {
         { key: 'branch', icon: '🎓', label: drive?.branchLabel || '-' },
         { key: 'cgpa', icon: '📊', label: drive?.cgpaLabel || 'CGPA -' },
         { key: 'year', icon: '📚', label: drive?.yearLabel || 'Year -' },
+        { key: 'skills', icon: '🛠️', label: this.formatRequiredSkills(drive?.skillsLabel || drive?.requiredSkills || drive?.required_skills) },
         { key: 'deadline', icon: '📅', label: drive?.deadline || '-' }
       ]
 
@@ -568,6 +569,25 @@ export default {
       if (normalized === 'offer') return 'pill-offer'
       if (normalized === 'rejected') return 'pill-rejected'
       return 'pill-applied'
+    },
+    formatRequiredSkills(value) {
+      const entries = Array.isArray(value)
+        ? value
+        : String(value || '').split(',')
+
+      const normalized = [...new Set(entries
+        .map((item) => String(item || '').trim())
+        .filter(Boolean))]
+
+      if (!normalized.length) {
+        return 'Skills -'
+      }
+
+      if (normalized.length <= 2) {
+        return normalized.join(', ')
+      }
+
+      return `${normalized.slice(0, 2).join(', ')} +${normalized.length - 2}`
     }
   }
 }

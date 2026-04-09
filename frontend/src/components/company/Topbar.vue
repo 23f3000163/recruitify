@@ -39,13 +39,6 @@
         <span v-if="unreadNotifCount > 0" class="rq-notif-badge-outer">{{ unreadNotifCount }}</span>
       </div>
 
-      <button class="rq-topbar-icon-btn" @click="$emit('open-profile')" aria-label="Settings">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <circle cx="8" cy="8" r="2.2" stroke="currentColor" stroke-width="1.4" />
-          <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M3.2 12.8l1.4-1.4M11.4 4.6l1.4-1.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
-        </svg>
-      </button>
-
       <div class="rq-user-menu-wrap" ref="userMenuWrap" @click.stop>
         <button
           type="button"

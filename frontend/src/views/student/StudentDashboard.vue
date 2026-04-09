@@ -632,6 +632,7 @@ export default {
           branchLabel: this.resolveDriveBranchLabel(row.drive || {}),
           cgpaLabel: this.resolveDriveCgpaLabel(row.drive || {}),
           yearLabel: this.resolveDriveYearLabel(row.drive || {}),
+          skillsLabel: this.resolveDriveSkillsLabel(row.drive || row || {}),
           applied: true,
           isOpen: true,
           isEligible: true
@@ -657,6 +658,7 @@ export default {
         branchLabel: this.resolveDriveBranchLabel(drive),
         cgpaLabel: this.resolveDriveCgpaLabel(drive),
         yearLabel: this.resolveDriveYearLabel(drive),
+        skillsLabel: this.resolveDriveSkillsLabel(drive),
         applied: Boolean(drive.already_applied || drive.applied),
         isOpen: drive.is_open !== false,
         isEligible: drive.is_eligible !== false
@@ -709,6 +711,41 @@ export default {
 
       const existingLabel = String(drive?.year_label || drive?.year_requirement || '').trim()
       return existingLabel || 'Year -'
+    },
+    formatRequiredSkills(rawValue) {
+      const entries = Array.isArray(rawValue)
+        ? rawValue
+        : String(rawValue || '').split(',')
+
+      const normalized = [...new Set(entries
+        .map((item) => String(item || '').trim())
+        .filter(Boolean))]
+
+      if (!normalized.length) {
+        return 'Skills -'
+      }
+
+      if (normalized.length <= 2) {
+        return normalized.join(', ')
+      }
+
+      return `${normalized.slice(0, 2).join(', ')} +${normalized.length - 2}`
+    },
+    resolveDriveSkillsLabel(drive) {
+      const directRaw = drive?.required_skills ?? drive?.requiredSkills
+      const directLabel = this.formatRequiredSkills(directRaw)
+      if (directLabel !== 'Skills -') {
+        return directLabel
+      }
+
+      const existingLabel = String(
+        drive?.skillsLabel ||
+        drive?.skills_label ||
+        drive?.skills_requirement ||
+        ''
+      ).trim()
+
+      return existingLabel || 'Skills -'
     },
     async loadDrives(page = 1) {
       this.isLoadingDrives = true

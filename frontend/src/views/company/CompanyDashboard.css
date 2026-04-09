@@ -570,6 +570,12 @@ input, select, textarea { font-family: var(--rq-sans); }
 
 
 .rq-tbl-wrap { overflow-x: auto; flex: 1; }
+.rq-tbl-wrap-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 210px;
+}
 .rq-tbl { width: 100%; border-collapse: collapse; }
 .rq-tbl thead { background: var(--rq-parch); }
 .rq-tbl th {
@@ -585,6 +591,27 @@ input, select, textarea { font-family: var(--rq-sans); }
 .rq-tbl tbody tr { transition: background var(--rq-ease); }
 .rq-tbl tbody tr:hover td { background: rgba(37,99,235,0.025); }
 .rq-tbl tbody tr.row-selected td { background: rgba(37,99,235,0.06); }
+.rq-empty-table {
+  width: 100%;
+  min-height: 180px;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+}
+.rq-empty-ico-apps {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--rq-blue-lt);
+  color: var(--rq-blue);
+}
+.rq-empty-ico-apps svg {
+  width: 24px;
+  height: 24px;
+}
 .rq-dim  { color: var(--rq-t3); }
 .rq-sm   { font-size: 0.77rem; }
 .rq-mono { font-family: var(--rq-mono); }

@@ -297,6 +297,8 @@ const makeWrapper = (routerPush = vi.fn()) =>
             <div class="new-drive-modal-stub">
               <button class="set-title" @click="$emit('update-field', 'title', 'Platform Engineer Intern')">Title</button>
               <button class="set-salary" @click="$emit('update-field', 'salary', '18')">Salary</button>
+              <button class="set-experience" @click="$emit('update-field', 'experience_required', '0-1 years')">Experience</button>
+              <button class="set-years" @click="$emit('update-field', 'eligible_years', [3, 4])">Years</button>
               <button class="set-deadline" @click="$emit('update-field', 'deadline', '2099-12-30')">Deadline</button>
               <button class="submit-drive" @click="$emit('submit')">Submit</button>
               <button class="close-drive-modal" @click="$emit('close')">Close</button>
@@ -450,6 +452,8 @@ describe('CompanyDashboard phase 6 integration', () => {
 
     await wrapper.get('.set-title').trigger('click')
     await wrapper.get('.set-salary').trigger('click')
+    await wrapper.get('.set-experience').trigger('click')
+    await wrapper.get('.set-years').trigger('click')
     await wrapper.get('.set-deadline').trigger('click')
     await wrapper.get('.submit-drive').trigger('click')
     await flushPromises()
@@ -478,7 +482,9 @@ describe('CompanyDashboard phase 6 integration', () => {
       title: 'Platform Engineer Intern',
       salary: '18',
       deadline: '2000-01-01',
-      minCgpa: 7.5
+      minCgpa: 7.5,
+      eligible_years: [3, 4],
+      experience_required: '0-1 years'
     }
 
     await wrapper.vm.submitNewDrive()

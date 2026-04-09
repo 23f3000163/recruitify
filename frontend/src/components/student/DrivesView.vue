@@ -223,6 +223,7 @@ export default {
         { key: 'branch', icon: '🎓', label: this.formatBranches(row.eligible_branches) },
         { key: 'cgpa', icon: '📊', label: this.formatCgpa(row.min_cgpa) },
         { key: 'year', icon: '📚', label: this.formatYears(row.eligible_years) },
+        { key: 'skills', icon: '🛠️', label: this.formatRequiredSkills(row.required_skills || row.requiredSkills) },
         { key: 'deadline', icon: '📅', label: this.formatShortDate(row.application_deadline) }
       ]
 
@@ -298,6 +299,25 @@ export default {
         : []
       if (!list.length) return '-'
       return `Year ${list.join(', ')}`
+    },
+    formatRequiredSkills(value) {
+      const entries = Array.isArray(value)
+        ? value
+        : String(value || '').split(',')
+
+      const normalized = [...new Set(entries
+        .map((item) => String(item || '').trim())
+        .filter(Boolean))]
+
+      if (!normalized.length) {
+        return 'Skills -'
+      }
+
+      if (normalized.length <= 2) {
+        return normalized.join(', ')
+      }
+
+      return `${normalized.slice(0, 2).join(', ')} +${normalized.length - 2}`
     }
   }
 }

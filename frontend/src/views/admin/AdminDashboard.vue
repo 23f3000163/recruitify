@@ -737,6 +737,19 @@ export default {
       const suffixByYear = { 1: 'st', 2: 'nd', 3: 'rd', 4: 'th' }
       return normalized.map((year) => `${year}${suffixByYear[year] || 'th'} Year`).join(', ')
     },
+    formatRequiredSkills(rawValue) {
+      const entries = Array.isArray(rawValue)
+        ? rawValue
+        : String(rawValue || '').split(',')
+
+      const normalized = [...new Set(entries
+        .map((item) => String(item || '').trim())
+        .filter(Boolean))]
+
+      if (!normalized.length) return 'Skills -'
+      if (normalized.length <= 2) return normalized.join(', ')
+      return `${normalized.slice(0, 2).join(', ')} +${normalized.length - 2}`
+    },
     formatRelativeTime(value) {
       if (!value) return 'recently'
 
@@ -1087,6 +1100,7 @@ export default {
             minCgpa: drive.min_cgpa || '-',
             branches: Array.isArray(drive.eligible_branches) ? drive.eligible_branches.join(', ') : 'All',
             years: this.formatEligibleYears(drive.eligible_years || drive.eligibleYears),
+            requiredSkills: this.formatRequiredSkills(drive.required_skills || drive.requiredSkills),
             createdAtLabel: this.formatDateLabel(drive.created_at)
           }
         })

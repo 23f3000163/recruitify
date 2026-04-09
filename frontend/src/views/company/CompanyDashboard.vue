@@ -1188,6 +1188,25 @@ export default {
       const suffixByYear = { 1: 'st', 2: 'nd', 3: 'rd', 4: 'th' }
       return normalized.map((year) => `${year}${suffixByYear[year] || 'th'} Year`).join(', ')
     },
+    formatRequiredSkills(rawValue) {
+      const entries = Array.isArray(rawValue)
+        ? rawValue
+        : String(rawValue || '').split(',')
+
+      const normalized = [...new Set(entries
+        .map((item) => String(item || '').trim())
+        .filter(Boolean))]
+
+      if (!normalized.length) {
+        return 'Skills -'
+      }
+
+      if (normalized.length <= 2) {
+        return normalized.join(', ')
+      }
+
+      return `${normalized.slice(0, 2).join(', ')} +${normalized.length - 2}`
+    },
     formatRelativeTime(rawValue) {
       if (!rawValue) {
         return 'recently'
@@ -1271,6 +1290,7 @@ export default {
         ? item.eligible_branches.join(', ')
         : 'CSE'
       const years = this.formatEligibleYears(item.eligible_years || item.eligibleYears)
+      const requiredSkills = this.formatRequiredSkills(item.required_skills || item.requiredSkills)
 
       return {
         id,
@@ -1286,6 +1306,7 @@ export default {
         minCgpa: Number(item.min_cgpa || 0),
         branches,
         years,
+        requiredSkills,
         stages: this.buildDriveStages(id)
       }
     },
