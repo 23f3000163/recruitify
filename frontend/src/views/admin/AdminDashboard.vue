@@ -99,7 +99,6 @@
           @retry="fetchCompanies()"
           @export="doExport"
           @change-status="changeCoStatus"
-          @remove-company="removeCompany"
         />
 
         <StudentsTable
@@ -184,9 +183,7 @@
 
     <StudentApplicationsModal
       :selected-student="selectedStudent"
-      :pending-application-actions="pendingActions.application"
       @close="selectedStudent = null"
-      @update-app-status="changeApplicationStatus"
     />
 
     <Transition name="rq-toast">
@@ -311,8 +308,7 @@ export default {
       pendingActions: {
         company: {},
         student: {},
-        drive: {},
-        application: {}
+        drive: {}
       },
       dashboardStats: {
         total_students: 0,
@@ -969,7 +965,8 @@ export default {
       try {
         const response = await adminApi.getActivityLogs({ limit })
         const items = response.data?.data?.items || []
-        this.auditLog = items.slice(0, 20).map((log) => {
+        const visibleItems = items.filter((log) => String(log?.action || '').trim().toLowerCase() !== 'application updated')
+        this.auditLog = visibleItems.slice(0, 20).map((log) => {
           const status = String(log.status || 'info').toLowerCase()
           const rawTimestamp = log.timestamp || log.time || ''
           return {
@@ -1332,27 +1329,6 @@ export default {
         this.setPendingAction('company', companyId, false)
       }
     },
-    async removeCompany(company) {
-      const companyId = company?.id
-      if (!companyId) {
-        this.toast_show('Invalid company payload', 'danger')
-        return
-      }
-
-      this.setPendingAction('company', companyId, true)
-      try {
-        const confirmed = window.confirm(`Remove ${company.name}? This will deactivate the profile.`)
-        if (!confirmed) return
-
-        await adminApi.deleteCompany(companyId)
-        await Promise.all([this.fetchCompanies(), this.fetchDashboard(), this.fetchAuditLog()])
-        this.toast_show(`${company.name} removed`, 'warning')
-      } catch (error) {
-        this.toast_show(error.response?.data?.error || 'Failed to remove company', 'danger')
-      } finally {
-        this.setPendingAction('company', companyId, false)
-      }
-    },
     async changeStuStatus(student, status) {
       const studentId = student?.id
       if (!studentId) {
@@ -1424,34 +1400,6 @@ export default {
         this.toast_show(error.response?.data?.error || 'Failed to remove drive', 'danger')
       } finally {
         this.setPendingAction('drive', driveId, false)
-      }
-    },
-    async changeApplicationStatus(application, nextStatus) {
-      try {
-        const applicationId = application?.id
-        const targetStatus = String(nextStatus || '').trim().toLowerCase()
-
-        if (!applicationId || !targetStatus) {
-          this.toast_show('Invalid application payload', 'danger')
-          return
-        }
-
-        if (targetStatus === application.rawStatus) return
-
-        this.setPendingAction('application', applicationId, true)
-
-        await adminApi.updateApplicationStatus(applicationId, { status: targetStatus })
-        await Promise.all([this.fetchApplications(), this.fetchDashboard(), this.fetchAuditLog()])
-
-        if (this.selectedStudent?.id) {
-          this.selectedStudent = this.studentsWithMetrics.find((student) => student.id === this.selectedStudent.id) || null
-        }
-
-        this.toast_show(`Application updated to ${targetStatus}`, 'success')
-      } catch (error) {
-        this.toast_show(error.response?.data?.error || 'Failed to update application', 'danger')
-      } finally {
-        if (application?.id) this.setPendingAction('application', application.id, false)
       }
     },
     showStudentApps(student) {

@@ -13,25 +13,17 @@
         </div>
         <div class="rq-tbl-wrap">
           <table class="rq-tbl">
-            <thead><tr><th>Drive</th><th>Company</th><th>Applied On</th><th>Status</th><th>Action</th></tr></thead>
+            <thead><tr><th>Drive</th><th>Company</th><th>Applied On</th><th>Status</th></tr></thead>
             <tbody>
               <tr v-for="a in selectedStudent.appList" :key="a.id || (a.drive + '-' + a.date)">
                 <td class="rq-sm">{{ a.drive }}</td>
                 <td class="rq-sm rq-dim">{{ a.company }}</td>
                 <td class="rq-sm rq-dim rq-mono">{{ a.date }}</td>
-                <td><span class="rq-status-pill" :class="'pill-' + a.status">{{ a.rawStatus || a.status }}</span></td>
-                <td>
-                  <select
-                    class="rq-app-status-select"
-                    :value="a.rawStatus || 'applied'"
-                    :disabled="isApplicationBusy(a.id)"
-                    @change="$emit('update-app-status', a, $event.target.value)"
-                  >
-                    <option value="applied">Applied</option>
-                    <option value="shortlisted">Shortlisted</option>
-                    <option value="waitlisted">Waitlisted</option>
-                    <option value="rejected">Rejected</option>
-                  </select>
+                <td><span class="rq-status-pill" :class="'pill-' + a.status">{{ formatStatusLabel(a.rawStatus || a.status) }}</span></td>
+              </tr>
+              <tr v-if="!selectedStudent.appList || !selectedStudent.appList.length">
+                <td colspan="4">
+                  <div class="rq-empty"><b>No applications found</b><span>This student has not applied to any drives yet.</span></div>
                 </td>
               </tr>
             </tbody>
@@ -49,16 +41,14 @@ export default {
     selectedStudent: {
       type: Object,
       default: null
-    },
-    pendingApplicationActions: {
-      type: Object,
-      default: () => ({})
     }
   },
-  emits: ['close', 'update-app-status'],
+  emits: ['close'],
   methods: {
-    isApplicationBusy(applicationId) {
-      return !!this.pendingApplicationActions[applicationId]
+    formatStatusLabel(status) {
+      const normalized = String(status || 'applied').trim().toLowerCase()
+      if (!normalized) return 'Applied'
+      return normalized.charAt(0).toUpperCase() + normalized.slice(1)
     }
   }
 }

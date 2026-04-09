@@ -267,4 +267,35 @@ describe('AdminDashboard notifications integration', () => {
     expect(wrapper.vm.loadErrors.analytics).toBe('')
     expect(wrapper.vm.analyticsOverview.summary.total_students).toBe(88)
   })
+
+  it('filters legacy Application Updated rows from audit log data', async () => {
+    adminApi.getActivityLogs.mockResolvedValueOnce(
+      buildCollection([
+        {
+          log_id: 901,
+          action: 'Application Updated',
+          actor: 'admin',
+          target: '#5 -> shortlisted',
+          status: 'success',
+          timestamp: '2026-04-09T16:44:00+00:00'
+        },
+        {
+          log_id: 902,
+          action: 'Company Approved',
+          actor: 'admin',
+          target: 'Acme Labs',
+          status: 'success',
+          timestamp: '2026-04-09T16:45:00+00:00'
+        }
+      ])
+    )
+
+    const wrapper = mountDashboard()
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.vm.auditLog).toHaveLength(1)
+    expect(wrapper.vm.auditLog[0].action).toBe('Company Approved')
+    expect(wrapper.vm.auditLog[0].target).toBe('Acme Labs')
+  })
 })

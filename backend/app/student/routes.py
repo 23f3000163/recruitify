@@ -112,6 +112,18 @@ def _resume_upload_limit_bytes():
     return parsed_limit if parsed_limit > 0 else DEFAULT_MAX_RESUME_UPLOAD_BYTES
 
 
+def _resume_upload_limit_label(max_size_bytes=None):
+    size_bytes = (
+        int(max_size_bytes)
+        if isinstance(max_size_bytes, int) and max_size_bytes > 0
+        else _resume_upload_limit_bytes()
+    )
+    max_size_mb = size_bytes / (1024 * 1024)
+    if float(max_size_mb).is_integer():
+        return f"{int(max_size_mb)} MB"
+    return f"{max_size_mb:.1f} MB"
+
+
 def _resume_extension(filename):
     if "." not in filename:
         return ""
@@ -164,6 +176,32 @@ def _latest_resume_filename_for_student(student_id):
         return None
 
     return latest_file_name
+
+
+def _remove_stale_resume_files(student_id, keep_filename=None):
+    prefix = f"student-{int(student_id)}-"
+    retained_file_name = str(keep_filename or "").strip()
+    upload_dir = _resume_upload_directory()
+
+    try:
+        for entry in os.scandir(upload_dir):
+            if not entry.is_file():
+                continue
+
+            file_name = entry.name
+            if retained_file_name and file_name == retained_file_name:
+                continue
+            if not file_name.startswith(prefix):
+                continue
+            if _resume_extension(file_name) not in ALLOWED_RESUME_FILE_EXTENSIONS:
+                continue
+
+            try:
+                os.remove(entry.path)
+            except OSError:
+                continue
+    except OSError:
+        return
 
 
 def _company_can_access_student_resume(company_user_id, student_id):
@@ -282,12 +320,15 @@ def _validate_student_profile_payload(data):
 
 def _student_profile_payload(student):
     payload = student.to_dict()
+    max_size_bytes = _resume_upload_limit_bytes()
     payload.update(
         {
             "skills": payload.get("skills") or "",
             "experience_summary": payload.get("experience_summary") or "",
             "resume_url": payload.get("resume_url") or "",
             "phone": payload.get("phone") or "",
+            "resume_upload_max_bytes": max_size_bytes,
+            "resume_upload_max_label": _resume_upload_limit_label(max_size_bytes),
         }
     )
     return payload
@@ -771,12 +812,7 @@ def upload_student_resume():
 
     max_size_bytes = _resume_upload_limit_bytes()
     if file_size > max_size_bytes:
-        max_size_mb = max_size_bytes / (1024 * 1024)
-        size_label = (
-            f"{int(max_size_mb)} MB"
-            if float(max_size_mb).is_integer()
-            else f"{max_size_mb:.1f} MB"
-        )
+        size_label = _resume_upload_limit_label(max_size_bytes)
         return _json_error(f"Resume file must be {size_label} or smaller", 400)
 
     upload_dir = _resume_upload_directory()
@@ -803,6 +839,7 @@ def upload_student_resume():
         return _json_error("Unable to update resume details", 500)
 
     _invalidate_admin_cache(CACHE_NAMESPACE_ADMIN_STUDENT_SEARCH)
+    _remove_stale_resume_files(student.student_id, keep_filename=stored_filename)
 
     return (
         jsonify(
@@ -847,6 +884,8 @@ def update_student_profile():
 
     if normalized["resume_url"]:
         student.resume_uploaded_at = datetime.now(timezone.utc)
+    else:
+        student.resume_uploaded_at = None
 
     student.profile_completed = True
 
@@ -857,6 +896,8 @@ def update_student_profile():
         return _json_error("Unable to update student profile", 500)
 
     _invalidate_admin_cache(CACHE_NAMESPACE_ADMIN_STUDENT_SEARCH)
+    if not normalized["resume_url"]:
+        _remove_stale_resume_files(student.student_id)
 
     return (
         jsonify(

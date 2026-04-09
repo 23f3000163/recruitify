@@ -182,7 +182,7 @@ const STORAGE_KEYS = Object.freeze({
 })
 
 const ACTION_NOTE_TIMEOUT_MS = 3200
-const MAX_RESUME_UPLOAD_BYTES = 5 * 1024 * 1024
+const DEFAULT_MAX_RESUME_UPLOAD_BYTES = 5 * 1024 * 1024
 const ALLOWED_RESUME_FILE_EXTENSIONS = ['pdf', 'doc', 'docx']
 const EXPORT_POLL_INTERVAL_MS = 2500
 const EXPORT_POLL_MAX_ATTEMPTS = 48
@@ -226,6 +226,7 @@ export default {
       historyError: '',
       profileError: '',
       resumeFileName: '',
+      resumeUploadMaxBytes: DEFAULT_MAX_RESUME_UPLOAD_BYTES,
       actionNote: '',
       actionTone: 'info',
       actionNoteTimerId: null,
@@ -1037,6 +1038,11 @@ export default {
       try {
         const response = await studentApi.getProfile()
         const studentPayload = response?.data?.data?.student || {}
+        const profileResumeUploadLimit = Number(studentPayload.resume_upload_max_bytes)
+        this.resumeUploadMaxBytes =
+          Number.isFinite(profileResumeUploadLimit) && profileResumeUploadLimit > 0
+            ? profileResumeUploadLimit
+            : DEFAULT_MAX_RESUME_UPLOAD_BYTES
 
         this.profileForm = {
           ...this.profileForm,
@@ -1436,6 +1442,20 @@ export default {
       }
 
       const sanitizedUrl = normalizedUrl.split('?')[0].split('#')[0]
+      let normalizedPath = sanitizedUrl
+      if (/^https?:\/\//i.test(sanitizedUrl)) {
+        try {
+          normalizedPath = new URL(sanitizedUrl).pathname || ''
+        } catch (error) {
+          normalizedPath = sanitizedUrl
+        }
+      }
+
+      const compactPath = String(normalizedPath || '').replace(/^\/+/, '').toLowerCase()
+      if (/^student\/resume\/\d+$/.test(compactPath)) {
+        return 'Uploaded Resume'
+      }
+
       const segments = sanitizedUrl.split('/').filter(Boolean)
       if (!segments.length) {
         return ''
@@ -1447,6 +1467,20 @@ export default {
       } catch (error) {
         return finalSegment
       }
+    },
+    formatResumeUploadSizeLabel(sizeBytes) {
+      const parsedBytes = Number(sizeBytes)
+      const resolvedBytes =
+        Number.isFinite(parsedBytes) && parsedBytes > 0
+          ? parsedBytes
+          : DEFAULT_MAX_RESUME_UPLOAD_BYTES
+      const sizeInMb = resolvedBytes / (1024 * 1024)
+
+      if (Number.isInteger(sizeInMb)) {
+        return `${sizeInMb} MB`
+      }
+
+      return `${sizeInMb.toFixed(1)} MB`
     },
     validateResumeFile(file) {
       if (!file) {
@@ -1467,8 +1501,14 @@ export default {
         return 'Uploaded resume file is empty.'
       }
 
-      if (fileSize > MAX_RESUME_UPLOAD_BYTES) {
-        return 'Resume file must be 5 MB or smaller.'
+      const configuredLimit = Number(this.resumeUploadMaxBytes)
+      const maxUploadBytes =
+        Number.isFinite(configuredLimit) && configuredLimit > 0
+          ? configuredLimit
+          : DEFAULT_MAX_RESUME_UPLOAD_BYTES
+
+      if (fileSize > maxUploadBytes) {
+        return `Resume file must be ${this.formatResumeUploadSizeLabel(maxUploadBytes)} or smaller.`
       }
 
       return ''
@@ -1491,6 +1531,11 @@ export default {
       try {
         const response = await studentApi.uploadResume(file)
         const studentPayload = response?.data?.data?.student || {}
+        const profileResumeUploadLimit = Number(studentPayload.resume_upload_max_bytes)
+        if (Number.isFinite(profileResumeUploadLimit) && profileResumeUploadLimit > 0) {
+          this.resumeUploadMaxBytes = profileResumeUploadLimit
+        }
+
         const resolvedResumeUrl =
           studentPayload.resume_url || this.profileForm.resume_url || ''
 
@@ -1594,6 +1639,10 @@ export default {
       try {
         const response = await studentApi.updateProfile(payload)
         const studentPayload = response?.data?.data?.student || {}
+        const profileResumeUploadLimit = Number(studentPayload.resume_upload_max_bytes)
+        if (Number.isFinite(profileResumeUploadLimit) && profileResumeUploadLimit > 0) {
+          this.resumeUploadMaxBytes = profileResumeUploadLimit
+        }
 
         this.profileForm = {
           ...this.profileForm,

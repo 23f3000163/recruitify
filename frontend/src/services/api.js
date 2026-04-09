@@ -471,9 +471,6 @@ export const adminApi = {
   getApplications(params = {}) {
     return apiClient.get('/admin/applications', { params })
   },
-  updateApplicationStatus(applicationId, payload) {
-    return apiClient.put(`/admin/application/${applicationId}/status`, payload)
-  },
   searchCompanies(query, params = {}) {
     return apiClient.get('/admin/search/companies', { params: { q: query, ...params } })
   },

@@ -87,7 +87,6 @@
                       Blacklist
                     </button>
                     <button v-else class="rq-ghost rq-ghost-xs" :disabled="isRowBusy(co.id)" @click="$emit('change-status', co, 'approved')">↩ Restore</button>
-                    <button class="rq-ghost rq-ghost-xs" :disabled="isRowBusy(co.id)" @click="$emit('remove-company', co)">Remove</button>
                   </div>
                 </td>
               </tr>
@@ -133,8 +132,7 @@ export default {
     'next-co-page',
     'retry',
     'export',
-    'change-status',
-    'remove-company'
+    'change-status'
   ],
   methods: {
     isRowBusy(companyId) {

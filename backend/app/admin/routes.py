@@ -500,30 +500,4 @@ def list_applications():
     return _json_result(services.list_applications(page, limit, sort_by, order))
 
 
-@admin_bp.put("/application/<int:application_id>/status")
-@jwt_required()
-@role_required("admin")
-def update_application_status(application_id):
-    actor_user_id = _current_user_id()
-    if actor_user_id is None:
-        return jsonify({"success": False, "error": "Invalid token identity"}), 401
-
-    payload = request.get_json(silent=True) or {}
-    status = (payload.get("status") or "").strip()
-    if not status:
-        return jsonify({"success": False, "error": "status is required"}), 400
-
-    rejection_reason = payload.get("rejection_reason")
-    notes = payload.get("notes")
-    return _json_result(
-        services.update_application_status(
-            application_id,
-            status,
-            rejection_reason,
-            notes,
-            actor_user_id=actor_user_id,
-        )
-    )
-
-
 __all__ = ["admin_bp"]

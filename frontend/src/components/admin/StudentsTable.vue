@@ -71,7 +71,7 @@
                 <td class="rq-mono rq-sm rq-dim">{{ s.roll }}</td>
                 <td class="rq-sm rq-dim">{{ s.branch }} · Y{{ s.year }}</td>
                 <td><span class="rq-cgpa" :class="s.cgpa >= 8.5 ? 'cgpa-hi' : s.cgpa >= 7 ? 'cgpa-md' : 'cgpa-lo'">{{ s.cgpa }}</span></td>
-                <td class="rq-mono rq-tc"><button class="rq-link" :disabled="isLoading" @click="$emit('show-student-apps', s)">{{ s.applications }} apps</button></td>
+                <td class="rq-mono rq-tc"><button class="rq-link" :disabled="isLoading" @click="$emit('show-student-apps', s)">{{ formatApplicationsLabel(s.applications) }}</button></td>
                 <td><span class="rq-status-pill" :class="'pill-' + s.status">{{ s.status }}</span></td>
                 <td>
                   <div class="rq-acts">
@@ -131,6 +131,11 @@ export default {
   methods: {
     isRowBusy(studentId) {
       return this.isLoading || !!this.pendingStudentActions[studentId]
+    },
+    formatApplicationsLabel(totalApplications) {
+      const parsedCount = Number(totalApplications)
+      const count = Number.isFinite(parsedCount) && parsedCount >= 0 ? parsedCount : 0
+      return `${count} ${count > 1 ? 'Applications' : 'Application'}`
     }
   }
 }

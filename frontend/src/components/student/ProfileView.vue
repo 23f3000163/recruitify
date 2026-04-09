@@ -593,6 +593,20 @@ export default {
     },
     inferResumeNameFromUrl(url) {
       const safeUrl = String(url || '').trim().split('?')[0].split('#')[0]
+      let pathForCheck = safeUrl
+      if (/^https?:\/\//i.test(safeUrl)) {
+        try {
+          pathForCheck = new URL(safeUrl).pathname || ''
+        } catch (error) {
+          pathForCheck = safeUrl
+        }
+      }
+
+      const normalizedPath = String(pathForCheck || '').replace(/^\/+/, '').toLowerCase()
+      if (/^student\/resume\/\d+$/.test(normalizedPath)) {
+        return 'Uploaded Resume'
+      }
+
       const segments = safeUrl.split('/').filter(Boolean)
       const last = segments.length ? segments[segments.length - 1] : 'resume-file'
       try {

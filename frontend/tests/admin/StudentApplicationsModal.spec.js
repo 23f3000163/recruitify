@@ -20,47 +20,41 @@ const selectedStudent = {
   ]
 }
 
-describe('StudentApplicationsModal action flow', () => {
-  it('emits update-app-status with shortlisted value', async () => {
+describe('StudentApplicationsModal read-only details', () => {
+  it('shows drive, company, applied on, and status columns', () => {
     const wrapper = mount(StudentApplicationsModal, {
       props: {
-        selectedStudent,
-        pendingApplicationActions: {}
+        selectedStudent
       }
     })
 
-    const select = wrapper.get('select.rq-app-status-select')
-    await select.setValue('shortlisted')
+    const headers = wrapper.findAll('thead th').map((header) => header.text())
 
-    expect(wrapper.emitted('update-app-status')).toBeTruthy()
-    expect(wrapper.emitted('update-app-status')[0][0]).toMatchObject({ id: 7 })
-    expect(wrapper.emitted('update-app-status')[0][1]).toBe('shortlisted')
+    expect(headers).toEqual(['Drive', 'Company', 'Applied On', 'Status'])
   })
 
-  it('does not show interview and selected shortcut options', () => {
+  it('does not render action controls for status changes', () => {
     const wrapper = mount(StudentApplicationsModal, {
       props: {
-        selectedStudent,
-        pendingApplicationActions: {}
+        selectedStudent
       }
     })
 
-    const optionValues = wrapper
-      .findAll('select.rq-app-status-select option')
-      .map((option) => option.element.value)
-
-    expect(optionValues).not.toContain('interviewed')
-    expect(optionValues).not.toContain('selected')
+    expect(wrapper.find('select.rq-app-status-select').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Action')
   })
 
-  it('disables status select for in-flight updates', () => {
+  it('shows empty state when selected student has no applications', () => {
     const wrapper = mount(StudentApplicationsModal, {
       props: {
-        selectedStudent,
-        pendingApplicationActions: { 7: true }
+        selectedStudent: {
+          ...selectedStudent,
+          appList: []
+        }
       }
     })
 
-    expect(wrapper.get('select.rq-app-status-select').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('No applications found')
+    expect(wrapper.text()).toContain('This student has not applied to any drives yet.')
   })
 })

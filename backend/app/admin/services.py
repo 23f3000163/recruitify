@@ -9,12 +9,6 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import selectinload
 
 from app.jobs.monthly_report import build_monthly_metrics_series
-from app.applications.status_engine import (
-    ATS_TO_LEGACY_STATUS,
-    ATS_TRANSITIONS,
-    application_ats_status,
-    normalize_status_input,
-)
 from app.models import (
     ActivityLog,
     Application,
@@ -30,25 +24,13 @@ from app.models import (
 
 
 ALLOWED_ORDER_VALUES = {"asc", "desc"}
-ALLOWED_APPLICATION_STATUSES = {
-    "applied",
-    "shortlisted",
-    "selected",
-    "interviewed",
-    "rejected",
-    "waitlisted",
-}
 ALLOWED_ACTIVITY_STATUSES = {"success", "danger", "warning", "info"}
 ALLOWED_NOTIFICATION_READ_FILTERS = {"all", "true", "false"}
 MAX_ANALYTICS_MONTHS = 24
 DEFAULT_ANALYTICS_MONTHS = 6
 DEFAULT_PUBLIC_SKILL_LIMIT = 12
 DEFAULT_ADMIN_SKILL_LIMIT = 20
-DIRECT_STATUS_UPDATE_BLOCKED_STATUSES = {"interview", "offered", "placed"}
-DIRECT_STATUS_UPDATE_BLOCKED_MESSAGE = (
-    "Direct status updates to interview, offered, or placed are not allowed. "
-    "Use interview and offer workflow APIs."
-)
+EXCLUDED_ACTIVITY_LOG_ACTIONS = {"Application Updated"}
 
 
 def _ok(data, status_code=200):
@@ -517,12 +499,17 @@ def list_activity_logs(limit=20):
 
     parsed_limit = max(1, min(parsed_limit, 200))
 
-    query = ActivityLog.query.options(selectinload(ActivityLog.user)).order_by(
+    visible_log_filter = or_(
+        ActivityLog.action.is_(None),
+        ActivityLog.action.notin_(tuple(EXCLUDED_ACTIVITY_LOG_ACTIONS)),
+    )
+
+    query = ActivityLog.query.filter(visible_log_filter).options(selectinload(ActivityLog.user)).order_by(
         ActivityLog.timestamp.desc(),
         ActivityLog.log_id.desc(),
     )
     logs = query.limit(parsed_limit).all()
-    total = db.session.query(func.count(ActivityLog.log_id)).scalar() or 0
+    total = db.session.query(func.count(ActivityLog.log_id)).filter(visible_log_filter).scalar() or 0
 
     return _ok(
         {
@@ -841,69 +828,3 @@ def list_applications(page, limit, sort_by, order):
     applications, total, pages = _paginate_query(query, page, limit)
     items = [_application_to_dict(application) for application in applications]
     return _ok(_paginated_result(items, total, page, pages))
-
-
-def update_application_status(
-    application_id,
-    status,
-    rejection_reason=None,
-    notes=None,
-    actor_user_id=None,
-):
-    application = db.session.get(Application, application_id)
-    if not application:
-        return _error("Application not found", 404)
-
-    target_ats_status = normalize_status_input(status)
-    if not target_ats_status:
-        return _error("Invalid application status", 400)
-
-    if target_ats_status in DIRECT_STATUS_UPDATE_BLOCKED_STATUSES:
-        return _error(DIRECT_STATUS_UPDATE_BLOCKED_MESSAGE, 400)
-
-    current_ats_status = application_ats_status(application)
-    if target_ats_status != current_ats_status:
-        allowed_targets = ATS_TRANSITIONS.get(current_ats_status, set())
-        if target_ats_status not in allowed_targets:
-            return _error(
-                f"Invalid status transition: {current_ats_status} -> {target_ats_status}",
-                400,
-            )
-
-    if target_ats_status == "placed" and not application.placement_offer:
-        return _error("Cannot mark as placed before an offer is created", 400)
-
-    try:
-        application.status = ATS_TO_LEGACY_STATUS[target_ats_status]
-
-        if target_ats_status == "rejected":
-            cleaned_reason = (
-                rejection_reason.strip()
-                if isinstance(rejection_reason, str)
-                else rejection_reason
-            )
-            application.rejection_reason = cleaned_reason or application.rejection_reason
-            if application.placement_offer and application.placement_offer.status == "offered":
-                application.placement_offer.status = "rejected"
-        else:
-            application.rejection_reason = None
-
-        if target_ats_status == "placed" and application.placement_offer:
-            application.placement_offer.status = "accepted"
-
-        if notes is not None:
-            cleaned_notes = notes.strip() if isinstance(notes, str) else notes
-            application.notes = cleaned_notes or None
-
-        _append_activity_log(
-            actor_user_id,
-            "Application Updated",
-            f"#{application.application_id} -> {ATS_TO_LEGACY_STATUS[target_ats_status]}",
-            "success",
-        )
-
-        db.session.commit()
-        return _ok(_application_to_dict(application))
-    except Exception:
-        db.session.rollback()
-        return _error("Failed to update application status", 500)

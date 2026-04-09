@@ -7,7 +7,7 @@ from io import StringIO
 from pathlib import Path
 
 from flask import current_app
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 from app.models import (
     ActivityLog,
@@ -52,6 +52,7 @@ ADMIN_EXPORT_SCOPES = {
     EXPORT_SCOPE_ADMIN_ANALYTICS,
     EXPORT_SCOPE_ADMIN_AUDIT,
 }
+EXCLUDED_ADMIN_AUDIT_ACTIONS = {"Application Updated"}
 
 
 def _utcnow():
@@ -657,9 +658,15 @@ def _admin_analytics_rows():
 
 
 def _admin_audit_rows():
+    visible_log_filter = or_(
+        ActivityLog.action.is_(None),
+        ActivityLog.action.notin_(tuple(EXCLUDED_ADMIN_AUDIT_ACTIONS)),
+    )
+
     return (
         db.session.query(ActivityLog, User)
         .join(User, ActivityLog.user_id == User.user_id)
+        .filter(visible_log_filter)
         .order_by(ActivityLog.timestamp.desc(), ActivityLog.log_id.desc())
         .all()
     )
