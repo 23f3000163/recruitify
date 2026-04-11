@@ -1,18 +1,4 @@
-"""
-models.py — SQLAlchemy ORM Models for Recruitify Placement Portal
 
-Table creation order (dependency-safe for SQLite):
-    User -> Admin / Student / Company -> PlacementDrive ->
-    Application -> Interview / PlacementOffer -> ActivityLog / Notification
-
-Key design decisions:
-    • SQLite PRAGMA foreign_keys=ON enforced via engine-level event listener
-    • All ENUMs carry explicit `name=` to avoid unnamed CHECK constraints on SQLite
-    • 1:1 relationships use lazy='joined' to eliminate N+1 queries
-    • Every model exposes a to_dict() helper for JSON serialisation
-    • Passwords are hashed with werkzeug (scrypt / pbkdf2)
-    • All timestamps are timezone-aware via datetime.now(timezone.utc)
-"""
 
 from datetime import date, datetime, timezone
 from uuid import uuid4
@@ -764,6 +750,22 @@ class ActivityLog(db.Model):
 # =========================================================================
 class Notification(db.Model):
     __tablename__ = "notification"
+    __table_args__ = (
+        db.Index(
+            "ix_notification_recipient_type_read_created",
+            "recipient_id",
+            "notification_type",
+            "is_read",
+            "created_at",
+        ),
+        db.Index(
+            "ix_notification_recipient_resource",
+            "recipient_id",
+            "notification_type",
+            "related_resource_type",
+            "related_resource_id",
+        ),
+    )
 
     notification_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     recipient_id = db.Column(

@@ -16,7 +16,7 @@
         :search-focused="searchFocused"
         :search-dropdown-open="searchDropdownOpen"
         :search-results="searchResults"
-        :pending-count="unreadNotificationsCount"
+        :pending-count="pendingCount"
         :show-notifications="showNotifications"
         @set-search-focused="searchFocused = $event"
         @set-search-dropdown-open="searchDropdownOpen = $event"
@@ -34,7 +34,7 @@
           v-if="showNotifications"
           :notifications="notifications"
           :is-loading="isLoadingNotifications"
-          :unread-count="unreadNotificationsCount"
+          :unread-count="pendingCount"
           :error-message="notificationsError"
           :is-marking="isMarkingNotification"
           :is-marking-all="isMarkingAllNotifications"
@@ -61,14 +61,11 @@
           :error-message="overviewErrorMessage"
           :pending-company-actions="pendingActions.company"
           :pending-drive-actions="pendingActions.drive"
-          :is-audit-export-busy="isAdminExportBusy('audit')"
-          :audit-export-label="adminExportButtonLabel('audit')"
           :pct="pct"
           @switch-view="activeView = $event"
           @approve-item="approveItem"
           @reject-item="rejectItem"
           @retry="retryOverviewLoad"
-          @export="doExport"
         />
 
         <CompaniesTable
@@ -86,8 +83,6 @@
           :is-loading="loading.companies"
           :error-message="loadErrors.companies"
           :pending-company-actions="pendingActions.company"
-          :is-export-busy="isAdminExportBusy('companies')"
-          :export-label="adminExportButtonLabel('companies')"
           @update-co-search="coSearch = $event"
           @set-co-search-focused="coSearchFocused = $event"
           @update-co-filter="coFilter = $event"
@@ -97,7 +92,6 @@
           @prev-co-page="prevCoPage"
           @next-co-page="nextCoPage"
           @retry="fetchCompanies()"
-          @export="doExport"
           @change-status="changeCoStatus"
         />
 
@@ -116,8 +110,6 @@
           :is-loading="loading.students"
           :error-message="loadErrors.students"
           :pending-student-actions="pendingActions.student"
-          :is-export-busy="isAdminExportBusy('students')"
-          :export-label="adminExportButtonLabel('students')"
           @update-stu-search="stuSearch = $event"
           @set-stu-search-focused="stuSearchFocused = $event"
           @update-stu-branch="stuBranch = $event"
@@ -127,7 +119,6 @@
           @prev-stu-page="prevStuPage"
           @next-stu-page="nextStuPage"
           @retry="fetchStudents()"
-          @export="doExport"
           @show-student-apps="showStudentApps"
           @change-status="changeStuStatus"
         />
@@ -145,8 +136,6 @@
           :is-loading="loading.drives"
           :error-message="loadErrors.drives"
           :pending-drive-actions="pendingActions.drive"
-          :is-export-busy="isAdminExportBusy('drives')"
-          :export-label="adminExportButtonLabel('drives')"
           @update-drive-filter="driveFilter = $event"
           @update-drive-sort-by="setDriveSortBy"
           @toggle-drive-order="toggleDriveOrder"
@@ -154,7 +143,6 @@
           @prev-drive-page="prevDrivePage"
           @next-drive-page="nextDrivePage"
           @retry="fetchDrives()"
-          @export="doExport"
           @change-drive-status="changeDriveStatus"
           @remove-drive="removeDrive"
         />
@@ -172,11 +160,8 @@
           :placement-rate-pct="placementRatePct"
           :donut-circ="donutCirc"
           :donut-placed-offset="donutPlacedOffset"
-          :is-export-busy="isAdminExportBusy('analytics')"
-          :export-label="adminExportButtonLabel('analytics')"
           :pct="pct"
           @retry="fetchAnalyticsOverview()"
-          @export="doExport"
         />
       </main>
     </div>
@@ -194,6 +179,7 @@
 
 <script>
 import { adminApi } from '../../api/api'
+import { parseBooleanFlag, parseServerDate } from '../../utils/dateTime'
 import AnalyticsPanel from '../../components/admin/AnalyticsPanel.vue'
 import AdminNotificationPanel from '../../components/admin/AdminNotificationPanel.vue'
 import CompaniesTable from '../../components/admin/CompaniesTable.vue'
@@ -354,8 +340,13 @@ export default {
       }
       return labels[this.activeView] || ''
     },
+    effectiveUnreadNotificationsCount() {
+      const backendCount = Number(this.unreadNotificationsCount || 0)
+      const localCount = this.notifications.filter((item) => !item.read).length
+      return Math.max(backendCount, localCount)
+    },
     pendingCount() {
-      return Number(this.unreadNotificationsCount || 0)
+      return this.effectiveUnreadNotificationsCount
     },
     navItems() {
       const pendingCompanies = this.companies.filter((c) => c.status === 'pending').length
@@ -710,14 +701,14 @@ export default {
     },
     formatDateLabel(value) {
       if (!value) return '—'
-      const date = new Date(value)
-      if (Number.isNaN(date.getTime())) return '—'
+      const date = parseServerDate(value)
+      if (!date) return '—'
       return date.toLocaleString()
     },
     formatDateShort(value) {
       if (!value) return '—'
-      const date = new Date(value)
-      if (Number.isNaN(date.getTime())) return '—'
+      const date = parseServerDate(value)
+      if (!date) return '—'
       return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
     },
     formatEligibleYears(rawYears) {
@@ -749,11 +740,16 @@ export default {
     formatRelativeTime(value) {
       if (!value) return 'recently'
 
-      const parsed = new Date(value)
-      if (Number.isNaN(parsed.getTime())) return 'recently'
+      const parsed = parseServerDate(value)
+      if (!parsed) return 'recently'
 
       const deltaMs = Date.now() - parsed.getTime()
-      const deltaMinutes = Math.max(1, Math.floor(deltaMs / 60000))
+      if (deltaMs < 0) {
+        return parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+      }
+
+      const deltaMinutes = Math.floor(deltaMs / 60000)
+      if (deltaMinutes < 1) return 'Just now'
 
       if (deltaMinutes < 60) return `${deltaMinutes} min ago`
 
@@ -771,15 +767,24 @@ export default {
       if (text.includes('pending') || text.includes('review')) return 'warning'
       return 'info'
     },
+    normalizeUnreadCount(rawUnreadCount, fallbackCount) {
+      const parsedCount = Number(rawUnreadCount)
+      if (Number.isFinite(parsedCount) && parsedCount >= 0) {
+        return Math.max(parsedCount, Number(fallbackCount || 0))
+      }
+
+      return Number(fallbackCount || 0)
+    },
     normalizeNotification(item) {
       const id = Number(item.notification_id || item.id || 0)
+      const timestamp = item.created_at || item.sent_at || item.timestamp || item.time || ''
       return {
         id,
         title: item.title || 'Notification',
         sub: item.message || '-',
-        time: this.formatRelativeTime(item.created_at || item.sent_at),
+        time: this.formatRelativeTime(timestamp),
         type: this.normalizeNotificationType(item),
-        read: Boolean(item.is_read)
+        read: parseBooleanFlag(item.is_read ?? item.read)
       }
     },
     closeNotificationsPanel() {
@@ -808,14 +813,13 @@ export default {
         const response = await adminApi.getNotifications({ page, limit, is_read: 'all' })
         const payload = response?.data?.data || {}
         const items = Array.isArray(payload.items) ? payload.items : []
+        const normalized = items.map((item) => this.normalizeNotification(item)).filter((item) => item.id)
 
-        this.notifications = items.map((item) => this.normalizeNotification(item)).filter((item) => item.id)
-
-        if (typeof payload.unread_count === 'number') {
-          this.unreadNotificationsCount = payload.unread_count
-        } else {
-          this.unreadNotificationsCount = this.notifications.filter((item) => !item.read).length
-        }
+        this.notifications = normalized
+        this.unreadNotificationsCount = this.normalizeUnreadCount(
+          payload.unread_count,
+          normalized.filter((item) => !item.read).length
+        )
         this.notificationsError = ''
       } catch (error) {
         const message = error.response?.data?.error || 'Unable to load notifications.'
@@ -838,7 +842,7 @@ export default {
         return
       }
 
-      const previousUnread = this.unreadNotificationsCount
+      const previousUnread = this.effectiveUnreadNotificationsCount
       target.read = true
       this.unreadNotificationsCount = Math.max(0, previousUnread - 1)
       this.isMarkingNotification = {
@@ -849,9 +853,10 @@ export default {
       try {
         const response = await adminApi.markNotificationRead(targetId)
         const payload = response?.data?.data || {}
-        if (typeof payload.unread_count === 'number') {
-          this.unreadNotificationsCount = payload.unread_count
-        }
+        this.unreadNotificationsCount = this.normalizeUnreadCount(
+          payload.unread_count,
+          this.notifications.filter((item) => !item.read).length
+        )
       } catch (error) {
         target.read = false
         this.unreadNotificationsCount = previousUnread
@@ -866,12 +871,12 @@ export default {
       }
     },
     async markAllNotificationsRead() {
-      if (this.isMarkingAllNotifications || this.unreadNotificationsCount === 0) {
+      if (this.isMarkingAllNotifications || this.effectiveUnreadNotificationsCount === 0) {
         return
       }
 
       const previousNotifications = this.notifications.map((item) => ({ ...item }))
-      const previousUnread = this.unreadNotificationsCount
+      const previousUnread = this.effectiveUnreadNotificationsCount
 
       this.isMarkingAllNotifications = true
       this.notifications = this.notifications.map((item) => ({
@@ -883,7 +888,10 @@ export default {
       try {
         const response = await adminApi.markAllNotificationsRead()
         const payload = response?.data?.data || {}
-        this.unreadNotificationsCount = typeof payload.unread_count === 'number' ? payload.unread_count : 0
+        this.unreadNotificationsCount = this.normalizeUnreadCount(
+          payload.unread_count,
+          this.notifications.filter((item) => !item.read).length
+        )
         this.notificationsError = ''
         this.toast_show('All notifications marked as read.', 'success')
       } catch (error) {

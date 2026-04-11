@@ -506,6 +506,64 @@
   padding: 0 4px;
 }
 
+.rq-student-notif-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 350;
+  background: rgba(2, 6, 23, 0.12);
+}
+
+.rq-student-notif-panel {
+  position: fixed;
+  top: calc(var(--rq-tb-h) + 10px);
+  right: 18px;
+  width: min(92vw, 430px);
+  max-height: min(72vh, 560px);
+  z-index: 360;
+  border-radius: 14px;
+  border: 1px solid var(--rq-border2);
+  background: #FFFFFF;
+  box-shadow: var(--rq-sh-md);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.rq-student-notif-hd {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--rq-border2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.rq-student-notif-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rq-student-notif-error {
+  margin: 10px 12px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(220, 38, 38, 0.22);
+  color: #B91C1C;
+  background: #FEF2F2;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.rq-student-notif-list {
+  overflow: auto;
+  padding: 10px 12px 12px;
+}
+
+.rq-student-notif-list .rq-notify-list {
+  border-radius: 10px;
+}
+
 .rq-student-app .rq-topbar-user {
   display: flex;
   align-items: center;
@@ -1401,6 +1459,14 @@
   margin-top: 12px;
   display: grid;
   gap: 7px;
+}
+
+.rq-student-app .rq-progress-empty {
+  margin-top: 12px;
+  text-align: center;
+  font-size: 0.72rem;
+  color: var(--rq-t3);
+  line-height: 1.45;
 }
 
 .rq-student-app .rq-progress-legend-row {

@@ -296,6 +296,17 @@ def jobs_health_check():
                 "placement_history_enabled": current_app.config.get(
                     "JOBS_EXPORT_ALLOW_PLACEMENT_HISTORY"
                 ),
+                "alert_channels": current_app.config.get("JOBS_EXPORT_ALERT_CHANNELS"),
+            },
+            "mail": {
+                "from_address": current_app.config.get("MAIL_FROM_ADDRESS"),
+                "smtp_host_configured": bool(current_app.config.get("MAIL_SMTP_HOST")),
+                "smtp_port": current_app.config.get("MAIL_SMTP_PORT"),
+                "smtp_tls": current_app.config.get("MAIL_SMTP_USE_TLS"),
+                "smtp_ssl": current_app.config.get("MAIL_SMTP_USE_SSL"),
+                "simulate_when_unconfigured": current_app.config.get(
+                    "MAIL_SIMULATE_WHEN_UNCONFIGURED"
+                ),
             },
         },
     }

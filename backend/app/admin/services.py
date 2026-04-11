@@ -1,7 +1,7 @@
 """Service layer for admin dashboard and management operations."""
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from math import ceil
 
 from flask import current_app
@@ -83,6 +83,56 @@ def _append_activity_log(actor_user_id, action, target=None, status="info"):
             action=(action or "Action").strip(),
             target=(target or "").strip() or None,
             status=normalized_status,
+        )
+    )
+
+
+def _create_in_app_notification(
+    recipient_id,
+    title,
+    message,
+    *,
+    sender_id=None,
+    resource_type=None,
+    resource_id=None,
+    dedupe_minutes=5,
+):
+    try:
+        parsed_recipient = int(recipient_id)
+    except (TypeError, ValueError):
+        return
+
+    if parsed_recipient <= 0:
+        return
+
+    normalized_title = (title or "Update").strip()[:200]
+    normalized_message = (message or "").strip() or "You have a new update."
+    normalized_resource_type = (resource_type or "system").strip()[:100] or "system"
+
+    if dedupe_minutes and dedupe_minutes > 0:
+        cutoff_time = datetime.now(timezone.utc) - timedelta(minutes=int(dedupe_minutes))
+        duplicate = Notification.query.filter(
+            Notification.recipient_id == parsed_recipient,
+            Notification.notification_type == "in_app",
+            Notification.title == normalized_title,
+            Notification.message == normalized_message,
+            Notification.related_resource_type == normalized_resource_type,
+            Notification.related_resource_id == resource_id,
+            Notification.created_at >= cutoff_time,
+        ).first()
+        if duplicate:
+            return
+
+    db.session.add(
+        Notification(
+            recipient_id=parsed_recipient,
+            sender_id=sender_id,
+            notification_type="in_app",
+            title=normalized_title,
+            message=normalized_message,
+            related_resource_type=normalized_resource_type,
+            related_resource_id=resource_id,
+            delivery_status="sent",
         )
     )
 
@@ -544,6 +594,15 @@ def approve_company(company_id, actor_user_id=None):
 
     try:
         company.approval_status = "approved"
+        if company.user_id:
+            _create_in_app_notification(
+                company.user_id,
+                "Company Approval Update",
+                "Your company profile has been approved. You can now create and manage placement drives.",
+                sender_id=actor_user_id,
+                resource_type="company_approval",
+                resource_id=company.company_id,
+            )
         _append_activity_log(actor_user_id, "Company Approved", company.company_name, "success")
         db.session.commit()
         return _ok(_company_to_dict(company))
@@ -559,6 +618,15 @@ def reject_company(company_id, actor_user_id=None):
 
     try:
         company.approval_status = "rejected"
+        if company.user_id:
+            _create_in_app_notification(
+                company.user_id,
+                "Company Approval Update",
+                "Your company profile was rejected. Please update your details and contact admin support.",
+                sender_id=actor_user_id,
+                resource_type="company_approval",
+                resource_id=company.company_id,
+            )
         _append_activity_log(actor_user_id, "Company Rejected", company.company_name, "danger")
         db.session.commit()
         return _ok(_company_to_dict(company))
@@ -715,6 +783,16 @@ def approve_job(job_id, actor_user_id=None):
 
     try:
         job.status = "approved"
+        company = db.session.get(Company, job.company_id)
+        if company and company.user_id:
+            _create_in_app_notification(
+                company.user_id,
+                "Drive Approval Update",
+                f"Your placement drive '{job.job_title}' has been approved.",
+                sender_id=actor_user_id,
+                resource_type="drive_approval",
+                resource_id=job.drive_id,
+            )
         _append_activity_log(actor_user_id, "Drive Approved", job.job_title, "success")
         db.session.commit()
         return _ok(_job_to_dict(job))
@@ -730,6 +808,16 @@ def reject_job(job_id, actor_user_id=None):
 
     try:
         job.status = "closed"
+        company = db.session.get(Company, job.company_id)
+        if company and company.user_id:
+            _create_in_app_notification(
+                company.user_id,
+                "Drive Approval Update",
+                f"Your placement drive '{job.job_title}' was not approved and has been closed.",
+                sender_id=actor_user_id,
+                resource_type="drive_approval",
+                resource_id=job.drive_id,
+            )
         _append_activity_log(actor_user_id, "Drive Rejected", job.job_title, "danger")
         db.session.commit()
         return _ok(_job_to_dict(job))

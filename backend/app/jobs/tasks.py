@@ -28,6 +28,8 @@ def _notify_job_failure(task_name, error_message, context=None):
         current_app.config.get("JOBS_FAILURE_ALERT_CHANNELS")
         or current_app.config.get("JOBS_REPORT_CHANNELS", "email")
     )
+    if "in_app" not in channels:
+        channels = ["in_app", *channels]
     webhook_url = current_app.config.get("JOBS_WEBHOOK_URL")
     failure_payload = {
         "event": "background_job_failed",

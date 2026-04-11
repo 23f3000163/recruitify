@@ -124,15 +124,27 @@ def execute_daily_deadline_reminders(task_request_id=None):
     """Run the daily reminder flow and persist a BackgroundJob run record."""
     now_utc = _utcnow()
     run_key = _daily_job_key(now_utc)
+    test_mode = bool(current_app.config.get("JOBS_TEST_MODE", False))
 
     job = BackgroundJob.query.filter_by(idempotency_key=run_key).first()
-    if job and job.status in {"running", "completed"}:
-        return {
-            "job_id": job.job_id,
-            "status": job.status,
-            "skipped": True,
-            "reason": "already-ran-today",
-        }
+    # Existing production idempotency check kept for reference:
+    # if job and job.status in {"running", "completed"}:
+    #     return {
+    #         "job_id": job.job_id,
+    #         "status": job.status,
+    #         "skipped": True,
+    #         "reason": "already-ran-today",
+    #     }
+    if not test_mode:
+        if job and job.status in {"running", "completed"}:
+            return {
+                "job_id": job.job_id,
+                "status": job.status,
+                "skipped": True,
+                "reason": "already-ran-today",
+            }
+    else:
+        current_app.logger.warning("TEST MODE ENABLED - idempotency bypassed")
 
     if not job:
         job = BackgroundJob(
@@ -154,6 +166,10 @@ def execute_daily_deadline_reminders(task_request_id=None):
 
     lookahead_days = max(1, int(current_app.config.get("JOBS_REMINDER_LOOKAHEAD_DAYS", 3)))
     channels = parse_channels(current_app.config.get("JOBS_REMINDER_CHANNELS", "email"))
+    if "in_app" not in channels:
+        channels = ["in_app", *channels]
+    if test_mode and "email" not in channels:
+        channels.append("email")
     webhook_url = current_app.config.get("JOBS_WEBHOOK_URL")
 
     window_end = now_utc + timedelta(days=lookahead_days)
@@ -196,19 +212,35 @@ def execute_daily_deadline_reminders(task_request_id=None):
                     f"{drive.company.company_name if drive.company else 'the company'} "
                     f"closes on {drive_deadline_text}."
                 )
+                if test_mode:
+                    message = f"[TEST MODE] {message}"
 
                 student_received_message = False
                 for channel in channels:
-                    if channel in {"email", "sms"} and _already_sent_today(
+                    already_notified = channel in {"in_app", "email", "sms"} and _already_sent_today(
                         user.user_id,
                         drive.drive_id,
                         channel,
                         day_start,
                         day_end,
                         resource_type="deadline_reminder",
-                    ):
-                        metrics["skipped_duplicates"] += 1
-                        continue
+                    )
+
+                    # Existing production duplicate filter kept for reference:
+                    # if already_notified:
+                    #     metrics["skipped_duplicates"] += 1
+                    #     continue
+                    if not test_mode:
+                        if already_notified:
+                            metrics["skipped_duplicates"] += 1
+                            continue
+                    elif already_notified:
+                        current_app.logger.info(
+                            "TEST MODE - duplicate reminder allowed for user_id=%s drive_id=%s channel=%s",
+                            user.user_id,
+                            drive.drive_id,
+                            channel,
+                        )
 
                     result = send_channel_notification(
                         channel=channel,
@@ -315,6 +347,8 @@ def execute_daily_interview_reminders(task_request_id=None):
             current_app.config.get("JOBS_REMINDER_CHANNELS", "email"),
         )
     )
+    if "in_app" not in channels:
+        channels = ["in_app", *channels]
     webhook_url = current_app.config.get("JOBS_WEBHOOK_URL")
 
     window_end = now_utc + timedelta(hours=window_hours)
@@ -352,7 +386,7 @@ def execute_daily_interview_reminders(task_request_id=None):
 
             student_received_message = False
             for channel in channels:
-                if channel in {"email", "sms"} and _already_sent_today(
+                if channel in {"in_app", "email", "sms"} and _already_sent_today(
                     user.user_id,
                     interview.interview_id,
                     channel,
@@ -422,3 +456,14 @@ def execute_daily_interview_reminders(task_request_id=None):
             "status": "failed",
             "error": str(exc),
         }
+
+from app.jobs.celery_app import celery
+
+@celery.task(name="jobs.daily_reminders.run")
+def run_daily_reminder_task():
+    return execute_daily_deadline_reminders()
+
+@celery.task(name="jobs.interview_reminders.run")
+def run_interview_reminder_task():
+    return execute_daily_interview_reminders()
+

@@ -350,9 +350,13 @@ export const companyApi = {
   },
 
   scoreApplicationResume(applicationId, keywords = null) {
-    const payload = {
-      application_id: applicationId
+    const parsedApplicationId = Number(applicationId)
+    const payload = {}
+
+    if (Number.isInteger(parsedApplicationId) && parsedApplicationId > 0) {
+      payload.application_id = parsedApplicationId
     }
+
     if (keywords) {
       payload.keywords = keywords
     }
@@ -526,9 +530,14 @@ export const studentApi = {
     return applicationsApi.getStudentApplications(params)
   },
   scoreResumeForJob(jobId, keywords = null) {
-    const payload = {
-      job_id: jobId
+    const parsedJobId = Number(jobId)
+    const payload = {}
+
+    if (Number.isInteger(parsedJobId) && parsedJobId > 0) {
+      payload.job_id = parsedJobId
+      payload.drive_id = parsedJobId
     }
+
     if (keywords) {
       payload.keywords = keywords
     }

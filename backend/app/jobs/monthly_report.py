@@ -392,6 +392,8 @@ def execute_monthly_activity_report(task_request_id=None, audience=None, report_
     db.session.commit()
 
     channels = parse_channels(current_app.config.get("JOBS_REPORT_CHANNELS", "email"))
+    if "in_app" not in channels:
+        channels = ["in_app", *channels]
     webhook_url = current_app.config.get("JOBS_WEBHOOK_URL")
     recipients = _target_recipients(audience_key)
 
@@ -414,17 +416,39 @@ def execute_monthly_activity_report(task_request_id=None, audience=None, report_
                 metrics_cache[metrics_key] = metrics
 
             report_suffix = "admin" if company_id is None else f"company-{company_id}"
-            report_key = f"{report_suffix}:{report_format_key}"
-            report_file = report_cache.get(report_key)
-            if report_file is None:
-                report_file = _save_report(
+            report_key = f"{report_suffix}:both"
+            report_bundle = report_cache.get(report_key)
+            if report_bundle is None:
+                # report_file = _save_report(
+                #     month_label,
+                #     month_key,
+                #     report_suffix,
+                #     report_format_key,
+                #     metrics,
+                # )
+                # Generate BOTH formats
+                report_html = _save_report(
                     month_label,
                     month_key,
                     report_suffix,
-                    report_format_key,
+                    "html",
                     metrics,
                 )
-                report_cache[report_key] = report_file
+
+                report_pdf = _save_report(
+                    month_label,
+                    month_key,
+                    report_suffix,
+                    "pdf",
+                     metrics,
+                    )
+            
+                report_cache[report_key] = {
+                    "html": report_html,
+                    "pdf": report_pdf,
+                }
+
+                report_bundle = report_cache[report_key]
 
             if recipient["audience"] == "company":
                 title = f"Monthly Placement Report - {month_label}"
@@ -443,6 +467,14 @@ def execute_monthly_activity_report(task_request_id=None, audience=None, report_
                 )
 
             for channel in channels:
+                email_attachments = (
+                    [
+                        report_bundle["html"]["path"],
+                        report_bundle["pdf"]["path"],
+                    ]
+                    if channel == "email"
+                    else None
+                )
                 delivery_result = send_channel_notification(
                     channel=channel,
                     recipient_id=recipient["user_id"],
@@ -451,6 +483,7 @@ def execute_monthly_activity_report(task_request_id=None, audience=None, report_
                     resource_type="monthly_report",
                     resource_id=None,
                     webhook_url=webhook_url,
+                    email_attachments=email_attachments,
                     webhook_payload={
                         "event": "monthly_activity_report",
                         "month": month_key,
@@ -458,8 +491,11 @@ def execute_monthly_activity_report(task_request_id=None, audience=None, report_
                         "recipient_audience": recipient["audience"],
                         "company_id": company_id,
                         "company_name": recipient.get("company_name"),
-                        "report_file": report_file["filename"],
-                        "report_format": report_format_key,
+                        "report_files": [
+                            report_bundle["html"]["filename"],
+                            report_bundle["pdf"]["filename"],
+                        ],
+                        "report_format": "html+pdf",
                         "metrics": metrics,
                     },
                 )
@@ -519,3 +555,9 @@ def execute_monthly_activity_report(task_request_id=None, audience=None, report_
             "status": "failed",
             "error": str(exc),
         }
+
+from app.jobs.celery_app import celery
+
+@celery.task(name="jobs.monthly_report.run")
+def run_monthly_report_task():
+    return execute_monthly_activity_report()

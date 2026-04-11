@@ -19,9 +19,52 @@ const routes = [
   { path: '/company', component: CompanyDashboard }
 ]
 
+const PUBLIC_PATHS = new Set(['/', '/login', '/register', '/register/student', '/register/company'])
+
+function roleHome(role) {
+  if (role === 'admin') return '/admin'
+  if (role === 'student') return '/student'
+  if (role === 'company') return '/company'
+  return '/login'
+}
+
+function routeRequiredRole(path) {
+  if (path.startsWith('/admin')) return 'admin'
+  if (path.startsWith('/student')) return 'student'
+  if (path.startsWith('/company')) return 'company'
+  return null
+}
+
 const router = createRouter({
   history: createWebHistory(),
   routes
+})
+
+router.beforeEach((to) => {
+  const token = localStorage.getItem('token')
+  const role = String(localStorage.getItem('role') || '').trim().toLowerCase()
+  const requiresRole = routeRequiredRole(to.path)
+
+  if (!token) {
+    if (PUBLIC_PATHS.has(to.path)) {
+      return true
+    }
+    return '/login'
+  }
+
+  if (to.path === '/login' || to.path.startsWith('/register')) {
+    return roleHome(role)
+  }
+
+  if (!requiresRole) {
+    return true
+  }
+
+  if (requiresRole !== role) {
+    return roleHome(role)
+  }
+
+  return true
 })
 
 export default router

@@ -25,8 +25,4 @@ backend/instance/exports/
 backend/instance/reports/
 backend/instance/resumes/
 
-# Local course/reference docs (do not commit)
-frontend/docs/App Dev II Project Statement I - Jan 2026.pdf
-frontend/docs/App Dev II Project Statement I - Jan 2026.extracted.txt
-frontend/docs/Milestones for Placement Portal Application V2 - Modern Application Development II.pdf
-frontend/docs/Milestones for Placement Portal Application V2 - Modern Application Development II.extracted.txt
+backend/reports

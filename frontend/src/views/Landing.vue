@@ -92,55 +92,6 @@
   </div>
 </div>
 
-<section class="section" id="public-dashboard">
-  <div class="s-inner">
-    <div class="s-eyebrow reveal" v-reveal>Public Dashboard</div>
-    <h2 class="s-h reveal" v-reveal>Live monthly trends and<br><em>in-demand skills.</em></h2>
-    <p class="s-p reveal" v-reveal>
-      This pre-login dashboard exposes non-sensitive placement momentum so students and recruiters can understand hiring activity before signing in.
-    </p>
-
-    <div class="public-dash-grid reveal" v-reveal>
-      <article class="public-card public-card-lg">
-        <div class="public-card-head">
-          <h3>Placement Trend (Public)</h3>
-          <span>{{ publicMetaLabel }}</span>
-        </div>
-        <div class="public-chart-wrap" v-if="!publicDashboardError">
-          <canvas ref="publicTrendChart" aria-label="Public placement trend chart" role="img"></canvas>
-        </div>
-        <p v-else class="public-error">{{ publicDashboardError }}</p>
-      </article>
-
-      <article class="public-card">
-        <div class="public-card-head">
-          <h3>Top Skills in Demand</h3>
-          <span>From approved and pending drives</span>
-        </div>
-        <div class="public-skill-list">
-          <div
-            v-for="skill in topPublicSkills"
-            :key="skill.skill"
-            class="public-skill-row"
-          >
-            <div class="public-skill-meta">
-              <span class="public-skill-name">{{ skill.skill }}</span>
-              <span class="public-skill-count">{{ skill.demand_count }}</span>
-            </div>
-            <div class="public-skill-track">
-              <div
-                class="public-skill-fill"
-                :style="{ width: `${publicSkillPct(skill.demand_count)}%` }"
-              ></div>
-            </div>
-          </div>
-          <p v-if="!topPublicSkills.length" class="public-empty">No skill-demand data available yet.</p>
-        </div>
-      </article>
-    </div>
-  </div>
-</section>
-
 <!-- ══════════════════════════════════════════════
      WHO IS THIS FOR
 ══════════════════════════════════════════════ -->
@@ -578,13 +529,10 @@
 </template>
 
 <script>
-import { Chart, registerables } from 'chart.js'
 import Navbar from '../components/layout/Navbar.vue'
 import Footer from '../components/layout/Footer.vue'
 import HeroSection from '../components/landing/HeroSection.vue'
 import { adminApi } from '../api/api'
-
-Chart.register(...registerables)
 
 function createEmptyPublicDashboard() {
   return {
@@ -635,8 +583,6 @@ export default {
         { target: 95, value: 0 }
       ],
       publicDashboard: createEmptyPublicDashboard(),
-      publicDashboardError: '',
-      publicTrendChartInstance: null,
       scrollRafId: null,
       counterObserver: null,
       pipelineObserver: null,
@@ -647,23 +593,6 @@ export default {
   computed: {
     publicFunnel() {
       return this.publicDashboard?.application_funnel || {}
-    },
-    topPublicSkills() {
-      const rows = Array.isArray(this.publicDashboard?.job_demand_by_skills)
-        ? this.publicDashboard.job_demand_by_skills
-        : []
-      return rows.slice(0, 8)
-    },
-    maxPublicSkillDemand() {
-      const values = this.topPublicSkills.map((row) => Number(row.demand_count || 0))
-      return Math.max(...values, 1)
-    },
-    publicMetaLabel() {
-      const months = Number(this.publicDashboard?.meta?.months || 0)
-      if (!months) {
-        return 'Last 6 months'
-      }
-      return `Last ${months} months`
     }
   },
   directives: {
@@ -754,11 +683,9 @@ export default {
     }
     this.counterObserver?.disconnect()
     this.pipelineObserver?.disconnect()
-    this.destroyPublicTrendChart()
   },
   methods: {
     async fetchPublicDashboard(months = 6) {
-      this.publicDashboardError = ''
       try {
         const response = await adminApi.getPublicLandingDashboard({ months })
         const payload = response?.data?.data || {}
@@ -775,17 +702,9 @@ export default {
         }
 
         this.syncCountersFromPublicData()
-        this.$nextTick(() => {
-          this.renderPublicTrendChart()
-        })
       } catch (error) {
         this.publicDashboard = createEmptyPublicDashboard()
         this.syncCountersFromPublicData()
-        this.destroyPublicTrendChart()
-        this.publicDashboardError =
-          error?.response?.data?.error ||
-          error?.response?.data?.message ||
-          'Unable to load public dashboard analytics.'
       }
     },
     syncCountersFromPublicData() {
@@ -808,81 +727,6 @@ export default {
           this.animateCounter(index, counter.target, 900, Number(counter.value || 0))
         })
       }
-    },
-    destroyPublicTrendChart() {
-      if (this.publicTrendChartInstance) {
-        this.publicTrendChartInstance.destroy()
-        this.publicTrendChartInstance = null
-      }
-    },
-    renderPublicTrendChart() {
-      const canvas = this.$refs.publicTrendChart
-      if (!canvas) {
-        return
-      }
-
-      this.destroyPublicTrendChart()
-
-      const rows = Array.isArray(this.publicDashboard?.placement_trends)
-        ? this.publicDashboard.placement_trends
-        : []
-      const labels = rows.map((row) => row.month_label || row.month_key || '-')
-
-      this.publicTrendChartInstance = new Chart(canvas, {
-        type: 'line',
-        data: {
-          labels,
-          datasets: [
-            {
-              label: 'Applications',
-              data: rows.map((row) => Number(row.applications || 0)),
-              borderColor: '#2563EB',
-              backgroundColor: 'rgba(37, 99, 235, 0.12)',
-              tension: 0.3,
-              fill: true
-            },
-            {
-              label: 'Offers',
-              data: rows.map((row) => Number(row.offers || 0)),
-              borderColor: '#D97706',
-              backgroundColor: 'rgba(217, 119, 6, 0.1)',
-              tension: 0.3,
-              fill: false
-            },
-            {
-              label: 'Placements',
-              data: rows.map((row) => Number(row.placements || 0)),
-              borderColor: '#059669',
-              backgroundColor: 'rgba(5, 150, 105, 0.1)',
-              tension: 0.3,
-              fill: false
-            }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: {
-              position: 'bottom'
-            }
-          },
-          scales: {
-            x: {
-              grid: {
-                display: false
-              }
-            },
-            y: {
-              beginAtZero: true
-            }
-          }
-        }
-      })
-    },
-    publicSkillPct(value) {
-      const parsed = Number(value || 0)
-      return Math.max(6, Math.round((parsed / this.maxPublicSkillDemand) * 100))
     },
     funnelCountLabel(value) {
       return `${Number(value || 0).toLocaleString()} students`

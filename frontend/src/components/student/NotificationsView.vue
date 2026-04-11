@@ -46,7 +46,7 @@
             <div class="rq-notify-copy">
               <p class="rq-notify-title">{{ item.title || 'Update' }}</p>
               <p class="rq-notify-message">{{ item.message || '-' }}</p>
-              <p class="rq-notify-time">{{ formatRelativeTime(item.created_at) }}</p>
+              <p class="rq-notify-time">{{ formatRelativeTime(item.created_at || item.sent_at) }}</p>
             </div>
 
             <button
@@ -139,10 +139,27 @@ export default {
       }
       return iconMap[kind] || '🔔'
     },
+    parseNotificationDate(value) {
+      const raw = String(value || '').trim()
+      if (!raw) {
+        return null
+      }
+
+      const isoLike = raw.includes('T') ? raw : raw.replace(' ', 'T')
+      const hasTimezone = /([zZ]|[+-]\d{2}:?\d{2})$/.test(isoLike)
+      const normalized = hasTimezone ? isoLike : `${isoLike}Z`
+      const parsed = new Date(normalized)
+
+      if (Number.isNaN(parsed.getTime())) {
+        return null
+      }
+
+      return parsed
+    },
     formatRelativeTime(value) {
       if (!value) return '-'
-      const parsed = new Date(value)
-      if (Number.isNaN(parsed.getTime())) return '-'
+      const parsed = this.parseNotificationDate(value)
+      if (!parsed) return '-'
 
       const deltaMs = Date.now() - parsed.getTime()
       if (deltaMs < 0) {

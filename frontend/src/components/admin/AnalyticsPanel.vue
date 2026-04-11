@@ -79,10 +79,6 @@
       <div class="rq-card">
         <div class="rq-card-hd">
           <span class="rq-card-title">Top Skill Demand</span>
-          <button class="rq-ghost" :disabled="isExportBusy" @click="$emit('export', 'analytics')">
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v7M3 6l3 3 3-3M1 11h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            {{ exportLabel }}
-          </button>
         </div>
         <div class="rq-card-body">
           <div v-if="isLoading" class="rq-empty rq-empty-compact">
@@ -97,28 +93,6 @@
           </div>
           <div v-else class="rq-chart-wrap rq-chart-md">
             <canvas ref="skillsChart" aria-label="Skill demand bar chart" role="img"></canvas>
-          </div>
-        </div>
-      </div>
-
-      <div class="rq-card">
-        <div class="rq-card-hd">
-          <span class="rq-card-title">Placement Growth Trend</span>
-          <span class="rq-pill rq-pill-blue">{{ monthLabel }}</span>
-        </div>
-        <div class="rq-card-body">
-          <div v-if="isLoading" class="rq-empty rq-empty-compact">
-            <span class="rq-row-sub">Loading placement growth trend...</span>
-          </div>
-          <div v-else-if="errorMessage" class="rq-state rq-state-error">
-            <span>{{ errorMessage }}</span>
-            <button class="rq-ghost" type="button" @click="$emit('retry')">Retry</button>
-          </div>
-          <div v-else-if="!hasTrendData" class="rq-empty rq-empty-compact">
-            <span class="rq-row-sub">No placement growth trend data available yet.</span>
-          </div>
-          <div v-else class="rq-chart-wrap rq-chart-md">
-            <canvas ref="trendChart" aria-label="Placement growth trend line chart" role="img"></canvas>
           </div>
         </div>
       </div>
@@ -177,14 +151,11 @@ export default {
     placementRatePct: { type: Number, required: true },
     donutCirc: { type: Number, required: true },
     donutPlacedOffset: { type: Number, required: true },
-    isExportBusy: { type: Boolean, default: false },
-    exportLabel: { type: String, default: 'Export' },
     pct: { type: Function, required: true }
   },
-  emits: ['export', 'retry'],
+  emits: ['retry'],
   data() {
     return {
-      trendChartInstance: null,
       funnelChartInstance: null,
       skillsChartInstance: null,
       conversionChartInstance: null,
@@ -194,26 +165,6 @@ export default {
   computed: {
     summary() {
       return this.analyticsOverview?.summary || {}
-    },
-    monthLabel() {
-      const months = Number(this.analyticsOverview?.meta?.months || 0)
-      if (!months) return 'Last 6 Months'
-      return `Last ${months} Months`
-    },
-    trendRows() {
-      const rows = Array.isArray(this.analyticsOverview?.placement_trends)
-        ? this.analyticsOverview.placement_trends
-        : []
-      if (rows.length) {
-        return rows
-      }
-
-      return this.branchStats.map((branch, index) => ({
-        month_label: `M${index + 1}`,
-        applications: Number(branch.total || 0),
-        placements: Number(branch.placed || 0),
-        offers: Number(branch.placed || 0)
-      }))
     },
     funnelCounts() {
       const fallbackTotal = Number(this.placedCount + this.inProgressCount + this.notPlacedCount)
@@ -236,13 +187,6 @@ export default {
         ? this.analyticsOverview.job_demand_by_skills
         : []
       return rows.slice(0, 10)
-    },
-    hasTrendData() {
-      return this.trendRows.some((row) => (
-        Number(row.applications || 0) > 0 ||
-        Number(row.offers || 0) > 0 ||
-        Number(row.placements || 0) > 0
-      ))
     },
     hasFunnelData() {
       const dataset = this.funnelCounts
@@ -338,10 +282,6 @@ export default {
       })
     },
     destroyCharts() {
-      if (this.trendChartInstance) {
-        this.trendChartInstance.destroy()
-        this.trendChartInstance = null
-      }
       if (this.funnelChartInstance) {
         this.funnelChartInstance.destroy()
         this.funnelChartInstance = null
@@ -362,9 +302,6 @@ export default {
         return
       }
 
-      if (this.hasTrendData) {
-        this.renderTrendChart()
-      }
       if (this.hasFunnelData) {
         this.renderFunnelChart()
       }
@@ -374,67 +311,6 @@ export default {
       if (this.hasConversionData) {
         this.renderConversionChart()
       }
-    },
-    renderTrendChart() {
-      const canvas = this.$refs.trendChart
-      if (!canvas) return
-
-      const labels = this.trendRows.map((row) => row.month_label || row.month_key || '-')
-      const applications = this.trendRows.map((row) => Number(row.applications || 0))
-      const offers = this.trendRows.map((row) => Number(row.offers || 0))
-      const placements = this.trendRows.map((row) => Number(row.placements || 0))
-
-      this.trendChartInstance = new Chart(canvas, {
-        type: 'line',
-        data: {
-          labels,
-          datasets: [
-            {
-              label: 'Applications',
-              data: applications,
-              borderColor: '#2563EB',
-              backgroundColor: 'rgba(37, 99, 235, 0.12)',
-              tension: 0.28,
-              fill: true
-            },
-            {
-              label: 'Offers',
-              data: offers,
-              borderColor: '#D97706',
-              backgroundColor: 'rgba(217, 119, 6, 0.1)',
-              tension: 0.28,
-              fill: false
-            },
-            {
-              label: 'Placements',
-              data: placements,
-              borderColor: '#059669',
-              backgroundColor: 'rgba(5, 150, 105, 0.1)',
-              tension: 0.28,
-              fill: false
-            }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: {
-              position: 'bottom'
-            }
-          },
-          scales: {
-            x: {
-              grid: {
-                display: false
-              }
-            },
-            y: {
-              beginAtZero: true
-            }
-          }
-        }
-      })
     },
     renderFunnelChart() {
       const canvas = this.$refs.funnelChart

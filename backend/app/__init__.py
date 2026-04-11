@@ -45,9 +45,8 @@ def create_app(config_object=None):
 
     app = Flask(__name__, instance_relative_config=True)
 
-    # =====================================================================
     # Database Configuration
-    # =====================================================================
+  
     default_sqlite_path = os.path.join(app.instance_path, "recruitify.db")
 
     app.config.from_mapping(
@@ -57,11 +56,11 @@ def create_app(config_object=None):
         ),
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
 
-        # 🔐 JWT Configuration
+        #  JWT Configuration
         JWT_SECRET_KEY=os.environ.get("JWT_SECRET_KEY", "dev-jwt-secret-change-me"),
         JWT_ACCESS_TOKEN_EXPIRES=3600,  # 1 hour
 
-        # ⚙️ Background Jobs (Celery + Redis) configuration contracts
+        #  Background Jobs (Celery + Redis) configuration contracts
         CELERY_BROKER_URL=os.environ.get(
             "CELERY_BROKER_URL",
             os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"),
@@ -72,6 +71,8 @@ def create_app(config_object=None):
         ),
         CELERY_TIMEZONE=os.environ.get("CELERY_TIMEZONE", "Asia/Kolkata"),
         JOBS_DAILY_REMINDER_CRON=os.environ.get("JOBS_DAILY_REMINDER_CRON", "0 9 * * *"),
+        JOBS_TEST_MODE=os.getenv("JOBS_TEST_MODE", "false").lower() == "true",
+        JOBS_DISABLE_IDEMPOTENCY = os.getenv("JOBS_DISABLE_IDEMPOTENCY", "false").lower() == "true",
         JOBS_MONTHLY_REPORT_CRON=os.environ.get("JOBS_MONTHLY_REPORT_CRON", "0 9 1 * *"),
         JOBS_EXPORT_ARTIFACT_TTL_HOURS=_env_int("JOBS_EXPORT_ARTIFACT_TTL_HOURS", 24),
         JOBS_RETRY_LIMIT=_env_int("JOBS_RETRY_LIMIT", 3),
@@ -98,6 +99,7 @@ def create_app(config_object=None):
         JOBS_REPORT_CHANNELS=os.environ.get("JOBS_REPORT_CHANNELS", "email"),
         JOBS_MONTHLY_REPORT_AUDIENCE=os.environ.get("JOBS_MONTHLY_REPORT_AUDIENCE", "admin"),
         JOBS_MONTHLY_REPORT_FORMAT=os.environ.get("JOBS_MONTHLY_REPORT_FORMAT", "html"),
+        JOBS_EXPORT_ALERT_CHANNELS=os.environ.get("JOBS_EXPORT_ALERT_CHANNELS", "in_app,email"),
         JOBS_COMPANY_EXPORT_ENABLED=_env_bool("JOBS_COMPANY_EXPORT_ENABLED", False),
         JOBS_EXPORT_ALLOW_PLACEMENT_HISTORY=_env_bool(
             "JOBS_EXPORT_ALLOW_PLACEMENT_HISTORY",
@@ -117,10 +119,21 @@ def create_app(config_object=None):
         ),
         JOBS_EAGER_EXECUTION=_env_bool("JOBS_EAGER_EXECUTION", False),
 
-        # 📊 Analytics API defaults
+        #  SMTP mail delivery (used by background job email notifications)
+        MAIL_FROM_ADDRESS=os.environ.get("MAIL_FROM_ADDRESS", "noreply@recruitify.local"),
+        MAIL_SMTP_HOST=os.environ.get("MAIL_SMTP_HOST"),
+        MAIL_SMTP_PORT=_env_int("MAIL_SMTP_PORT", 587),
+        MAIL_SMTP_USERNAME=os.environ.get("MAIL_SMTP_USERNAME"),
+        MAIL_SMTP_PASSWORD=os.environ.get("MAIL_SMTP_PASSWORD"),
+        MAIL_SMTP_USE_TLS=_env_bool("MAIL_SMTP_USE_TLS", True),
+        MAIL_SMTP_USE_SSL=_env_bool("MAIL_SMTP_USE_SSL", False),
+        MAIL_TIMEOUT_SECONDS=_env_int("MAIL_TIMEOUT_SECONDS", 10),
+        MAIL_SIMULATE_WHEN_UNCONFIGURED=_env_bool("MAIL_SIMULATE_WHEN_UNCONFIGURED", False),
+
+        #  Analytics API defaults
         ANALYTICS_LOOKBACK_MONTHS=_env_int("ANALYTICS_LOOKBACK_MONTHS", 6),
 
-        # ⚡ API Response Cache (Redis) configuration contracts
+        #  API Response Cache (Redis) configuration contracts
         CACHE_ENABLED=_env_bool("CACHE_ENABLED", True),
         CACHE_KEY_PREFIX=os.environ.get("CACHE_KEY_PREFIX", "recruitify"),
         CACHE_REDIS_URL=os.environ.get(
@@ -228,19 +241,36 @@ def create_app(config_object=None):
                         "UPDATE activity_log SET status='info' WHERE status IS NULL OR TRIM(status) = ''"
                     )
 
-            from .models import BackgroundJob, ExportArtifact
+                notification_table_exists = conn.exec_driver_sql(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='notification'"
+                ).fetchone()
+                if notification_table_exists:
+                    conn.exec_driver_sql(
+                        "CREATE INDEX IF NOT EXISTS ix_notification_recipient_type_read_created "
+                        "ON notification (recipient_id, notification_type, is_read, created_at)"
+                    )
+                    conn.exec_driver_sql(
+                        "CREATE INDEX IF NOT EXISTS ix_notification_recipient_resource "
+                        "ON notification (recipient_id, notification_type, related_resource_type, related_resource_id)"
+                    )
+
+            from .models import BackgroundJob, ExportArtifact, Notification
 
             db.metadata.create_all(
                 bind=db.engine,
-                tables=[BackgroundJob.__table__, ExportArtifact.__table__],
+                tables=[
+                    BackgroundJob.__table__,
+                    ExportArtifact.__table__,
+                    Notification.__table__,
+                ],
                 checkfirst=True,
             )
         except Exception as exc:
             app.logger.warning("Schema update check failed: %s", exc)
 
-    # =====================================================================
+    
     # Initialize Extensions
-    # =====================================================================
+    
     db.init_app(app)
     CORS(app)
     jwt = JWTManager(app)
@@ -261,18 +291,17 @@ def create_app(config_object=None):
     def handle_missing_token(reason):
         return jsonify({"success": False, "error": "Missing authorization token"}), 401
 
-    # =====================================================================
+    
     # Register Models (important for SQLAlchemy)
-    # =====================================================================
+    
     from . import models  # noqa: F401
 
     with app.app_context():
         _ensure_schema_updates()
 
-    # =====================================================================
+    
     # Register Blueprints
-    # =====================================================================
-    from app.auth import auth_bp
+        from app.auth import auth_bp
     app.register_blueprint(auth_bp, url_prefix="/auth")
 
     from app.admin import admin_bp
@@ -290,6 +319,9 @@ def create_app(config_object=None):
     from app.jobs import jobs_bp
     app.register_blueprint(jobs_bp)
 
+    from app.notifications import notifications_bp
+    app.register_blueprint(notifications_bp)
+
     try:
         from app.jobs.celery_app import init_celery
 
@@ -304,9 +336,9 @@ def create_app(config_object=None):
         else:
             raise
 
-    # =====================================================================
+   
     # Health Check
-    # =====================================================================
+   
     @app.get("/health")
     def health_check():
         return {"status": "ok"}, 200

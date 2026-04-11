@@ -85,10 +85,7 @@
             :company-profile="companyProfile"
             :pending-applications-count="pendingApplicationsCount"
             :recent-applications="recentApplications"
-            :can-manage-actions="canManageApplications"
             @open-view="activeView = $event"
-            @shortlist="shortlistApp"
-            @reject="rejectApp"
           />
 
           <DrivesView
@@ -97,10 +94,7 @@
             :drive-filter="driveFilter"
             :filtered-drives="filteredDrives"
             :company-status="companyProfile.status"
-            :is-export-busy="isCompanyExportBusy('drives')"
-            :export-label="companyExportButtonLabel('drives')"
             @update:drive-filter="driveFilter = $event"
-            @export-drives="doExport('drives')"
             @request-new-drive="openNewDriveModal"
             @open-applications="openApplicationsForDrive"
             @close-drive="closeDrive"
@@ -119,8 +113,6 @@
             :is-scoring="isScoringResume"
             :all-page-selected="allPageSelected"
             :company-status="companyProfile.status"
-            :is-export-busy="isCompanyExportBusy('applications')"
-            :export-label="companyExportButtonLabel('applications')"
             @update:app-search="appSearch = $event"
             @set-search-focus="appSearchFocused = $event"
             @update:app-drive-filter="appDriveFilter = $event"
@@ -130,7 +122,6 @@
             @bulk-shortlist="bulkShortlist"
             @bulk-reject="bulkReject"
             @clear-selected="selectedApps = []"
-            @export-applications="doExport('applications')"
             @shortlist="shortlistApp"
             @reject="rejectApp"
             @advance="advanceStage"
@@ -158,6 +149,7 @@
             :my-drives="myDrives"
             :branch-applicants="branchApplicants"
             :max-branch-count="maxBranchCount"
+            :applications="allApplications"
             :is-export-busy="isCompanyExportBusy('applications')"
             :export-label="companyExportButtonLabel('applications')"
             @export-analytics="doExport('applications')"
@@ -621,6 +613,7 @@ import Sidebar from '../../components/company/Sidebar.vue'
 import Toast from '../../components/layout/Toast.vue'
 import Topbar from '../../components/company/Topbar.vue'
 import { companyApi, parseApiError } from '../../api/api'
+import { parseBooleanFlag, parseServerDate } from '../../utils/dateTime'
 import './CompanyDashboard.css'
 
 const SUMMARY_DEFAULTS = Object.freeze({
@@ -1151,8 +1144,8 @@ export default {
         return '-'
       }
 
-      const parsed = new Date(rawValue)
-      if (Number.isNaN(parsed.getTime())) {
+      const parsed = parseServerDate(rawValue)
+      if (!parsed) {
         return String(rawValue)
       }
 
@@ -1163,8 +1156,8 @@ export default {
         return '-'
       }
 
-      const parsed = new Date(rawValue)
-      if (Number.isNaN(parsed.getTime())) {
+      const parsed = parseServerDate(rawValue)
+      if (!parsed) {
         return String(rawValue)
       }
 
@@ -1212,13 +1205,20 @@ export default {
         return 'recently'
       }
 
-      const parsed = new Date(rawValue)
-      if (Number.isNaN(parsed.getTime())) {
+      const parsed = parseServerDate(rawValue)
+      if (!parsed) {
         return 'recently'
       }
 
       const deltaMs = Date.now() - parsed.getTime()
-      const deltaMinutes = Math.max(1, Math.floor(deltaMs / 60000))
+      if (deltaMs < 0) {
+        return parsed.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })
+      }
+
+      const deltaMinutes = Math.floor(deltaMs / 60000)
+      if (deltaMinutes < 1) {
+        return 'Just now'
+      }
 
       if (deltaMinutes < 60) {
         return `${deltaMinutes} min ago`
@@ -1300,6 +1300,7 @@ export default {
         salary,
         applicants: Number(item.applications_count || 0),
         deadline: this.formatDeadline(item.deadline || item.application_deadline),
+        deadlineRaw: item.deadline || item.application_deadline || null,
         status,
         initials: this.initialsFor(this.companyProfile.name),
         avatarColor: this.companyProfile.avatarColor,
@@ -1311,13 +1312,14 @@ export default {
       }
     },
     normalizeNotification(item) {
+      const timestamp = item.created_at || item.sent_at || item.timestamp || item.time || ''
       return {
         id: Number(item.notification_id || item.id || 0),
         title: item.title || 'Notification',
         sub: item.message || '-',
-        time: this.formatRelativeTime(item.created_at || item.sent_at),
+        time: this.formatRelativeTime(timestamp),
         type: this.normalizeNotificationType(item),
-        read: Boolean(item.is_read)
+        read: parseBooleanFlag(item.is_read ?? item.read)
       }
     },
     normalizeCompanyProfile(profilePayload, dashboardUser = {}) {
@@ -2153,7 +2155,7 @@ export default {
       }
     },
     async screenApplicationResume(application) {
-      const applicationId = Number(application?.id || 0)
+      const applicationId = Number(application?.id || application?.application_id || 0)
       if (!applicationId || this.isScoringResume[applicationId]) {
         return
       }
@@ -2173,7 +2175,8 @@ export default {
         this.screeningError = ''
         this.showScreeningModal = true
       } catch (error) {
-        this.screeningError = parseApiError(error, 'Unable to run ATS screening.')
+        const parsedMessage = parseApiError(error, 'Unable to run ATS screening.')
+        this.screeningError = this.normalizeAtsErrorMessage(parsedMessage)
         this.showScreeningModal = true
         this.toast_show(this.screeningError, 'danger')
       } finally {
@@ -2182,6 +2185,20 @@ export default {
           [applicationId]: false
         }
       }
+    },
+    normalizeAtsErrorMessage(rawMessage) {
+      const message = String(rawMessage || '').trim()
+      const normalized = message.toLowerCase()
+
+      if (normalized.includes('job_id must be an integer') || normalized.includes('job_id is required')) {
+        return 'ATS scoring received an invalid job context. Please refresh and make sure you are signed in as a company user.'
+      }
+
+      if (normalized.includes('application_id must be an integer') || normalized.includes('application_id is required')) {
+        return 'ATS scoring received an invalid application reference. Please refresh the applications table and retry.'
+      }
+
+      return message || 'Unable to run ATS screening.'
     },
     async shortlistApp(application) {
       await this.updateApplicationStatus(application, { status: 'shortlisted' }, `${application.student} shortlisted.`)

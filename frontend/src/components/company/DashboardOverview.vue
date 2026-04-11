@@ -110,7 +110,6 @@
               <th scope="col">CGPA</th>
               <th scope="col">Applied On</th>
               <th scope="col">Status</th>
-              <th scope="col">Action</th>
             </tr>
           </thead>
           <tbody>
@@ -133,22 +132,6 @@
               <td class="rq-sm rq-dim rq-mono">{{ application.date }}</td>
               <td>
                 <span class="rq-status-pill" :class="'pill-app-' + application.status">{{ application.status }}</span>
-              </td>
-              <td>
-                <div class="rq-acts" v-if="application.status === 'applied' || application.status === 'pending'">
-                  <button class="rq-btn-ok" @click="$emit('shortlist', application)" :disabled="!canManageActions">
-                    <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
-                      <path d="M1.5 5.5l3 3 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-                    </svg>
-                    Shortlist
-                  </button>
-                  <button class="rq-btn-no" @click="$emit('reject', application)" title="Reject" :disabled="!canManageActions">
-                    <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
-                      <path d="M2 2l7 7M9 2l-7 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-                    </svg>
-                  </button>
-                </div>
-                <span v-else class="rq-dim rq-sm">—</span>
               </td>
             </tr>
           </tbody>
@@ -192,12 +175,8 @@ export default {
     recentApplications: {
       type: Array,
       required: true
-    },
-    canManageActions: {
-      type: Boolean,
-      default: true
     }
   },
-  emits: ['open-view', 'shortlist', 'reject']
+  emits: ['open-view']
 }
 </script>

@@ -149,34 +149,36 @@
       </div>
 
       <div class="rq-dash-side">
-        <article v-if="hasApplications" class="rq-card rq-progress-card">
+        <article class="rq-card rq-progress-card">
           <header class="rq-card-hd">
             <span class="rq-card-title">Placement Progress</span>
+            <span v-if="hasApplications" class="rq-pill rq-pill-blue">{{ placementBreakdown.total }} tracked</span>
           </header>
           <div class="rq-card-body">
             <div class="rq-progress-wrap">
               <div class="rq-progress-ring" :style="progressRingStyle">
                 <div class="rq-progress-ring-center">
-                  <strong>{{ placedPercent }}%</strong>
-                  <span>Placed</span>
+                  <strong>{{ progressCenterValue }}</strong>
+                  <span>{{ progressCenterLabel }}</span>
                 </div>
               </div>
             </div>
+            <p v-if="!hasApplications" class="rq-progress-empty">No applications yet. Placement metrics will appear here after your first application.</p>
             <div class="rq-progress-legend">
               <div class="rq-progress-legend-row">
                 <span class="rq-progress-dot dot-placed" aria-hidden="true"></span>
                 <span class="rq-progress-label">Placed</span>
-                <span class="rq-progress-value">{{ placedPercent }}%</span>
+                <span class="rq-progress-value">{{ placedPercent }}% ({{ placementBreakdown.placed }})</span>
               </div>
               <div class="rq-progress-legend-row">
                 <span class="rq-progress-dot dot-progress" aria-hidden="true"></span>
                 <span class="rq-progress-label">In progress</span>
-                <span class="rq-progress-value">{{ inProgressPercent }}%</span>
+                <span class="rq-progress-value">{{ inProgressPercent }}% ({{ placementBreakdown.inProgress }})</span>
               </div>
               <div class="rq-progress-legend-row">
                 <span class="rq-progress-dot dot-pending" aria-hidden="true"></span>
                 <span class="rq-progress-label">Pending</span>
-                <span class="rq-progress-value">{{ pendingPercent }}%</span>
+                <span class="rq-progress-value">{{ pendingPercent }}% ({{ placementBreakdown.pending }})</span>
               </div>
             </div>
           </div>
@@ -328,35 +330,109 @@ export default {
       if (summaryTotal > 0) {
         return summaryTotal
       }
+
+      const derivedSummaryTotal =
+        Number(this.summary?.applied || 0) +
+        Number(this.summary?.shortlisted || 0) +
+        Number(this.summary?.interviewed || 0) +
+        Number(this.summary?.selected || 0) +
+        Number(this.summary?.waitlisted || 0) +
+        Number(this.summary?.rejected || 0)
+
+      if (derivedSummaryTotal > 0) {
+        return derivedSummaryTotal
+      }
+
       return this.applications.length
     },
     hasApplications() {
       return this.applicationTotal > 0
     },
+    placementBreakdown() {
+      const total = Math.max(Number(this.applicationTotal || 0), 0)
+      if (total <= 0) {
+        return {
+          total: 0,
+          placed: 0,
+          inProgress: 0,
+          pending: 0
+        }
+      }
+
+      const offersAccepted = Math.max(Number(this.summary?.offers_accepted || 0), 0)
+      const selected = Math.max(Number(this.summary?.selected || 0), 0)
+      const offersReleased = Math.max(Number(this.summary?.offers_released || 0), 0)
+      const shortlisted = Math.max(Number(this.summary?.shortlisted || 0), 0)
+      const interviewed = Math.max(Number(this.summary?.interviewed || 0), 0)
+      const waitlisted = Math.max(Number(this.summary?.waitlisted || 0), 0)
+
+      // Keep placed aligned with whichever backend signal is populated.
+      const placedRaw = Math.max(offersAccepted, selected)
+      const placed = Math.min(total, placedRaw)
+      const remainingAfterPlaced = Math.max(total - placed, 0)
+
+      const inProgressRaw = shortlisted + interviewed + waitlisted + offersReleased
+      const inProgress = Math.min(remainingAfterPlaced, inProgressRaw)
+      const pending = Math.max(total - placed - inProgress, 0)
+
+      return {
+        total,
+        placed,
+        inProgress,
+        pending
+      }
+    },
     placedCount() {
-      return Number(this.summary?.offers_accepted || 0)
+      return this.placementBreakdown.placed
     },
     inProgressCount() {
-      return (
-        Number(this.summary?.shortlisted || 0) +
-        Number(this.summary?.interviewed || 0) +
-        Number(this.summary?.offers_released || 0)
-      )
+      return this.placementBreakdown.inProgress
+    },
+    pendingCount() {
+      return this.placementBreakdown.pending
     },
     placedPercent() {
       return this.percent(this.placedCount, this.applicationTotal)
     },
     inProgressPercent() {
-      const raw = this.percent(this.inProgressCount, this.applicationTotal)
-      return Math.max(0, Math.min(100 - this.placedPercent, raw))
+      return this.percent(this.inProgressCount, this.applicationTotal)
     },
     pendingPercent() {
+      if (!this.hasApplications) {
+        return 0
+      }
+
       return Math.max(0, 100 - this.placedPercent - this.inProgressPercent)
     },
+    progressCenterValue() {
+      if (!this.hasApplications) {
+        return '0%'
+      }
+      if (this.placedPercent > 0) {
+        return `${this.placedPercent}%`
+      }
+      if (this.inProgressPercent > 0) {
+        return `${this.inProgressPercent}%`
+      }
+      return `${this.pendingPercent}%`
+    },
+    progressCenterLabel() {
+      if (!this.hasApplications) {
+        return 'No data'
+      }
+      if (this.placedCount > 0) {
+        return 'Placed'
+      }
+      if (this.inProgressCount > 0) {
+        return 'In Progress'
+      }
+      return 'Pending'
+    },
     progressRingStyle() {
-      const progressStop = Math.min(100, this.placedPercent + this.inProgressPercent)
+      const placedPercent = this.hasApplications ? this.placedPercent : 0
+      const progressStop = this.hasApplications ? Math.min(100, placedPercent + this.inProgressPercent) : 0
       return {
-        '--rq-placed-pct': `${this.placedPercent}%`,
+        '--rq-placed-pct': `${placedPercent}%`,
         '--rq-progress-stop': `${progressStop}%`
       }
     },
@@ -416,10 +492,14 @@ export default {
             role: row.role,
             company: row.company,
             deadline: row.deadline || '-',
-            daysLeft
+            daysLeft,
+            applied: Boolean(row.applied),
+            isOpen: row.isOpen !== false,
+            isEligible: row.isEligible !== false
           }
         })
         .filter((row) => row.daysLeft >= 0)
+        .filter((row) => this.canApplyDrive(row))
         .sort((left, right) => left.daysLeft - right.daysLeft)
         .slice(0, 5)
     },
@@ -520,6 +600,7 @@ export default {
     normalizeStatus(status) {
       const normalized = String(status || '').toLowerCase()
       if (normalized === 'interviewed') return 'interview'
+      if (normalized === 'offer') return 'offer'
       if (normalized === 'offered' || normalized === 'selected') return 'offer'
       if (normalized === 'accepted' || normalized === 'placed') return 'placed'
       if (normalized === 'shortlisted') return 'shortlisted'
@@ -563,7 +644,7 @@ export default {
     },
     statusClass(status) {
       const normalized = String(status || '').toLowerCase()
-      if (normalized === 'shortlisted' || normalized === 'selected' || normalized === 'accepted') return 'pill-shortlisted'
+      if (normalized === 'shortlisted' || normalized === 'selected' || normalized === 'accepted' || normalized === 'placed') return 'pill-shortlisted'
       if (normalized === 'interview' || normalized === 'interviewed') return 'pill-interview'
       if (normalized === 'offered') return 'pill-offer'
       if (normalized === 'offer') return 'pill-offer'

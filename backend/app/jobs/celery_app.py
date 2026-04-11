@@ -1,10 +1,20 @@
 """Celery application bootstrap for Recruitify background jobs."""
+import os
+from dotenv import load_dotenv
 
+load_dotenv()  # Load environment variables from .env file if present
 from celery import Celery, Task
 from celery.schedules import crontab
 
 celery = Celery("recruitify_jobs")
 
+celery.conf.update(
+    imports=(
+        "app.jobs.tasks",
+        "app.jobs.monthly_report",
+        "app.jobs.reminders",
+    )
+)
 
 def _cron_to_schedule(raw_cron, fallback):
     """Convert five-part cron expression to Celery crontab schedule."""
@@ -37,21 +47,28 @@ def init_celery(app):
     monthly_cron = app.config.get("JOBS_MONTHLY_REPORT_CRON", "0 9 1 * *")
 
     celery.conf.update(
-        broker_url=app.config.get("CELERY_BROKER_URL"),
-        result_backend=app.config.get("CELERY_RESULT_BACKEND"),
+        broker_url=os.getenv("CELERY_BROKER_URL"),
+        result_backend=os.getenv("CELERY_RESULT_BACKEND"),
         timezone=app.config.get("CELERY_TIMEZONE", "Asia/Kolkata"),
         enable_utc=True,
         task_track_started=True,
         task_serializer="json",
         result_serializer="json",
         accept_content=["json"],
-        imports=("app.jobs.tasks",),
         broker_connection_retry_on_startup=True,
         beat_schedule={
+            # DAILY MODE (default): keep enabled in normal/production runs.
             "daily-reminder-placeholder": {
                 "task": "jobs.daily_reminders.run",
                 "schedule": _cron_to_schedule(daily_cron, "0 9 * * *"),
             },
+           
+            # DEMO MODE (USE FOR VIVA ONLY) runs every 2 minutes.
+            # "demo-daily-reminder-2min": {
+            #     "task": "jobs.daily_reminders.run",
+            #     "schedule": 120.0,
+            # },
+            
             "interview-reminder-placeholder": {
                 "task": "jobs.interview_reminders.run",
                 "schedule": _cron_to_schedule(interview_cron, "30 9 * * *"),
@@ -60,9 +77,16 @@ def init_celery(app):
                 "task": "jobs.monthly_report.run",
                 "schedule": _cron_to_schedule(monthly_cron, "0 9 1 * *"),
             },
+
+            # DEMO MODE (USE FOR VIVA ONLY) runs every 2 minutes.
+            # "demo-monthly-report-2min": {
+            #     "task": "jobs.monthly_report.run",
+            #     "schedule": 120.0,
+            # },
         },
     )
 
     celery.Task = FlaskContextTask
     app.extensions["celery"] = celery
     return celery
+

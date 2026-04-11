@@ -134,10 +134,6 @@
             <button v-if="hasMoreAuditRows" class="rq-ghost" @click="toggleAuditRows">
               {{ showAllAudit ? 'Show less' : 'View all →' }}
             </button>
-            <button class="rq-ghost" :disabled="isAuditExportBusy" @click="$emit('export', 'audit')">
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v7M3 6l3 3 3-3M1 11h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              {{ auditExportLabel }}
-            </button>
           </div>
         </div>
         <div class="rq-tbl-wrap">
@@ -219,6 +215,7 @@
 
 <script>
 import { BarChart2, CircleCheck, FileText } from 'lucide-vue-next'
+import { parseServerDate } from '../../utils/dateTime'
 
 export default {
   name: 'DashboardOverview',
@@ -237,8 +234,6 @@ export default {
     errorMessage: { type: String, default: '' },
     pendingCompanyActions: { type: Object, default: () => ({}) },
     pendingDriveActions: { type: Object, default: () => ({}) },
-    isAuditExportBusy: { type: Boolean, default: false },
-    auditExportLabel: { type: String, default: 'Export' },
     pct: { type: Function, required: true }
   },
   data() {
@@ -247,7 +242,7 @@ export default {
       showAllAudit: false
     }
   },
-  emits: ['switch-view', 'approve-item', 'reject-item', 'retry', 'export'],
+  emits: ['switch-view', 'approve-item', 'reject-item', 'retry'],
   computed: {
     totalPlaced() {
       return this.branchStats.reduce((sum, branch) => sum + Number(branch.placed || 0), 0)
@@ -356,16 +351,7 @@ export default {
       return `${Math.max(8, this.pct(numericPlaced, numericTotal))}%`
     },
     parseAuditDate(value) {
-      if (!value) return null
-      const direct = value instanceof Date ? value : new Date(value)
-      if (!Number.isNaN(direct.getTime())) {
-        return direct
-      }
-      const fallback = new Date(String(value).replace(',', ''))
-      if (!Number.isNaN(fallback.getTime())) {
-        return fallback
-      }
-      return null
+      return parseServerDate(value)
     },
     auditDateKey(date) {
       const y = date.getFullYear()

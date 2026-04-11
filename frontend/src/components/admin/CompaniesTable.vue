@@ -23,10 +23,6 @@
         <span class="rq-pager-info">Page {{ coPage }} / {{ Math.max(coPages, 1) }} · {{ coTotal }}</span>
         <button class="rq-ghost rq-ghost-xs" @click="$emit('next-co-page')" :disabled="isLoading || coPage >= coPages">Next</button>
       </div>
-      <button class="rq-ghost" :disabled="isLoading || isExportBusy" @click="$emit('export', 'companies')">
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v7M3 6l3 3 3-3M1 11h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        {{ exportLabel }}
-      </button>
     </div>
 
     <div v-if="errorMessage" class="rq-state rq-state-error">
@@ -117,9 +113,7 @@ export default {
     coOrder: { type: String, required: true },
     isLoading: { type: Boolean, default: false },
     errorMessage: { type: String, default: '' },
-    pendingCompanyActions: { type: Object, default: () => ({}) },
-    isExportBusy: { type: Boolean, default: false },
-    exportLabel: { type: String, default: 'Export CSV' }
+    pendingCompanyActions: { type: Object, default: () => ({}) }
   },
   emits: [
     'update-co-search',
@@ -131,7 +125,6 @@ export default {
     'prev-co-page',
     'next-co-page',
     'retry',
-    'export',
     'change-status'
   ],
   methods: {

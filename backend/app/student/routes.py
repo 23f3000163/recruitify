@@ -1563,6 +1563,34 @@ def apply_to_drive(drive_id):
         status="applied",
     )
     db.session.add(application)
+    db.session.flush()
+
+    student_name = student.user.username if student.user else f"Student {student.student_id}"
+    _create_company_notification(
+        company.company_id,
+        "New Application Received",
+        f"{student_name} applied for {drive.job_title}.",
+        sender_id=user_id,
+        resource_type="application",
+        resource_id=application.application_id,
+    )
+
+    db.session.add(
+        Notification(
+            recipient_id=user_id,
+            sender_id=company.user_id if company else None,
+            notification_type="in_app",
+            title="Application Submitted",
+            message=(
+                f"You successfully applied to {drive.job_title} at "
+                f"{company.company_name if company else 'the company'}."
+            ),
+            related_resource_type="application",
+            related_resource_id=application.application_id,
+            delivery_status="sent",
+        )
+    )
+
     _append_student_activity(
         user_id,
         "Application Submitted",

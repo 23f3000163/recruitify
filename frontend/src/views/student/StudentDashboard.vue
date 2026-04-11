@@ -20,11 +20,32 @@
         :student="student"
         @update:search-query="searchQuery = $event"
         @update:search-focused="searchFocused = $event"
+        @toggle-notifications="toggleNotificationsPanel"
         @navigate="navigate"
         @request-logout="handleLogout"
       />
 
       <StudentToast :message="actionNote" :tone="actionTone" />
+
+      <Transition name="rq-slide">
+        <StudentNotificationPanel
+          v-if="showNotificationsPanel"
+          :notifications="notifications"
+          :is-loading="isLoadingNotifications"
+          :unread-count="unreadCount"
+          :error-message="notificationsError"
+          :is-marking="isMarkingNotification"
+          :is-marking-all="isMarkingAllNotifications"
+          @close="closeNotificationsPanel"
+          @mark-read="markNotificationRead"
+          @mark-all-read="markAllNotificationsRead"
+        />
+      </Transition>
+      <div
+        v-if="showNotificationsPanel"
+        class="rq-student-notif-backdrop"
+        @click="closeNotificationsPanel"
+      ></div>
 
       <main class="rq-page" role="main">
         <StudentDashboardHome
@@ -168,6 +189,7 @@ import StudentApplicationsPanel from '../../components/student/ApplicationsView.
 import StudentDashboardHome from '../../components/student/DashboardOverview.vue'
 import StudentDrivesPanel from '../../components/student/DrivesView.vue'
 import StudentHistoryPanel from '../../components/student/HistoryView.vue'
+import StudentNotificationPanel from '../../components/student/NotificationPanel.vue'
 import StudentNotificationsPanel from '../../components/student/NotificationsView.vue'
 import StudentProfilePanel from '../../components/student/ProfileView.vue'
 import StudentSectionPlaceholder from '../../components/student/StudentSectionPlaceholder.vue'
@@ -196,6 +218,7 @@ export default {
     StudentDashboardHome,
     StudentDrivesPanel,
     StudentHistoryPanel,
+    StudentNotificationPanel,
     StudentApplicationsPanel,
     StudentNotificationsPanel,
     StudentProfilePanel,
@@ -210,6 +233,7 @@ export default {
     return {
       sidebarCollapsed: false,
       activeView: 'dashboard',
+      showNotificationsPanel: false,
       searchQuery: '',
       searchFocused: false,
       isLoadingDashboard: false,
@@ -592,16 +616,27 @@ export default {
           ? payload.recent_applications
           : []
 
-        this.recentApplications = rows.map((row) => ({
-          id: row.application_id || row.id,
-          role: row.drive?.title || 'Role unavailable',
-          company: row.company?.name || '-',
-          package: this.formatSalaryLpa(row.drive?.salary_lpa),
-          appliedOn: this.formatShortDate(row.application_date || row.applied_at || row.updated_at),
-          status: row.status || 'applied',
-          statusLabel: row.status_label || this.statusLabel(row.status),
-          nextStep: this.nextStepForStatus(row.status, row.latest_interview)
-        }))
+        this.recentApplications = rows.map((row) => {
+          const resolvedStatus = this.resolveApplicationLifecycleStatus(row)
+          const rawStatus = String(row.status || '').trim().toLowerCase()
+
+          return {
+            id: row.application_id || row.id,
+            role: row.drive?.title || 'Role unavailable',
+            company: row.company?.name || '-',
+            package: this.formatSalaryLpa(row.drive?.salary_lpa),
+            appliedOn: this.formatShortDate(row.application_date || row.applied_at || row.updated_at),
+            status: resolvedStatus,
+            statusLabel:
+              resolvedStatus !== rawStatus
+                ? this.statusLabel(resolvedStatus)
+                : (row.status_label || this.statusLabel(resolvedStatus)),
+            nextStep: this.nextStepForStatus(resolvedStatus, row.latest_interview),
+            offerStatus: String(row.offer?.status || '').trim().toLowerCase(),
+            outcome: String(row.outcome || '').trim().toLowerCase(),
+            placementId: Number(row.placement?.placement_id || row.placement_id || 0)
+          }
+        })
 
         this.drivesPreview = this.buildDrivesPreview(rows)
       } catch (error) {
@@ -887,11 +922,14 @@ export default {
     },
     async scoreApplicationMatch(application) {
       const applicationId = Number(application?.application_id || application?.id || 0)
-      const driveId = Number(
-        application?.drive?.id ||
-        application?.drive_id ||
-        application?.job_id ||
-        0
+      const driveId = this.resolvePositiveInteger(
+        application?.drive?.id,
+        application?.drive?.drive_id,
+        application?.drive?.job_id,
+        application?.drive_id,
+        application?.job_id,
+        application?.job?.id,
+        application?.job?.job_id
       )
 
       if (!applicationId || this.isScoringMatch[applicationId]) {
@@ -934,6 +972,16 @@ export default {
           [applicationId]: false
         }
       }
+    },
+    resolvePositiveInteger(...values) {
+      for (const rawValue of values) {
+        const parsed = Number(rawValue)
+        if (Number.isInteger(parsed) && parsed > 0) {
+          return parsed
+        }
+      }
+
+      return 0
     },
     async loadNotifications(page = 1) {
       this.isLoadingNotifications = true
@@ -1699,6 +1747,38 @@ export default {
 
       return `${parsed.toLocaleString('en-IN')} LPA`
     },
+    resolveApplicationLifecycleStatus(application) {
+      const rawStatus = String(application?.status || '').trim().toLowerCase()
+      const offerStatus = String(
+        application?.offer?.status ||
+        application?.offer_status ||
+        application?.offerStatus ||
+        ''
+      ).trim().toLowerCase()
+      const outcome = String(application?.outcome || '').trim().toLowerCase()
+
+      const placementId = Number(
+        application?.placement?.placement_id ||
+        application?.placement_id ||
+        application?.placementId ||
+        0
+      )
+
+      const hasPlacement = placementId > 0 || outcome === 'placed'
+      if (hasPlacement || offerStatus === 'accepted' || rawStatus === 'accepted' || rawStatus === 'placed') {
+        return 'placed'
+      }
+
+      if (offerStatus === 'rejected') {
+        return 'rejected'
+      }
+
+      if (offerStatus === 'offered' && !rawStatus) {
+        return 'selected'
+      }
+
+      return rawStatus || 'applied'
+    },
     nextStepForStatus(status, latestInterview) {
       const normalized = String(status || '').toLowerCase()
 
@@ -1729,6 +1809,7 @@ export default {
         shortlisted: 'Shortlisted',
         interviewed: 'Interviewed',
         selected: 'Selected',
+        placed: 'Placed',
         waitlisted: 'Waitlisted',
         rejected: 'Rejected',
         offered: 'Offer Released',
@@ -1782,6 +1863,18 @@ export default {
     toggleSidebar() {
       this.sidebarCollapsed = !this.sidebarCollapsed
     },
+    closeNotificationsPanel() {
+      this.showNotificationsPanel = false
+    },
+    async toggleNotificationsPanel() {
+      if (this.showNotificationsPanel) {
+        this.closeNotificationsPanel()
+        return
+      }
+
+      this.showNotificationsPanel = true
+      await this.loadNotifications(1)
+    },
     handleLogout() {
       localStorage.removeItem('token')
       localStorage.removeItem('role')
@@ -1806,6 +1899,7 @@ export default {
       if (isViewChanging) {
         this.closeDriveModal()
         this.closeApplicationDetails()
+        this.closeNotificationsPanel()
 
         if (previousView === 'history' && nextView !== 'history') {
           this.clearHistoryExportPolling()
@@ -1818,7 +1912,7 @@ export default {
       if (nextView === 'applications' && !this.applications.length) {
         this.loadApplications(1)
       }
-      if (nextView === 'notifications' && !this.notifications.length) {
+      if (nextView === 'notifications') {
         this.loadNotifications(1)
       }
       if (nextView === 'history' && !this.historyItems.length) {

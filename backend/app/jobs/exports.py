@@ -9,13 +9,13 @@ from pathlib import Path
 from flask import current_app
 from sqlalchemy import func, or_
 
+from app.jobs.channels import parse_channels, send_channel_notification
 from app.models import (
     ActivityLog,
     Application,
     BackgroundJob,
     Company,
     ExportArtifact,
-    Notification,
     Placement,
     PlacementDrive,
     Student,
@@ -841,17 +841,44 @@ def execute_export_job(job_id):
         db.session.add(artifact)
         db.session.flush()
 
-        db.session.add(
-            Notification(
+        alert_channels = parse_channels(
+            current_app.config.get("JOBS_EXPORT_ALERT_CHANNELS", "in_app,email")
+        )
+        if "in_app" not in alert_channels:
+            alert_channels = ["in_app", *alert_channels]
+
+        webhook_url = current_app.config.get("JOBS_WEBHOOK_URL")
+        delivery = {
+            "sent": 0,
+            "failed": 0,
+            "channels": {channel: 0 for channel in alert_channels},
+        }
+
+        for channel in alert_channels:
+            email_attachments = [artifact.storage_path] if channel == "email" else None
+            delivery_result = send_channel_notification(
+                channel=channel,
                 recipient_id=job.requested_by_user_id,
-                notification_type="in_app",
                 title="CSV Export Ready",
                 message=export_payload["message"],
-                related_resource_type="export_csv",
-                related_resource_id=artifact.artifact_id,
-                delivery_status="sent",
+                resource_type="export_csv",
+                resource_id=artifact.artifact_id,
+                webhook_url=webhook_url,
+                email_attachments=email_attachments,
+                webhook_payload={
+                    "event": "export_csv_ready",
+                    "job_id": job.job_id,
+                    "artifact_id": artifact.artifact_id,
+                    "scope": export_payload["scope"],
+                    "filename": artifact.filename,
+                },
             )
-        )
+
+            if delivery_result.get("status") == "sent":
+                delivery["sent"] += 1
+                delivery["channels"][channel] += 1
+            else:
+                delivery["failed"] += 1
 
         job.status = "completed"
         job.finished_at = _utcnow()
@@ -861,6 +888,7 @@ def execute_export_job(job_id):
             "filename": artifact.filename,
             "scope": export_payload["scope"],
             "expires_at": expires_at.isoformat(),
+            "delivery": delivery,
         }
         db.session.commit()
 

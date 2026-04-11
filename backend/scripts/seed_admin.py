@@ -12,7 +12,7 @@ def seed_admin():
     app = create_app()
 
     username = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")
-    email = os.getenv("DEFAULT_ADMIN_EMAIL", "admin@recruitify.com")
+    email = os.getenv("DEFAULT_ADMIN_EMAIL", "av018252@gmail.com")
     password = os.getenv("DEFAULT_ADMIN_PASSWORD", "Admin@123")
     designation = os.getenv("DEFAULT_ADMIN_DESIGNATION", "Super Admin")
 

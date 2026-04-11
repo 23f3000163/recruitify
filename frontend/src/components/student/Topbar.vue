@@ -53,7 +53,7 @@
       <button
         class="rq-topbar-icon-btn"
         type="button"
-        @click="$emit('navigate', 'notifications')"
+        @click="$emit('toggle-notifications')"
         :aria-label="unreadCount > 0 ? `Open notifications (${unreadCount} unread)` : 'Open notifications'"
       >
         <span class="rq-notif-indicator" v-if="unreadCount > 0">{{ unreadCount }}</span>
@@ -139,7 +139,7 @@ export default {
       userMenuOpen: false
     }
   },
-  emits: ['update:search-query', 'update:search-focused', 'navigate', 'request-logout'],
+  emits: ['update:search-query', 'update:search-focused', 'navigate', 'request-logout', 'toggle-notifications'],
   mounted() {
     document.addEventListener('keydown', this.handleGlobalHotkeys)
     document.addEventListener('click', this.handleClickOutside)
