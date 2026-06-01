@@ -271,8 +271,19 @@ def create_app(config_object=None):
     
     # Initialize Extensions
     
-    db.init_app(app)
-    CORS(app)
+        db.init_app(app)
+
+    allowed_origins = os.environ.get(
+        "ALLOWED_ORIGINS",
+        "http://localhost:5173"
+    ).split(",")
+
+    CORS(
+        app,
+        origins=allowed_origins,
+        supports_credentials=True
+    )
+
     jwt = JWTManager(app)
 
     from .cache import init_cache
