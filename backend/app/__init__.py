@@ -3,6 +3,7 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 
+from .extensions import limiter
 from .models import db
 
 
@@ -272,6 +273,7 @@ def create_app(config_object=None):
     # Initialize Extensions
     
         db.init_app(app)
+    limiter.init_app(app)
 
     allowed_origins = os.environ.get(
         "ALLOWED_ORIGINS",
@@ -357,4 +359,4 @@ def create_app(config_object=None):
     return app
 
 
-__all__ = ["create_app", "db"]
+__all__ = ["create_app", "db"]  

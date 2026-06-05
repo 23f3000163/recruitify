@@ -6,6 +6,7 @@ from flask import Blueprint, current_app, jsonify, request
 from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required
 from sqlalchemy.exc import IntegrityError
 
+from app.extensions import limiter
 from app.cache import (
 	CACHE_NAMESPACE_ADMIN_COMPANY_SEARCH,
 	CACHE_NAMESPACE_ADMIN_STUDENT_SEARCH,
@@ -73,12 +74,12 @@ def _create_admin_notifications(title, message, sender_id=None, resource_type=No
 			)
 		)
 
-
 def _invalidate_admin_cache(*namespaces):
 	cache = current_app.extensions.get("redis_cache")
 	invalidate_api_cache_namespaces(cache, *namespaces)
 
 @auth_bp.post("/register/student")
+@limiter.limit("5 per hour")
 def register_student():
 	data = _normalized_json_payload()
 	required = ["username", "email", "password"]
@@ -142,6 +143,7 @@ def register_student():
 
 
 @auth_bp.post("/register/company")
+@limiter.limit("3 per hour")
 def register_company():
 	data = _normalized_json_payload()
 	required = [
@@ -236,6 +238,7 @@ def register_company():
 
 
 @auth_bp.post("/login")
+@limiter.limit("10 per minute")
 def login():
 	data = _normalized_json_payload()
 	required = ["email", "password"]
