@@ -3,7 +3,7 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 
-from .extensions import limiter
+from .extensions import limiter, migrate
 from .models import db
 
 
@@ -165,114 +165,14 @@ def create_app(config_object=None):
     # Ensure instance folder exists
     os.makedirs(app.instance_path, exist_ok=True)
 
-    def _ensure_schema_updates():
-        """Apply lightweight non-destructive schema updates for local SQLite."""
-        database_uri = app.config.get("SQLALCHEMY_DATABASE_URI", "")
-        if not database_uri.startswith("sqlite"):
-            return
-
-        try:
-            with db.engine.begin() as conn:
-                table_exists = conn.exec_driver_sql(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name='company'"
-                ).fetchone()
-                if not table_exists:
-                    return
-
-                columns = {
-                    row[1]
-                    for row in conn.exec_driver_sql("PRAGMA table_info(company)").fetchall()
-                }
-                if "industry" not in columns:
-                    conn.exec_driver_sql("ALTER TABLE company ADD COLUMN industry VARCHAR(120)")
-                if "location" not in columns:
-                    conn.exec_driver_sql("ALTER TABLE company ADD COLUMN location VARCHAR(160)")
-
-                student_table_exists = conn.exec_driver_sql(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name='student'"
-                ).fetchone()
-                if student_table_exists:
-                    student_columns = {
-                        row[1]
-                        for row in conn.exec_driver_sql("PRAGMA table_info(student)").fetchall()
-                    }
-                    if "skills" not in student_columns:
-                        conn.exec_driver_sql("ALTER TABLE student ADD COLUMN skills TEXT")
-                    if "experience_summary" not in student_columns:
-                        conn.exec_driver_sql(
-                            "ALTER TABLE student ADD COLUMN experience_summary TEXT"
-                        )
-
-                drive_table_exists = conn.exec_driver_sql(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name='placement_drive'"
-                ).fetchone()
-                if drive_table_exists:
-                    drive_columns = {
-                        row[1]
-                        for row in conn.exec_driver_sql(
-                            "PRAGMA table_info(placement_drive)"
-                        ).fetchall()
-                    }
-                    if "experience_required" not in drive_columns:
-                        conn.exec_driver_sql(
-                            "ALTER TABLE placement_drive ADD COLUMN experience_required VARCHAR(120)"
-                        )
-                    if "benefits" not in drive_columns:
-                        conn.exec_driver_sql(
-                            "ALTER TABLE placement_drive ADD COLUMN benefits TEXT"
-                        )
-
-                activity_table_exists = conn.exec_driver_sql(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name='activity_log'"
-                ).fetchone()
-                if activity_table_exists:
-                    activity_columns = {
-                        row[1]
-                        for row in conn.exec_driver_sql("PRAGMA table_info(activity_log)").fetchall()
-                    }
-                    if "target" not in activity_columns:
-                        conn.exec_driver_sql(
-                            "ALTER TABLE activity_log ADD COLUMN target VARCHAR(255)"
-                        )
-                    if "status" not in activity_columns:
-                        conn.exec_driver_sql(
-                            "ALTER TABLE activity_log ADD COLUMN status VARCHAR(20) DEFAULT 'info'"
-                        )
-                    conn.exec_driver_sql(
-                        "UPDATE activity_log SET status='info' WHERE status IS NULL OR TRIM(status) = ''"
-                    )
-
-                notification_table_exists = conn.exec_driver_sql(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name='notification'"
-                ).fetchone()
-                if notification_table_exists:
-                    conn.exec_driver_sql(
-                        "CREATE INDEX IF NOT EXISTS ix_notification_recipient_type_read_created "
-                        "ON notification (recipient_id, notification_type, is_read, created_at)"
-                    )
-                    conn.exec_driver_sql(
-                        "CREATE INDEX IF NOT EXISTS ix_notification_recipient_resource "
-                        "ON notification (recipient_id, notification_type, related_resource_type, related_resource_id)"
-                    )
-
-            from .models import BackgroundJob, ExportArtifact, Notification
-
-            db.metadata.create_all(
-                bind=db.engine,
-                tables=[
-                    BackgroundJob.__table__,
-                    ExportArtifact.__table__,
-                    Notification.__table__,
-                ],
-                checkfirst=True,
-            )
-        except Exception as exc:
-            app.logger.warning("Schema update check failed: %s", exc)
-
-    
     # Initialize Extensions
 
     db.init_app(app)
+    # Bind Flask-Migrate to this app and the db instance.
+    # render_as_batch=True is required for SQLite ALTER TABLE support (batch mode
+    # recreates the table instead of issuing unsupported ALTER statements).
+    # PostgreSQL ignores this flag; it has no effect on production behaviour.
+    migrate.init_app(app, db, render_as_batch=True)
     limiter.init_app(app)
 
     allowed_origins = os.environ.get(
@@ -306,11 +206,10 @@ def create_app(config_object=None):
 
     
     # Register Models (important for SQLAlchemy)
-    
+    # All model classes must be imported before any database operation so that
+    # SQLAlchemy's metadata is fully populated. Flask-Migrate also depends on
+    # this import to discover every table during migration generation.
     from . import models  # noqa: F401
-
-    with app.app_context():
-        _ensure_schema_updates()
 
     
     # Register Blueprints
