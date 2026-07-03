@@ -271,8 +271,8 @@ def create_app(config_object=None):
 
     
     # Initialize Extensions
-    
-        db.init_app(app)
+
+    db.init_app(app)
     limiter.init_app(app)
 
     allowed_origins = os.environ.get(
@@ -314,7 +314,7 @@ def create_app(config_object=None):
 
     
     # Register Blueprints
-        from app.auth import auth_bp
+    from app.auth import auth_bp
     app.register_blueprint(auth_bp, url_prefix="/auth")
 
     from app.admin import admin_bp
