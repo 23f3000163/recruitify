@@ -1,11 +1,13 @@
 """Company routes for drive, application, interview, and offer management."""
 
 from datetime import date, datetime, timezone
+from html import escape
 from math import ceil
 
 from flask import Blueprint, current_app, jsonify, request
 from flask_jwt_extended import get_jwt_identity
 from sqlalchemy import func, or_
+
 
 from app.applications.status_engine import (
     ATS_TO_LEGACY_STATUS,
@@ -53,6 +55,8 @@ ALLOWED_BRANCHES = {"CSE", "ECE", "MECH", "EE", "OTHER"}
 ALLOWED_NOTIFICATION_READ_FILTERS = {"all", "true", "false"}
 MAX_APPLICATION_NOTES_LENGTH = 500
 MAX_REJECTION_REASON_LENGTH = 300
+MAX_DESC_LENGTH = 3000
+MAX_TITLE_LENGTH = 200
 DIRECT_STATUS_UPDATE_BLOCKED_STATUSES = {"interview", "offered", "placed"}
 DIRECT_STATUS_UPDATE_BLOCKED_MESSAGE = (
     "Direct status updates to interview, offered, or placed are not allowed. "
@@ -550,8 +554,10 @@ def update_company_profile():
 
     if "company_description" in payload:
         company_description = str(payload.get("company_description") or "").strip() or None
-        if company_description and len(company_description) > 5000:
-            return _json_error("company_description must be at most 5000 characters", 400)
+        if company_description and len(company_description) > MAX_DESC_LENGTH:
+            return _json_error(f"company_description must be at most {MAX_DESC_LENGTH} characters", 400)
+        if company_description:
+            company_description = escape(company_description)
         company.company_description = company_description
 
     try:
@@ -671,10 +677,14 @@ def create_drive():
     job_title = (payload.get("job_title") or "").strip()
     if not job_title:
         return _json_error("job_title is required", 400)
+    if len(job_title) > MAX_TITLE_LENGTH:
+        return _json_error(f"job_title must be at most {MAX_TITLE_LENGTH} characters", 400)
 
     job_description = (payload.get("job_description") or "").strip()
     if not job_description:
         return _json_error("job_description is required", 400)
+    if len(job_description) > MAX_DESC_LENGTH:
+        return _json_error(f"job_description must be at most {MAX_DESC_LENGTH} characters", 400)
 
     experience_required = (payload.get("experience_required") or "").strip()
     if not experience_required:
@@ -685,6 +695,8 @@ def create_drive():
     benefits = (payload.get("benefits") or "").strip()
     if not benefits:
         return _json_error("benefits is required", 400)
+    if len(benefits) > MAX_DESC_LENGTH:
+        return _json_error(f"benefits must be at most {MAX_DESC_LENGTH} characters", 400)
 
     try:
         min_cgpa = float(payload.get("min_cgpa"))
@@ -721,6 +733,9 @@ def create_drive():
         if salary_lpa < 0:
             return _json_error("salary_lpa cannot be negative", 400)
 
+    job_description = escape(job_description)
+    benefits = escape(benefits)
+    job_title = escape(job_title)
     drive = PlacementDrive(
         company_id=company.company_id,
         job_title=job_title,

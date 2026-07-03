@@ -3,6 +3,7 @@
 import os
 import re
 from datetime import datetime, timezone
+from html import escape
 from math import ceil
 from urllib.parse import quote, unquote
 from uuid import uuid4
@@ -66,6 +67,8 @@ ALLOWED_APPLICATION_STATUSES = {
 ALLOWED_OFFER_RESPONSE_STATUSES = {"accepted", "rejected"}
 ALLOWED_RESUME_FILE_EXTENSIONS = {"pdf", "doc", "docx"}
 DEFAULT_MAX_RESUME_UPLOAD_BYTES = 5 * 1024 * 1024
+MAX_SUMMARY_LENGTH = 1000
+MAX_SKILLS_LENGTH = 500
 RESUME_FILENAME_PATTERN = re.compile(
     r"^student-(?P<student_id>\d+)-[a-f0-9]{32}\.(pdf|doc|docx)$",
     re.IGNORECASE,
@@ -300,8 +303,12 @@ def _validate_student_profile_payload(data):
         )
     else:
         normalized_skills = str(skills_raw or "").strip()
+    if len(normalized_skills) > MAX_SKILLS_LENGTH:
+        return f"skills must be at most {MAX_SKILLS_LENGTH} characters", None
 
     experience_summary = str(data.get("experience_summary") or "").strip()
+    if len(experience_summary) > MAX_SUMMARY_LENGTH:
+        return f"experience_summary must be at most {MAX_SUMMARY_LENGTH} characters", None
 
     normalized = {
         "college_name": college_name,
@@ -311,8 +318,8 @@ def _validate_student_profile_payload(data):
         "roll_number": roll_number,
         "phone": phone or None,
         "resume_url": resume_url or None,
-        "skills": normalized_skills or None,
-        "experience_summary": experience_summary or None,
+        "skills": escape(normalized_skills) if normalized_skills else None,
+        "experience_summary": escape(experience_summary) if experience_summary else None,
     }
 
     return None, normalized
