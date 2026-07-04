@@ -26,9 +26,18 @@ For all schema changes after initial setup
   flask --app run:app db upgrade
 """
 
-from app import create_app
-from app.models import db
-from flask_migrate import stamp
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load the main .env BEFORE importing any local application modules so that
+# config.py class bodies find the environment populated when they execute.
+_here = Path(__file__).resolve().parent
+load_dotenv(_here / ".env", override=False)
+
+from app import create_app  # noqa: E402
+from app.models import db  # noqa: E402
+from flask_migrate import stamp  # noqa: E402
 
 
 def bootstrap():

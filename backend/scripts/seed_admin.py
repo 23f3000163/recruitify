@@ -1,6 +1,16 @@
 import os, sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# seed_admin.py lives in scripts/; backend/.env is one directory up.
+# Load the main .env BEFORE importing any local application modules so that
+# config.py class bodies find the environment populated when they execute.
+_here = Path(__file__).resolve().parent
+load_dotenv(_here.parent / ".env", override=False)
+
 from sqlalchemy import or_
 from app.models import db, User, Admin
 from app import create_app
