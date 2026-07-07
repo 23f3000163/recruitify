@@ -46,6 +46,8 @@ from app.models import (
     db,
 )
 
+from . import services
+
 student_bp = Blueprint("student", __name__)
 
 # ✅ Allowed ENUM values (MUST match your DB)
@@ -421,80 +423,6 @@ def _parse_bool_param(value, default=False):
     if not raw:
         return default
     return raw in {"1", "true", "yes", "y"}
-
-
-def _normalized_upper_set(values):
-    if not isinstance(values, list):
-        return set()
-    return {
-        str(item).strip().upper()
-        for item in values
-        if str(item).strip()
-    }
-
-
-def _normalized_int_set(values):
-    if not isinstance(values, list):
-        return set()
-
-    normalized = set()
-    for item in values:
-        try:
-            normalized.add(int(item))
-        except (TypeError, ValueError):
-            continue
-    return normalized
-
-
-def _coerce_utc(value):
-    if not value:
-        return None
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
-
-
-def _is_drive_open_for_student(drive):
-    if not drive or drive.status != "approved":
-        return False
-
-    deadline = _coerce_utc(drive.application_deadline)
-    if not deadline:
-        return False
-
-    return deadline >= datetime.now(timezone.utc)
-
-
-def _student_eligibility_for_drive(student, drive):
-    reasons = []
-
-    if not student:
-        return False, ["Student profile not found"]
-
-    if student.is_blacklisted:
-        reasons.append("Student profile is restricted")
-
-    if not student.profile_completed:
-        reasons.append("Complete your profile first")
-
-    student_branch = str(student.branch or "").strip().upper()
-    student_year = student.year
-    student_cgpa = student.cgpa
-
-    allowed_branches = _normalized_upper_set(drive.eligible_branches)
-    allowed_years = _normalized_int_set(drive.eligible_years)
-
-    if allowed_branches and student_branch not in allowed_branches:
-        reasons.append("Branch not eligible")
-
-    if allowed_years and student_year not in allowed_years:
-        reasons.append("Year not eligible")
-
-    min_cgpa = float(drive.min_cgpa or 0)
-    if student_cgpa is None or float(student_cgpa) < min_cgpa:
-        reasons.append(f"Minimum CGPA is {min_cgpa:g}")
-
-    return len(reasons) == 0, reasons
 
 
 def _text_download_response(filename, content):
@@ -945,37 +873,7 @@ def student_dashboard():
     if not student:
         return _json_error("Student profile not found", 404)
 
-    application_query = Application.query.filter(
-        Application.student_id == student.student_id
-    )
-
-    summary = {
-        "applications_total": application_query.count(),
-        "applied": application_query.filter(Application.status == "applied").count(),
-        "shortlisted": application_query.filter(
-            Application.status == "shortlisted"
-        ).count(),
-        "interviewed": application_query.filter(
-            Application.status == "interviewed"
-        ).count(),
-        "selected": application_query.filter(Application.status == "selected").count(),
-        "waitlisted": application_query.filter(
-            Application.status == "waitlisted"
-        ).count(),
-        "rejected": application_query.filter(Application.status == "rejected").count(),
-        "offers_released": PlacementOffer.query.filter(
-            PlacementOffer.student_id == student.student_id,
-            PlacementOffer.status == "offered",
-        ).count(),
-        "offers_accepted": PlacementOffer.query.filter(
-            PlacementOffer.student_id == student.student_id,
-            PlacementOffer.status == "accepted",
-        ).count(),
-        "offers_rejected": PlacementOffer.query.filter(
-            PlacementOffer.student_id == student.student_id,
-            PlacementOffer.status == "rejected",
-        ).count(),
-    }
+    summary = services.get_student_dashboard_summary(student)
 
     unread_notifications = Notification.query.filter(
         Notification.recipient_id == user_id,
@@ -1478,7 +1376,7 @@ def list_student_drives():
 
     items = []
     for drive, company in rows:
-        is_eligible, reasons = _student_eligibility_for_drive(student, drive)
+        is_eligible, reasons = services.student_eligibility_for_drive(student, drive)
         payload = drive.to_dict()
         payload.update(
             {
@@ -1491,7 +1389,7 @@ def list_student_drives():
                 "already_applied": drive.drive_id in applied_drive_ids,
                 "is_eligible": is_eligible,
                 "ineligibility_reasons": reasons,
-                "is_open": _is_drive_open_for_student(drive),
+                "is_open": services.is_drive_open_for_student(drive),
             }
         )
         items.append(payload)
@@ -1541,10 +1439,10 @@ def apply_to_drive(drive_id):
     if company.approval_status != "approved" or company.is_blacklisted:
         return _json_error("Drive is not available for applications", 400)
 
-    if not _is_drive_open_for_student(drive):
+    if not services.is_drive_open_for_student(drive):
         return _json_error("Application deadline has passed", 400)
 
-    is_eligible, reasons = _student_eligibility_for_drive(student, drive)
+    is_eligible, reasons = services.student_eligibility_for_drive(student, drive)
     if not is_eligible:
         reason_text = "; ".join(reasons) if reasons else "Not eligible for this drive"
         return _json_error(reason_text, 400)

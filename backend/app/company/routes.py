@@ -34,6 +34,8 @@ from app.models import (
     db,
 )
 
+from . import services
+
 company_bp = Blueprint("company_bp", __name__)
 
 MAX_LIMIT = 100
@@ -336,34 +338,6 @@ def _drive_to_dict(drive, applications_count=0):
     return payload
 
 
-def _application_to_dict(application, student=None, student_user=None, drive=None):
-    student_obj = student or application.student
-    user_obj = student_user or (student_obj.user if student_obj else None)
-    drive_obj = drive or application.drive
-
-    has_offer = bool(application.placement_offer)
-    interviews_count = application.interviews.count() if hasattr(application, "interviews") else 0
-
-    payload = application.to_dict()
-    payload.update(
-        {
-            "id": application.application_id,
-            "application_id": application.application_id,
-            "student_name": user_obj.username if user_obj else "Candidate",
-            "student_email": user_obj.email if user_obj else None,
-            "student_branch": student_obj.branch if student_obj else None,
-            "student_year": student_obj.year if student_obj else None,
-            "student_cgpa": student_obj.cgpa if student_obj else None,
-            "resume_url": student_obj.resume_url if student_obj else None,
-            "drive_id": drive_obj.drive_id if drive_obj else application.drive_id,
-            "drive_title": drive_obj.job_title if drive_obj else None,
-            "has_offer": has_offer,
-            "interviews_count": interviews_count,
-        }
-    )
-    return payload
-
-
 def _interview_to_dict(interview, application=None, student=None, student_user=None, drive=None):
     application_obj = application or interview.application
     student_obj = student or (application_obj.student if application_obj else None)
@@ -406,22 +380,6 @@ def _offer_to_dict(offer, application=None, student=None, student_user=None, dri
         }
     )
     return payload
-
-
-def _company_drive_options(company_id):
-    drives = (
-        PlacementDrive.query.filter_by(company_id=company_id)
-        .order_by(PlacementDrive.created_at.desc(), PlacementDrive.drive_id.desc())
-        .all()
-    )
-    return [
-        {
-            "id": drive.drive_id,
-            "title": drive.job_title,
-            "status": drive.status,
-        }
-        for drive in drives
-    ]
 
 
 def _company_profile_payload(company):
@@ -825,67 +783,15 @@ def list_applications():
     query_text = (request.args.get("q") or "").strip()
     drive_id_raw = (request.args.get("drive_id") or "all").strip().lower()
 
-    base_query = (
-        db.session.query(Application, Student, User, PlacementDrive)
-        .join(PlacementDrive, Application.drive_id == PlacementDrive.drive_id)
-        .join(Student, Application.student_id == Student.student_id)
-        .join(User, Student.user_id == User.user_id)
-        .filter(PlacementDrive.company_id == company.company_id)
+    payload, response_status = services.list_company_applications(
+        company,
+        status=status_filter,
+        q=query_text,
+        drive_id=drive_id_raw,
+        page=page,
+        limit=limit,
     )
-
-    if status_filter != "all":
-        if status_filter not in ALLOWED_APPLICATION_STATUSES:
-            return _json_error("Invalid application status filter", 400)
-        base_query = base_query.filter(Application.status == status_filter)
-
-    if drive_id_raw != "all":
-        try:
-            drive_id = int(drive_id_raw)
-        except (TypeError, ValueError):
-            return _json_error("drive_id must be an integer", 400)
-
-        base_query = base_query.filter(PlacementDrive.drive_id == drive_id)
-
-    if query_text:
-        like_value = f"%{query_text}%"
-        base_query = base_query.filter(
-            or_(
-                User.username.ilike(like_value),
-                User.email.ilike(like_value),
-                PlacementDrive.job_title.ilike(like_value),
-            )
-        )
-
-    ordered_query = base_query.order_by(
-        Application.updated_at.desc(),
-        Application.application_id.desc(),
-    )
-
-    total = ordered_query.count()
-    pages = ceil(total / limit) if total else 0
-    rows = ordered_query.offset((page - 1) * limit).limit(limit).all()
-
-    items = [
-        _application_to_dict(application, student, user, drive)
-        for application, student, user, drive in rows
-    ]
-
-    return (
-        jsonify(
-            {
-                "success": True,
-                "data": {
-                    "items": items,
-                    "total": total,
-                    "page": page,
-                    "pages": pages,
-                    "limit": limit,
-                    "drive_options": _company_drive_options(company.company_id),
-                },
-            }
-        ),
-        200,
-    )
+    return jsonify(payload), response_status
 
 
 @company_bp.put("/applications/<int:application_id>/status")
@@ -998,7 +904,7 @@ def update_application_status(application_id):
         db.session.rollback()
         return _json_error("Failed to update application status", 500)
 
-    return jsonify({"success": True, "data": _application_to_dict(application)}), 200
+    return jsonify({"success": True, "data": services._application_to_dict(application)}), 200
 
 
 @company_bp.get("/interviews")
@@ -1065,7 +971,7 @@ def list_interviews():
                     "page": page,
                     "pages": pages,
                     "limit": limit,
-                    "drive_options": _company_drive_options(company.company_id),
+                    "drive_options": services._company_drive_options(company.company_id),
                 },
             }
         ),
@@ -1332,7 +1238,7 @@ def list_offers():
                     "page": page,
                     "pages": pages,
                     "limit": limit,
-                    "drive_options": _company_drive_options(company.company_id),
+                    "drive_options": services._company_drive_options(company.company_id),
                 },
             }
         ),
