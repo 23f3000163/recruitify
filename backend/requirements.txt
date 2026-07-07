@@ -13,3 +13,4 @@ python-dotenv==1.0.1
 Flask-Limiter==3.8.0
 # PostgreSQL driver — use psycopg2 (compiled) in production
 psycopg2-binary==2.9.12
+cloudinary==1.40.0

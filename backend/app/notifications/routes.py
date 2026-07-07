@@ -4,8 +4,9 @@ from datetime import datetime, timedelta, timezone
 from math import ceil
 
 from flask import Blueprint, jsonify, request
-from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
+from flask_jwt_extended import get_jwt, jwt_required
 
+from app.auth.utils import get_current_user_id
 from app.models import Notification, User, db
 
 notifications_bp = Blueprint("notifications", __name__, url_prefix="/notifications")
@@ -21,14 +22,6 @@ def _json_error(message, status_code=400):
 
 def _json_ok(data, status_code=200):
     return jsonify({"success": True, "data": data}), status_code
-
-
-def _current_user_id():
-    identity = get_jwt_identity()
-    try:
-        return int(identity)
-    except (TypeError, ValueError):
-        return None
 
 
 def _current_role():
@@ -93,7 +86,7 @@ def _dedupe_match(
 @notifications_bp.get("")
 @jwt_required()
 def list_notifications():
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -145,7 +138,7 @@ def list_notifications():
 @notifications_bp.post("/mark-read")
 @jwt_required()
 def mark_notification_read():
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -220,7 +213,7 @@ def mark_notification_read():
 @notifications_bp.post("/create")
 @jwt_required()
 def create_notification():
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 

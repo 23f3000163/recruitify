@@ -3,7 +3,7 @@
 from functools import wraps
 
 from flask import jsonify
-from flask_jwt_extended import get_jwt, jwt_required
+from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 
 
 def role_required(role):
@@ -41,3 +41,12 @@ def role_required(role):
 
 
 __all__ = ["role_required"]
+
+
+def get_current_user_id() -> int:
+    """
+    Return the current authenticated user's ID as an integer.
+    All JWT tokens store identity as a string digit.
+    Call this instead of get_jwt_identity() in every route.
+    """
+    return int(get_jwt_identity())

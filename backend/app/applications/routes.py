@@ -6,10 +6,11 @@ from math import ceil
 from urllib.parse import unquote, urlparse
 
 from flask import Blueprint, jsonify, request
-from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
+from flask_jwt_extended import get_jwt, jwt_required
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 
+from app.auth.utils import get_current_user_id
 from app.models import (
     Application,
     Company,
@@ -80,15 +81,6 @@ def _coerce_utc(value):
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
-
-
-def _current_user_id():
-    identity = get_jwt_identity()
-    raw_user_id = identity.get("user_id") if isinstance(identity, dict) else identity
-    try:
-        return int(raw_user_id)
-    except (TypeError, ValueError):
-        return None
 
 
 def _current_role():
@@ -492,7 +484,7 @@ def score_resume_keywords():
     if role_error:
         return role_error
 
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -599,7 +591,7 @@ def create_application():
     if role_error:
         return role_error
 
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -685,7 +677,7 @@ def list_student_applications():
     if role_error:
         return role_error
 
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -766,7 +758,7 @@ def list_job_applications(job_id):
     if role_error:
         return role_error
 
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -858,7 +850,7 @@ def update_application_status(application_id):
     if role_error:
         return role_error
 
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 

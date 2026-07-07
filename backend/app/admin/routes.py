@@ -3,7 +3,7 @@
 from urllib.parse import urlencode
 
 from flask import Blueprint, current_app, jsonify, request
-from flask_jwt_extended import get_jwt_identity, jwt_required
+from flask_jwt_extended import jwt_required
 
 from app.cache import (
     CACHE_NAMESPACE_ADMIN_COMPANY_SEARCH,
@@ -11,7 +11,7 @@ from app.cache import (
     CACHE_NAMESPACE_ADMIN_STUDENT_SEARCH,
     invalidate_api_cache_namespaces,
 )
-from app.auth.utils import role_required
+from app.auth.utils import get_current_user_id, role_required
 
 from . import services
 
@@ -88,14 +88,6 @@ def _json_result(service_result):
     return jsonify(payload), status_code
 
 
-def _current_user_id():
-    identity = get_jwt_identity()
-    try:
-        return int(identity)
-    except (TypeError, ValueError):
-        return None
-
-
 def _cache_extension():
     return current_app.extensions.get("redis_cache")
 
@@ -108,7 +100,7 @@ def _cache_suffix_for_request():
             sorted_pairs.append((key, value))
 
     query_string = urlencode(sorted_pairs, doseq=True)
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     return f"admin={user_id}|{query_string}"
 
 
@@ -220,7 +212,7 @@ def list_activity_logs():
 @jwt_required()
 @role_required("admin")
 def list_notifications():
-    admin_user_id = _current_user_id()
+    admin_user_id = get_current_user_id()
     if admin_user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
 
@@ -239,7 +231,7 @@ def list_notifications():
 @jwt_required()
 @role_required("admin")
 def mark_notification_read(notification_id):
-    admin_user_id = _current_user_id()
+    admin_user_id = get_current_user_id()
     if admin_user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
 
@@ -252,7 +244,7 @@ def mark_notification_read(notification_id):
 @jwt_required()
 @role_required("admin")
 def mark_all_notifications_read():
-    admin_user_id = _current_user_id()
+    admin_user_id = get_current_user_id()
     if admin_user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
 
@@ -275,7 +267,7 @@ def list_companies():
 @jwt_required()
 @role_required("admin")
 def approve_company(company_id):
-    actor_user_id = _current_user_id()
+    actor_user_id = get_current_user_id()
     if actor_user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
     service_result = services.approve_company(company_id, actor_user_id)
@@ -288,7 +280,7 @@ def approve_company(company_id):
 @jwt_required()
 @role_required("admin")
 def reject_company(company_id):
-    actor_user_id = _current_user_id()
+    actor_user_id = get_current_user_id()
     if actor_user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
     service_result = services.reject_company(company_id, actor_user_id)
@@ -301,7 +293,7 @@ def reject_company(company_id):
 @jwt_required()
 @role_required("admin")
 def delete_company(company_id):
-    actor_user_id = _current_user_id()
+    actor_user_id = get_current_user_id()
     if actor_user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
     service_result = services.soft_delete_company(company_id, actor_user_id)
@@ -314,7 +306,7 @@ def delete_company(company_id):
 @jwt_required()
 @role_required("admin")
 def deactivate_company(company_id):
-    actor_user_id = _current_user_id()
+    actor_user_id = get_current_user_id()
     if actor_user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
     service_result = services.deactivate_company(company_id, actor_user_id)
@@ -327,7 +319,7 @@ def deactivate_company(company_id):
 @jwt_required()
 @role_required("admin")
 def activate_company(company_id):
-    actor_user_id = _current_user_id()
+    actor_user_id = get_current_user_id()
     if actor_user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
     service_result = services.activate_company(company_id, actor_user_id)
@@ -352,7 +344,7 @@ def list_students():
 @jwt_required()
 @role_required("admin")
 def deactivate_student(student_id):
-    actor_user_id = _current_user_id()
+    actor_user_id = get_current_user_id()
     if actor_user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
     service_result = services.deactivate_student(student_id, actor_user_id)
@@ -365,7 +357,7 @@ def deactivate_student(student_id):
 @jwt_required()
 @role_required("admin")
 def activate_student(student_id):
-    actor_user_id = _current_user_id()
+    actor_user_id = get_current_user_id()
     if actor_user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
     service_result = services.activate_student(student_id, actor_user_id)
@@ -407,7 +399,7 @@ def list_jobs():
 @jwt_required()
 @role_required("admin")
 def approve_job(job_id):
-    actor_user_id = _current_user_id()
+    actor_user_id = get_current_user_id()
     if actor_user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
     service_result = services.approve_job(job_id, actor_user_id)
@@ -420,7 +412,7 @@ def approve_job(job_id):
 @jwt_required()
 @role_required("admin")
 def reject_job(job_id):
-    actor_user_id = _current_user_id()
+    actor_user_id = get_current_user_id()
     if actor_user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
     service_result = services.reject_job(job_id, actor_user_id)
@@ -433,7 +425,7 @@ def reject_job(job_id):
 @jwt_required()
 @role_required("admin")
 def delete_job(job_id):
-    actor_user_id = _current_user_id()
+    actor_user_id = get_current_user_id()
     if actor_user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
     service_result = services.soft_delete_job(job_id, actor_user_id)

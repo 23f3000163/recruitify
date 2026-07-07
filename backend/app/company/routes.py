@@ -5,7 +5,6 @@ from html import escape
 from math import ceil
 
 from flask import Blueprint, current_app, jsonify, request
-from flask_jwt_extended import get_jwt_identity
 from sqlalchemy import func, or_
 
 
@@ -20,7 +19,7 @@ from app.cache import (
     CACHE_NAMESPACE_ADMIN_JOBS,
     invalidate_api_cache_namespaces,
 )
-from app.auth.utils import role_required
+from app.auth.utils import get_current_user_id, role_required
 from app.auth.validators import validate_email
 from app.models import (
     ActivityLog,
@@ -71,14 +70,6 @@ def _json_error(message, status_code=400):
 def _invalidate_admin_cache(*namespaces):
     cache = current_app.extensions.get("redis_cache")
     invalidate_api_cache_namespaces(cache, *namespaces)
-
-
-def _current_user_id():
-    identity = get_jwt_identity()
-    try:
-        return int(identity)
-    except (TypeError, ValueError):
-        return None
 
 
 def _company_for_user(user_id):
@@ -444,7 +435,7 @@ def _company_profile_payload(company):
 @company_bp.get("/profile")
 @role_required("company")
 def get_company_profile():
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -458,7 +449,7 @@ def get_company_profile():
 @company_bp.patch("/profile")
 @role_required("company")
 def update_company_profile():
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -575,7 +566,7 @@ def update_company_profile():
 @company_bp.get("/drives")
 @role_required("company")
 def list_drives():
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -662,7 +653,7 @@ def list_drives():
 @company_bp.post("/drives")
 @role_required("company")
 def create_drive():
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -779,7 +770,7 @@ def create_drive():
 @company_bp.put("/drives/<int:drive_id>/close")
 @role_required("company")
 def close_drive(drive_id):
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -818,7 +809,7 @@ def close_drive(drive_id):
 @company_bp.get("/applications")
 @role_required("company")
 def list_applications():
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -900,7 +891,7 @@ def list_applications():
 @company_bp.put("/applications/<int:application_id>/status")
 @role_required("company")
 def update_application_status(application_id):
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -1013,7 +1004,7 @@ def update_application_status(application_id):
 @company_bp.get("/interviews")
 @role_required("company")
 def list_interviews():
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -1085,7 +1076,7 @@ def list_interviews():
 @company_bp.post("/interviews")
 @role_required("company")
 def schedule_interview():
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -1178,7 +1169,7 @@ def schedule_interview():
 @company_bp.put("/interviews/<int:interview_id>/result")
 @role_required("company")
 def update_interview_result(interview_id):
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -1269,7 +1260,7 @@ def update_interview_result(interview_id):
 @company_bp.get("/offers")
 @role_required("company")
 def list_offers():
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -1352,7 +1343,7 @@ def list_offers():
 @company_bp.post("/offers")
 @role_required("company")
 def create_offer():
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -1455,7 +1446,7 @@ def create_offer():
 @company_bp.get("/notifications")
 @role_required("company")
 def list_notifications():
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -1511,7 +1502,7 @@ def list_notifications():
 @company_bp.put("/notifications/<int:notification_id>/read")
 @role_required("company")
 def mark_notification_read(notification_id):
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -1556,7 +1547,7 @@ def mark_notification_read(notification_id):
 @company_bp.put("/notifications/read-all")
 @role_required("company")
 def mark_all_notifications_read():
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 

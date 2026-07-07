@@ -6,10 +6,19 @@ from datetime import datetime, timezone
 from html import escape
 from math import ceil
 from urllib.parse import quote, unquote
-from uuid import uuid4
 
-from flask import Blueprint, current_app, jsonify, make_response, request, send_from_directory
-from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
+import cloudinary
+import cloudinary.uploader
+from flask import (
+    Blueprint,
+    current_app,
+    jsonify,
+    make_response,
+    redirect,
+    request,
+    send_from_directory,
+)
+from flask_jwt_extended import get_jwt, jwt_required
 from sqlalchemy import func, or_
 from werkzeug.utils import secure_filename
 
@@ -22,7 +31,7 @@ from app.cache import (
     CACHE_NAMESPACE_ADMIN_STUDENT_SEARCH,
     invalidate_api_cache_namespaces,
 )
-from app.auth.utils import role_required
+from app.auth.utils import get_current_user_id, role_required
 from app.auth.validators import validate_required_fields
 from app.models import (
     ActivityLog,
@@ -341,15 +350,6 @@ def _student_profile_payload(student):
     return payload
 
     return None, year, cgpa
-
-
-def _current_user_id():
-    identity = get_jwt_identity()
-    raw_user_id = identity.get("user_id") if isinstance(identity, dict) else identity
-    try:
-        return int(raw_user_id)
-    except (TypeError, ValueError):
-        return None
 
 
 def _student_for_user(user_id):
@@ -715,7 +715,7 @@ def _application_to_student_payload(
 @student_bp.get("/profile")
 @role_required("student")
 def get_student_profile():
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -739,7 +739,7 @@ def get_student_profile():
 @student_bp.get("/resume-files/<path:filename>")
 @jwt_required()
 def get_uploaded_resume(filename):
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -759,6 +759,9 @@ def get_uploaded_resume(filename):
     if not _can_access_student_resume(role, user_id, student):
         return _json_error("Forbidden: resume access denied", 403)
 
+    if str(student.resume_url or "").startswith("https://res.cloudinary.com"):
+        return redirect(student.resume_url, code=302)
+
     resolved_name = _resolve_uploaded_resume_filename(student)
     if resolved_name != normalized_name:
         return _json_error("Resume file not found", 404)
@@ -769,7 +772,7 @@ def get_uploaded_resume(filename):
 @student_bp.get("/resume/<int:student_id>")
 @jwt_required()
 def get_student_resume(student_id):
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -781,13 +784,16 @@ def get_student_resume(student_id):
     if not _can_access_student_resume(role, user_id, student):
         return _json_error("Forbidden: resume access denied", 403)
 
+    if str(student.resume_url or "").startswith("https://res.cloudinary.com"):
+        return redirect(student.resume_url, code=302)
+
     return _serve_student_resume_file(student)
 
 
 @student_bp.post("/profile/resume")
 @role_required("student")
 def upload_student_resume():
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -822,31 +828,39 @@ def upload_student_resume():
         size_label = _resume_upload_limit_label(max_size_bytes)
         return _json_error(f"Resume file must be {size_label} or smaller", 400)
 
-    upload_dir = _resume_upload_directory()
-    stored_filename = f"student-{student.student_id}-{uuid4().hex}.{extension}"
-    stored_path = os.path.join(upload_dir, stored_filename)
+    cloudinary_url_cfg = str(current_app.config.get("CLOUDINARY_URL") or "").strip()
+    if not cloudinary_url_cfg:
+        return _json_error("File upload service is not configured", 503)
+
+    cloudinary.config(cloudinary_url=cloudinary_url_cfg)
 
     try:
-        uploaded_file.save(stored_path)
-    except Exception:
+        result = cloudinary.uploader.upload(
+            uploaded_file,
+            resource_type="raw",
+            folder="recruitify/resumes",
+            public_id=f"student_{student.student_id}",
+            overwrite=True,
+            format=extension,
+        )
+    except Exception as exc:
+        current_app.logger.error(
+            "Cloudinary upload failed for student %s: %s",
+            student.student_id,
+            exc,
+        )
         return _json_error("Unable to store uploaded resume", 500)
 
-    student.resume_url = _resume_public_url(student.student_id)
+    student.resume_url = result["secure_url"]
     student.resume_uploaded_at = datetime.now(timezone.utc)
 
     try:
         db.session.commit()
     except Exception:
         db.session.rollback()
-        if os.path.exists(stored_path):
-            try:
-                os.remove(stored_path)
-            except OSError:
-                pass
         return _json_error("Unable to update resume details", 500)
 
     _invalidate_admin_cache(CACHE_NAMESPACE_ADMIN_STUDENT_SEARCH)
-    _remove_stale_resume_files(student.student_id, keep_filename=stored_filename)
 
     return (
         jsonify(
@@ -866,7 +880,7 @@ def upload_student_resume():
 @role_required("student")
 def update_student_profile():
     """Complete or update student profile after initial registration."""
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -923,7 +937,7 @@ def update_student_profile():
 @student_bp.get("/dashboard")
 @role_required("student")
 def student_dashboard():
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -1014,7 +1028,7 @@ def student_dashboard():
 @student_bp.get("/applications")
 @role_required("student")
 def list_student_applications():
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -1098,7 +1112,7 @@ def list_student_applications():
 @student_bp.get("/notifications")
 @role_required("student")
 def list_student_notifications():
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -1156,7 +1170,7 @@ def list_student_notifications():
 @student_bp.put("/notifications/<int:notification_id>/read")
 @role_required("student")
 def mark_notification_read(notification_id):
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -1201,7 +1215,7 @@ def mark_notification_read(notification_id):
 @student_bp.put("/notifications/read-all")
 @role_required("student")
 def mark_all_notifications_read():
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -1253,7 +1267,7 @@ def mark_all_notifications_read():
 @student_bp.put("/offers/<int:offer_id>/respond")
 @role_required("student")
 def respond_to_offer(offer_id):
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -1384,7 +1398,7 @@ def respond_to_offer(offer_id):
 @student_bp.get("/drives")
 @role_required("student")
 def list_student_drives():
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -1502,7 +1516,7 @@ def list_student_drives():
 @student_bp.post("/drives/<int:drive_id>/apply")
 @role_required("student")
 def apply_to_drive(drive_id):
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -1634,7 +1648,7 @@ def apply_to_drive(drive_id):
 @student_bp.get("/history")
 @role_required("student")
 def student_history():
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -1769,7 +1783,7 @@ def student_history():
 @student_bp.get("/offers/<int:offer_id>/document")
 @role_required("student")
 def download_offer_document(offer_id):
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 
@@ -1811,7 +1825,7 @@ def download_offer_document(offer_id):
 @student_bp.get("/placements/<int:placement_id>/document")
 @role_required("student")
 def download_placement_document(placement_id):
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return _json_error("Invalid token identity", 401)
 

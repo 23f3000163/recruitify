@@ -142,6 +142,7 @@ class DevelopmentConfig(BaseConfig):
     CACHE_JOBS_LIST_TTL_SECONDS = _env_int("CACHE_JOBS_LIST_TTL_SECONDS", 120)
     CACHE_COMPANY_SEARCH_TTL_SECONDS = _env_int("CACHE_COMPANY_SEARCH_TTL_SECONDS", 90)
     CACHE_STUDENT_SEARCH_TTL_SECONDS = _env_int("CACHE_STUDENT_SEARCH_TTL_SECONDS", 90)
+    CLOUDINARY_URL = os.environ.get("CLOUDINARY_URL", "")
 
 
 class ProductionConfig(BaseConfig):
@@ -236,6 +237,7 @@ class ProductionConfig(BaseConfig):
     CACHE_JOBS_LIST_TTL_SECONDS = _env_int("CACHE_JOBS_LIST_TTL_SECONDS", 120)
     CACHE_COMPANY_SEARCH_TTL_SECONDS = _env_int("CACHE_COMPANY_SEARCH_TTL_SECONDS", 90)
     CACHE_STUDENT_SEARCH_TTL_SECONDS = _env_int("CACHE_STUDENT_SEARCH_TTL_SECONDS", 90)
+    CLOUDINARY_URL = os.environ.get("CLOUDINARY_URL", "")
 
 
 def validate_config(app) -> None:
@@ -267,7 +269,7 @@ def validate_config(app) -> None:
     # preventing silent fallbacks to ephemeral SQLite databases.
     db_uri = app.config.get("SQLALCHEMY_DATABASE_URI", "")
     if is_production and (not db_uri or db_uri.startswith("sqlite://")):
-        missing.append("DATABASE_URL")
+        missing.append("DATABASE_URL (must be configured for production)")
 
     if missing:
         env_label = "production" if is_production else "development"

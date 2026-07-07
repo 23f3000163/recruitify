@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 
 from flask import Blueprint, current_app, jsonify, request
-from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required
+from flask_jwt_extended import create_access_token, jwt_required
 from sqlalchemy.exc import IntegrityError
 
 from app.extensions import limiter
@@ -24,7 +24,7 @@ from app.models import (
 	db,
 )
 
-from .utils import role_required
+from app.auth.utils import get_current_user_id, role_required
 from .validators import validate_email, validate_password, validate_required_fields
 
 auth_bp = Blueprint("auth", __name__)
@@ -42,16 +42,6 @@ def _normalized_json_payload():
 		key: value.strip() if isinstance(value, str) else value
 		for key, value in data.items()
 	}
-
-
-def _current_user_id():
-	"""Extract the authenticated user id from JWT identity."""
-	identity = get_jwt_identity()
-	raw_user_id = identity.get("user_id") if isinstance(identity, dict) else identity
-	try:
-		return int(raw_user_id)
-	except (TypeError, ValueError):
-		return None
 
 
 def _create_admin_notifications(title, message, sender_id=None, resource_type=None, resource_id=None):
@@ -273,9 +263,9 @@ def login():
 			return _json_error("Company account is pending admin approval", 403)
 
 	token = create_access_token(
-        identity=str(user.user_id),   # MUST be string
-        additional_claims={"role": user.role}
-)
+		identity=str(user.user_id),
+		additional_claims={'role': user.role}
+	)
 
 	user.last_login = datetime.now(timezone.utc)
 	db.session.commit()
@@ -298,11 +288,7 @@ def login():
 @auth_bp.get("/me")
 @jwt_required()
 def me():
-	identity = get_jwt_identity()
-	try:
-		user_id = int(identity)
-	except (TypeError, ValueError):
-		return _json_error("Invalid token identity", 401)
+	user_id = get_current_user_id()
 
 	if not user_id:
 		return _json_error("Invalid token identity", 401)
@@ -324,30 +310,29 @@ def me():
 @auth_bp.get("/admin/dashboard")
 @role_required("admin")
 def admin_dashboard():
-	identity = get_jwt_identity()
-	user = identity if isinstance(identity, dict) else {"user_id": identity}
+	user_id = get_current_user_id()
+	user = {"user_id": user_id}
 	return jsonify({"message": "Welcome Admin", "data": {"user": user}}), 200
 
 
 @auth_bp.get("/student/dashboard")
 @role_required("student")
 def student_dashboard():
-	identity = get_jwt_identity()
-	user_id = identity if not isinstance(identity, dict) else identity.get("user_id")
+	user_id = get_current_user_id()
 	student = Student.query.filter_by(user_id=user_id).first()
 	if not student:
 		return _json_error("Student profile not found", 404)
 	if not student.profile_completed:
 		return _json_error("Complete your profile first", 403)
 
-	user = identity if isinstance(identity, dict) else {"user_id": identity}
+	user = {"user_id": user_id}
 	return jsonify({"success": True, "data": {"message": "Welcome Student", "user": user}}), 200
 
 
 @auth_bp.get("/company/dashboard")
 @role_required("company")
 def company_dashboard():
-	user_id = _current_user_id()
+	user_id = get_current_user_id()
 	if not user_id:
 		return _json_error("Invalid token identity", 401)
 

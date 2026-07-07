@@ -5,9 +5,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from flask import Blueprint, current_app, jsonify, request, send_file
-from flask_jwt_extended import get_jwt_identity
 
-from app.auth.utils import role_required
+from app.auth.utils import get_current_user_id, role_required
 from app.jobs.exports import (
     EXPORT_SCOPE_ADMIN_ANALYTICS,
     EXPORT_SCOPE_ADMIN_AUDIT,
@@ -69,14 +68,6 @@ def _redis_ping(redis_url):
         return {"reachable": True, "message": "ok"}
     except Exception as exc:
         return {"reachable": False, "message": str(exc)}
-
-
-def _current_user_id():
-    identity = get_jwt_identity()
-    try:
-        return int(identity)
-    except (TypeError, ValueError):
-        return None
 
 
 def _latest_export_artifact(job_id):
@@ -316,7 +307,7 @@ def jobs_health_check():
 @jobs_bp.post("/reports/monthly/run")
 @role_required("admin")
 def trigger_monthly_report_run():
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
 
@@ -371,7 +362,7 @@ def trigger_monthly_report_run():
 @jobs_bp.post("/reports/monthly/company/run")
 @role_required("company")
 def trigger_company_monthly_report_run():
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
 
@@ -432,7 +423,7 @@ def trigger_company_monthly_report_run():
 def trigger_applications_export():
     _run_export_artifact_cleanup()
 
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
 
@@ -452,7 +443,7 @@ def trigger_applications_export():
 def trigger_history_export():
     _run_export_artifact_cleanup()
 
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
 
@@ -475,7 +466,7 @@ def trigger_history_export():
 def get_export_status(job_id):
     _run_export_artifact_cleanup()
 
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
 
@@ -501,7 +492,7 @@ def get_export_status(job_id):
 def download_export_artifact(job_id):
     _run_export_artifact_cleanup()
 
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
 
@@ -540,7 +531,7 @@ def trigger_company_applications_export():
     if not current_app.config.get("JOBS_COMPANY_EXPORT_ENABLED", False):
         return jsonify({"success": False, "error": "Company export feature is disabled"}), 403
 
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
 
@@ -566,7 +557,7 @@ def trigger_company_drives_export():
     if not current_app.config.get("JOBS_COMPANY_EXPORT_ENABLED", False):
         return jsonify({"success": False, "error": "Company export feature is disabled"}), 403
 
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
 
@@ -594,7 +585,7 @@ def trigger_company_placements_export():
     if not current_app.config.get("JOBS_EXPORT_ALLOW_PLACEMENT_HISTORY", False):
         return jsonify({"success": False, "error": "Placement history export is disabled"}), 403
 
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
 
@@ -617,7 +608,7 @@ def trigger_company_placements_export():
 def get_company_export_status(job_id):
     _run_export_artifact_cleanup()
 
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
 
@@ -643,7 +634,7 @@ def get_company_export_status(job_id):
 def download_company_export_artifact(job_id):
     _run_export_artifact_cleanup()
 
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
 
@@ -679,7 +670,7 @@ def download_company_export_artifact(job_id):
 def trigger_admin_export(export_scope):
     _run_export_artifact_cleanup()
 
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
 
@@ -699,7 +690,7 @@ def trigger_admin_export(export_scope):
 def get_admin_export_status(job_id):
     _run_export_artifact_cleanup()
 
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
 
@@ -725,7 +716,7 @@ def get_admin_export_status(job_id):
 def download_admin_export_artifact(job_id):
     _run_export_artifact_cleanup()
 
-    user_id = _current_user_id()
+    user_id = get_current_user_id()
     if user_id is None:
         return jsonify({"success": False, "error": "Invalid token identity"}), 401
 
