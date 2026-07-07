@@ -25,7 +25,7 @@
       <div class="hfc-notif">
         <div class="hfc-n-ico">🎉</div>
         <div>
-          <div class="hfc-n-title">Ashish selected at Google</div>
+          <div class="hfc-n-title">Arjun Sharma selected at Google</div>
           <div class="hfc-n-sub">SWE Intern · ₹42 LPA · 3 min ago</div>
         </div>
       </div>
@@ -113,9 +113,9 @@
           <div class="dbs-item"><div class="dbs-dot"></div>Resume</div>
           <div class="dbs-item"><div class="dbs-dot"></div>History</div>
           <div class="dbs-user">
-            <div class="dbs-av">AV</div>
+            <div class="dbs-av">AS</div>
             <div>
-              <div class="dbs-name2">Ashish Vishwakarma</div>
+              <div class="dbs-name2">Arjun Sharma</div>
               <div class="dbs-role">CSE · Year 4 · CGPA 9.1</div>
             </div>
           </div>
@@ -125,7 +125,7 @@
         <div class="db-main">
           <div class="dbm-greet">
             <div class="dbm-gl">
-              <h3>Good morning, Ashish</h3>
+              <h3>Good morning, Arjun</h3>
               <p>3 new eligible drives added today · Tuesday, March 2025</p>
             </div>
             <div class="dbm-gr"><div class="live-dot"></div>Live · 18 drives open</div>

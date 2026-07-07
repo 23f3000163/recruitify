@@ -1,22 +1,21 @@
 :root {
-  --cq-bg: #f7f4ee;
-  --cq-paper: #ffffff;
-  --cq-ink: #0a0a0a;
-  --cq-muted: #6b7280;
-  --cq-border: rgba(10, 10, 10, 0.08);
-  --cq-border-strong: #d1d5db;
-  --cq-primary: #0f766e;
-  --cq-primary-soft: #ecfeff;
-  --cq-danger: #dc2626;
-  --cq-shadow-sm: 0 6px 18px rgba(10, 10, 10, 0.08);
-  --cq-shadow-md: 0 16px 36px rgba(10, 10, 10, 0.12);
-  --cq-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
-  --cq-serif: 'Fraunces', Georgia, serif;
+  --rq-bg: #f7f4ee;
+  --rq-paper: #ffffff;
+  --rq-ink: #0a0a0a;
+  --rq-muted: #6b7280;
+  --rq-border: rgba(10, 10, 10, 0.08);
+  --rq-border-strong: #d1d5db;
+  --rq-primary: #0f766e;
+  --rq-primary-soft: #ecfeff;
+  --rq-danger: #dc2626;
+  --rq-shadow-sm: 0 6px 18px rgba(10, 10, 10, 0.08);
+  --rq-shadow-md: 0 16px 36px rgba(10, 10, 10, 0.12);
+  --rq-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --rq-serif: 'Fraunces', Georgia, serif;
 
-  /* 4/8/12/16/24 spacing scale */
-  --cq-space-1: 4px;
-  --cq-space-2: 8px;
-  --cq-space-3: 12px;
-  --cq-space-4: 16px;
-  --cq-space-6: 24px;
+  --rq-space-1: 4px;
+  --rq-space-2: 8px;
+  --rq-space-3: 12px;
+  --rq-space-4: 16px;
+  --rq-space-6: 24px;
 }
