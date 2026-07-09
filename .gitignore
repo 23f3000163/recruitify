@@ -32,3 +32,11 @@ backend/reports
 
 backend/pyrefly.toml
 pyrefly.toml
+
+# macOS
+.DS_Store
+backend/.DS_Store
+
+# AI IDE files
+.agents/
+
