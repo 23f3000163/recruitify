@@ -210,7 +210,7 @@ export default {
   align-items: center;
   gap: 6px;
   font-size: 0.8rem;
-  color: var(--rq-t2);
+  color: var(--text-strong);
 }
 
 .skills-input {

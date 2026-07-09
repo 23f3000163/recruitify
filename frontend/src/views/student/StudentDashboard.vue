@@ -182,7 +182,7 @@
 </template>
 
 <script>
-import { authApi, studentApi } from '../../api/api'
+import { authApi, studentApi } from '../../services/api'
 import DriveApplyModal from '../../components/DriveApplyModal.vue'
 import StudentApplicationModal from '../../components/student/ApplicationModal.vue'
 import StudentApplicationsPanel from '../../components/student/ApplicationsView.vue'

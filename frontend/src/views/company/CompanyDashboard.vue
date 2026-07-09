@@ -191,17 +191,17 @@
             <template v-else-if="screeningResult">
               <div class="rq-app-stats-row">
                 <span class="rq-app-stat-item">
-                  <span class="rq-app-stat-n" style="color:var(--rq-blue)">{{ screeningResult.analysis?.score || 0 }}%</span>
+                  <span class="rq-app-stat-n" style="color:var(--blue)">{{ screeningResult.analysis?.score || 0 }}%</span>
                   Match Score
                 </span>
                 <span class="rq-app-stat-sep">·</span>
                 <span class="rq-app-stat-item">
-                  <span class="rq-app-stat-n" style="color:var(--rq-green)">{{ screeningResult.analysis?.matched_count || 0 }}</span>
+                  <span class="rq-app-stat-n" style="color:var(--green)">{{ screeningResult.analysis?.matched_count || 0 }}</span>
                   Matched
                 </span>
                 <span class="rq-app-stat-sep">·</span>
                 <span class="rq-app-stat-item">
-                  <span class="rq-app-stat-n" style="color:var(--rq-red)">{{ (screeningResult.analysis?.missing_keywords || []).length }}</span>
+                  <span class="rq-app-stat-n" style="color:var(--red)">{{ (screeningResult.analysis?.missing_keywords || []).length }}</span>
                   Missing
                 </span>
               </div>
@@ -275,7 +275,7 @@
           </div>
 
           <div class="rq-modal-body">
-            <p v-if="interviewFormError" class="rq-sm" style="color:var(--rq-red); font-weight:700;">{{ interviewFormError }}</p>
+            <p v-if="interviewFormError" class="rq-sm" style="color:var(--red); font-weight:700;">{{ interviewFormError }}</p>
 
             <div class="rq-form-group">
               <label class="rq-form-label">Interview Date and Time</label>
@@ -353,7 +353,7 @@
           </div>
 
           <div class="rq-modal-body">
-            <p v-if="offerFormError" class="rq-sm" style="color:var(--rq-red); font-weight:700;">{{ offerFormError }}</p>
+            <p v-if="offerFormError" class="rq-sm" style="color:var(--red); font-weight:700;">{{ offerFormError }}</p>
 
             <div class="rq-form-group">
               <label class="rq-form-label">Position</label>
@@ -415,7 +415,7 @@
           </div>
 
           <div class="rq-modal-body">
-            <p v-if="interviewResultFormError" class="rq-sm" style="color:var(--rq-red); font-weight:700;">{{ interviewResultFormError }}</p>
+            <p v-if="interviewResultFormError" class="rq-sm" style="color:var(--red); font-weight:700;">{{ interviewResultFormError }}</p>
             <p v-if="isLoadingInterviewRecord" class="rq-sm rq-dim">Loading latest interview details...</p>
 
             <template v-else>
@@ -474,7 +474,7 @@
           </div>
 
           <div class="rq-modal-body">
-            <p v-if="rejectFormError" class="rq-sm" style="color:var(--rq-red); font-weight:700;">{{ rejectFormError }}</p>
+            <p v-if="rejectFormError" class="rq-sm" style="color:var(--red); font-weight:700;">{{ rejectFormError }}</p>
 
             <div class="rq-form-group">
               <label class="rq-form-label">Rejection Reason</label>
@@ -523,7 +523,7 @@
           </div>
 
           <div class="rq-modal-body">
-            <p v-if="bulkShortlistFormError" class="rq-sm" style="color:var(--rq-red); font-weight:700;">{{ bulkShortlistFormError }}</p>
+            <p v-if="bulkShortlistFormError" class="rq-sm" style="color:var(--red); font-weight:700;">{{ bulkShortlistFormError }}</p>
 
             <div class="rq-form-group">
               <label class="rq-form-label">Feedback Note (Optional)</label>
@@ -562,7 +562,7 @@
           </div>
 
           <div class="rq-modal-body">
-            <p v-if="bulkRejectFormError" class="rq-sm" style="color:var(--rq-red); font-weight:700;">{{ bulkRejectFormError }}</p>
+            <p v-if="bulkRejectFormError" class="rq-sm" style="color:var(--red); font-weight:700;">{{ bulkRejectFormError }}</p>
 
             <div class="rq-form-group">
               <label class="rq-form-label">Rejection Reason</label>
@@ -612,7 +612,7 @@ import ProfileView from '../../components/company/ProfileView.vue'
 import Sidebar from '../../components/company/Sidebar.vue'
 import Toast from '../../components/layout/Toast.vue'
 import Topbar from '../../components/company/Topbar.vue'
-import { companyApi, parseApiError } from '../../api/api'
+import { companyApi, parseApiError } from '../../services/api'
 import { parseBooleanFlag, parseServerDate } from '../../utils/dateTime'
 import './CompanyDashboard.css'
 

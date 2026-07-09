@@ -142,7 +142,7 @@
                 v-for="branch in branchApplicantsFiltered"
                 :key="branch.name"
                 class="rq-branch-chip"
-                :style="{ '--rq-branch-chip-color': branch.color || '#2563EB' }"
+                :style="{ '--branch-chip-color': branch.color || '#2563EB' }"
                 role="listitem"
               >
                 {{ branch.name }} - {{ branch.count }}
@@ -913,7 +913,7 @@ export default {
 .rq-analytics-subtitle {
   margin: 4px 0 0;
   font-size: 0.74rem;
-  color: var(--rq-t3);
+  color: var(--text-muted);
 }
 
 .rq-analytics-toolbar-body {
@@ -933,7 +933,7 @@ export default {
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: var(--rq-t4);
+  color: var(--t3);
 }
 
 .rq-analytics-snapshot-card {
@@ -951,7 +951,7 @@ export default {
 }
 
 .rq-analytics-snapshot-item {
-  border: 1px solid var(--rq-border2);
+  border: 1px solid var(--border-solid);
   border-radius: 10px;
   background: linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%);
   padding: 10px;
@@ -963,20 +963,20 @@ export default {
   font-size: 0.64rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--rq-t4);
+  color: var(--t3);
   font-weight: 700;
 }
 
 .rq-analytics-snapshot-value {
-  font-family: var(--rq-mono);
+  font-family: var(--mono);
   font-size: 1rem;
-  color: var(--rq-ink);
+  color: var(--ink);
   letter-spacing: -0.02em;
 }
 
 .rq-analytics-snapshot-meta {
   font-size: 0.68rem;
-  color: var(--rq-t3);
+  color: var(--text-muted);
 }
 
 .rq-chart-block {
@@ -991,7 +991,7 @@ export default {
 }
 
 .rq-stage-chip {
-  border: 1px solid var(--rq-border2);
+  border: 1px solid var(--border-solid);
   border-radius: 8px;
   padding: 8px;
   display: grid;
@@ -1002,18 +1002,18 @@ export default {
   font-size: 0.65rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--rq-t4);
+  color: var(--t3);
   font-weight: 700;
 }
 
 .rq-stage-value {
-  font-family: var(--rq-mono);
+  font-family: var(--mono);
   font-size: 0.95rem;
 }
 
 .rq-stage-meta {
   font-size: 0.66rem;
-  color: var(--rq-t3);
+  color: var(--text-muted);
 }
 
 .rq-drive-insights {
@@ -1026,7 +1026,7 @@ export default {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  border: 1px solid var(--rq-border2);
+  border: 1px solid var(--border-solid);
   border-radius: 8px;
   padding: 8px 10px;
 }
@@ -1039,12 +1039,12 @@ export default {
 .rq-drive-insight-title {
   font-size: 0.78rem;
   font-weight: 700;
-  color: var(--rq-ink);
+  color: var(--ink);
 }
 
 .rq-drive-insight-sub {
   font-size: 0.68rem;
-  color: var(--rq-t3);
+  color: var(--text-muted);
 }
 
 .rq-branch-list {
@@ -1057,10 +1057,10 @@ export default {
   font-size: 0.68rem;
   font-weight: 700;
   padding: 4px 10px;
-  border-radius: var(--rq-r-full);
-  border: 1px solid color-mix(in srgb, var(--rq-branch-chip-color) 40%, white);
-  color: color-mix(in srgb, var(--rq-branch-chip-color) 70%, black);
-  background: color-mix(in srgb, var(--rq-branch-chip-color) 12%, white);
+  border-radius: var(--r-full);
+  border: 1px solid color-mix(in srgb, var(--branch-chip-color) 40%, white);
+  color: color-mix(in srgb, var(--branch-chip-color) 70%, black);
+  background: color-mix(in srgb, var(--branch-chip-color) 12%, white);
 }
 
 .rq-analytics-empty {

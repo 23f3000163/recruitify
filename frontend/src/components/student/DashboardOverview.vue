@@ -432,8 +432,8 @@ export default {
       const placedPercent = this.hasApplications ? this.placedPercent : 0
       const progressStop = this.hasApplications ? Math.min(100, placedPercent + this.inProgressPercent) : 0
       return {
-        '--rq-placed-pct': `${placedPercent}%`,
-        '--rq-progress-stop': `${progressStop}%`
+        '--placed-pct': `${placedPercent}%`,
+        '--progress-stop': `${progressStop}%`
       }
     },
     currentApplication() {

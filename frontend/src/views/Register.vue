@@ -56,7 +56,7 @@
 <script>
 import StudentForm from '../components/auth/StudentForm.vue'
 import CompanyForm from '../components/auth/CompanyForm.vue'
-import { authApi } from '../api/api'
+import { authApi } from '../services/api'
 
 export default {
   name: 'RegisterView',

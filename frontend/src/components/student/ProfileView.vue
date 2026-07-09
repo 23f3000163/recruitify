@@ -825,50 +825,50 @@ export default {
 }
 
 .profile-right {
-  background: var(--rq-white);
-  border-radius: var(--rq-r);
+  background: var(--white);
+  border-radius: var(--r-md);
   padding: 20px;
-  border: 1px solid var(--rq-border2);
-  box-shadow: var(--rq-sh-xs);
+  border: 1px solid var(--border-solid);
+  box-shadow: var(--sh-xs);
 }
 
 .profile-card {
-  background: var(--rq-white);
-  border-radius: var(--rq-r);
+  background: var(--white);
+  border-radius: var(--r-md);
   padding: 16px;
-  border: 1px solid var(--rq-border2);
-  box-shadow: var(--rq-sh-xs);
+  border: 1px solid var(--border-solid);
+  box-shadow: var(--sh-xs);
 }
 
 .profile-summary-card {
-  border-left: 3px solid var(--rq-blue);
+  border-left: 3px solid var(--blue);
 }
 
 .profile-avatar {
   width: 60px;
   height: 60px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--rq-blue), var(--rq-purple));
-  color: var(--rq-white);
+  background: linear-gradient(135deg, var(--blue), var(--purple));
+  color: var(--white);
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-family: var(--rq-serif);
+  font-family: var(--serif);
   margin-bottom: 10px;
 }
 
 .profile-name {
   margin: 0;
-  font-family: var(--rq-serif);
+  font-family: var(--serif);
   font-size: 1rem;
-  color: var(--rq-ink);
+  color: var(--ink);
 }
 
 .profile-subtitle {
   margin: 4px 0 0;
   font-size: 0.74rem;
-  color: var(--rq-t3);
+  color: var(--text-muted);
 }
 
 .profile-stats {
@@ -886,14 +886,14 @@ export default {
 .profile-stat-value {
   font-size: 0.9rem;
   font-weight: 800;
-  color: var(--rq-ink);
+  color: var(--ink);
 }
 
 .profile-stat-label {
   font-size: 0.64rem;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  color: var(--rq-t4);
+  color: var(--t3);
 }
 
 .profile-completion {
@@ -905,25 +905,25 @@ export default {
 .profile-completion-head {
   font-size: 0.74rem;
   font-weight: 700;
-  color: var(--rq-t3);
+  color: var(--text-muted);
 }
 
 .profile-progress {
   height: 6px;
-  background: var(--rq-border2);
+  background: var(--border-solid);
   border-radius: 6px;
   overflow: hidden;
 }
 
 .profile-progress-bar {
   height: 100%;
-  background: linear-gradient(90deg, var(--rq-blue), #6366f1);
+  background: linear-gradient(90deg, var(--blue), #6366f1);
 }
 
 .profile-completion-hint {
   margin: 0;
   font-size: 0.68rem;
-  color: var(--rq-t4);
+  color: var(--t3);
 }
 
 .profile-panel-title {
@@ -932,7 +932,7 @@ export default {
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  color: var(--rq-t3);
+  color: var(--text-muted);
 }
 
 .profile-skill-list {
@@ -949,7 +949,7 @@ export default {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border-radius: var(--rq-r-full);
+  border-radius: var(--r-full);
   padding: 4px 10px;
   font-size: 0.72rem;
   font-weight: 700;
@@ -957,8 +957,8 @@ export default {
 }
 
 .profile-skill-badge.tone-blue {
-  color: var(--rq-blue);
-  background: var(--rq-blue-lt);
+  color: var(--blue);
+  background: var(--blue-lt);
   border-color: rgba(37, 99, 235, 0.2);
 }
 
@@ -969,8 +969,8 @@ export default {
 }
 
 .profile-skill-badge.tone-green {
-  color: var(--rq-green);
-  background: var(--rq-green-lt);
+  color: var(--green);
+  background: var(--green-lt);
   border-color: rgba(5, 150, 105, 0.2);
 }
 
@@ -985,7 +985,7 @@ export default {
 }
 
 .profile-empty-note {
-  color: var(--rq-t4);
+  color: var(--t3);
   font-size: 0.72rem;
 }
 
@@ -994,7 +994,7 @@ export default {
   align-items: center;
   gap: 10px;
   padding: 8px 0;
-  border-bottom: 1px solid var(--rq-border2);
+  border-bottom: 1px solid var(--border-solid);
 }
 
 .profile-info-row:last-child {
@@ -1008,8 +1008,8 @@ export default {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--rq-blue);
-  background: var(--rq-blue-lt);
+  color: var(--blue);
+  background: var(--blue-lt);
   flex-shrink: 0;
 }
 
@@ -1020,14 +1020,14 @@ export default {
 
 .profile-info-key {
   font-size: 0.65rem;
-  color: var(--rq-t4);
+  color: var(--t3);
   text-transform: uppercase;
   letter-spacing: 0.07em;
 }
 
 .profile-info-value {
   font-size: 0.75rem;
-  color: var(--rq-ink);
+  color: var(--ink);
   font-weight: 700;
 }
 
@@ -1043,17 +1043,17 @@ export default {
 
 .profile-tabs button {
   padding: 8px 14px;
-  border-radius: var(--rq-r-sm);
+  border-radius: var(--r-sm);
   border: 1px solid transparent;
   background: #f3f4f6;
-  color: var(--rq-t2);
+  color: var(--text-strong);
   font-weight: 700;
   cursor: pointer;
 }
 
 .profile-tabs button.active {
   background: linear-gradient(135deg, #111111, #333333);
-  color: var(--rq-white);
+  color: var(--white);
 }
 
 .profile-form {
@@ -1072,7 +1072,7 @@ export default {
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  color: var(--rq-t3);
+  color: var(--text-muted);
 }
 
 .profile-grid-2 {
@@ -1085,10 +1085,10 @@ export default {
 
 .profile-upload-box {
   width: 100%;
-  border: 1px dashed var(--rq-border2);
-  border-radius: var(--rq-r-sm);
-  background: var(--rq-blue-lt);
-  color: var(--rq-blue);
+  border: 1px dashed var(--border-solid);
+  border-radius: var(--r-sm);
+  background: var(--blue-lt);
+  color: var(--blue);
   padding: 10px 12px;
   display: inline-flex;
   align-items: center;
@@ -1105,8 +1105,8 @@ export default {
 
 .profile-file-row {
   margin-top: 8px;
-  border: 1px solid var(--rq-border2);
-  border-radius: var(--rq-r-sm);
+  border: 1px solid var(--border-solid);
+  border-radius: var(--r-sm);
   background: #f9fafb;
   padding: 10px;
   display: flex;
@@ -1124,21 +1124,21 @@ export default {
   margin: 0;
   font-size: 0.78rem;
   font-weight: 700;
-  color: var(--rq-ink);
+  color: var(--ink);
 }
 
 .profile-file-sub {
   margin: 2px 0 0;
   font-size: 0.7rem;
-  color: var(--rq-t3);
+  color: var(--text-muted);
 }
 
 .profile-preview-btn {
   white-space: nowrap;
   border: 1px solid #111111;
-  border-radius: var(--rq-r-sm);
+  border-radius: var(--r-sm);
   background: linear-gradient(135deg, #111111, #333333);
-  color: var(--rq-white);
+  color: var(--white);
   font-size: 0.72rem;
   font-weight: 700;
   padding: 6px 10px;
@@ -1157,8 +1157,8 @@ export default {
 
 .profile-remove-btn {
   border: 1px solid rgba(220, 38, 38, 0.25);
-  border-radius: var(--rq-r-sm);
-  background: var(--rq-white);
+  border-radius: var(--r-sm);
+  background: var(--white);
   color: #B91C1C;
   font-size: 0.72rem;
   font-weight: 700;
@@ -1171,9 +1171,9 @@ export default {
 
 .profile-url-details {
   margin-top: 8px;
-  border: 1px solid var(--rq-border2);
-  border-radius: var(--rq-r-sm);
-  background: var(--rq-parch);
+  border: 1px solid var(--border-solid);
+  border-radius: var(--r-sm);
+  background: var(--parch);
   padding: 10px;
 }
 
@@ -1181,7 +1181,7 @@ export default {
   cursor: pointer;
   font-size: 0.74rem;
   font-weight: 700;
-  color: var(--rq-t2);
+  color: var(--text-strong);
 }
 
 .profile-url-details .rq-field {
@@ -1192,7 +1192,7 @@ export default {
   display: inline-block;
   margin-top: 4px;
   font-size: 0.68rem;
-  color: var(--rq-t4);
+  color: var(--t3);
 }
 
 .save-btn {
@@ -1200,7 +1200,7 @@ export default {
   align-items: center;
   gap: 7px;
   background: linear-gradient(135deg, #111111, #333333);
-  color: var(--rq-white);
+  color: var(--white);
   padding: 10px 16px;
   border-radius: 10px;
   font-weight: 700;
@@ -1223,17 +1223,17 @@ export default {
 .profile-form .rq-form-input {
   width: 100%;
   background: #f9fafb;
-  border: 1px solid var(--rq-border2);
+  border: 1px solid var(--border-solid);
   border-radius: 10px;
   padding: 10px;
   font-size: 0.82rem;
-  color: var(--rq-ink);
+  color: var(--ink);
   transition: all 0.15s ease;
 }
 
 .profile-form .rq-form-input:focus {
-  border-color: var(--rq-blue);
-  background: var(--rq-white);
+  border-color: var(--blue);
+  background: var(--white);
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
   outline: none;
 }
@@ -1253,17 +1253,17 @@ export default {
   width: min(860px, 100%);
   max-height: 90vh;
   overflow: hidden;
-  background: var(--rq-white);
-  border-radius: var(--rq-r);
-  border: 1px solid var(--rq-border2);
-  box-shadow: var(--rq-sh-sm);
+  background: var(--white);
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-solid);
+  box-shadow: var(--sh-dashboard-sm);
   display: flex;
   flex-direction: column;
 }
 
 .profile-modal-header {
   padding: 12px 14px;
-  border-bottom: 1px solid var(--rq-border2);
+  border-bottom: 1px solid var(--border-solid);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1274,31 +1274,31 @@ export default {
   margin: 0;
   font-size: 0.86rem;
   font-weight: 700;
-  color: var(--rq-ink);
+  color: var(--ink);
 }
 
 .profile-modal-close {
-  border: 1px solid var(--rq-border2);
-  background: var(--rq-white);
-  border-radius: var(--rq-r-sm);
+  border: 1px solid var(--border-solid);
+  background: var(--white);
+  border-radius: var(--r-sm);
   width: 30px;
   height: 30px;
-  color: var(--rq-t3);
+  color: var(--text-muted);
   font-size: 0.95rem;
 }
 
 .profile-modal-body {
   padding: 12px;
   overflow: auto;
-  background: var(--rq-parch);
+  background: var(--parch);
 }
 
 .profile-preview-frame {
   width: 100%;
   min-height: 70vh;
-  border: 1px solid var(--rq-border2);
-  border-radius: var(--rq-r-sm);
-  background: var(--rq-white);
+  border: 1px solid var(--border-solid);
+  border-radius: var(--r-sm);
+  background: var(--white);
 }
 
 .profile-preview-fallback {
@@ -1309,7 +1309,7 @@ export default {
   justify-content: center;
   gap: 12px;
   text-align: center;
-  color: var(--rq-t3);
+  color: var(--text-muted);
 }
 
 .profile-download-link {

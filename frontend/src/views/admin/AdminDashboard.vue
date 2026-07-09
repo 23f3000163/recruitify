@@ -178,7 +178,7 @@
 </template>
 
 <script>
-import { adminApi } from '../../api/api'
+import { adminApi } from '../../services/api'
 import { parseBooleanFlag, parseServerDate } from '../../utils/dateTime'
 import AnalyticsPanel from '../../components/admin/AnalyticsPanel.vue'
 import AdminNotificationPanel from '../../components/admin/AdminNotificationPanel.vue'

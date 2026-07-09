@@ -48,22 +48,22 @@
 
     <div class="rq-app-stats-row">
       <span class="rq-app-stat-item">
-        <span class="rq-app-stat-n" style="color:var(--rq-amber)">{{ filteredApplications.filter((application) => application.status === 'applied').length }}</span>
+        <span class="rq-app-stat-n" style="color:var(--amber)">{{ filteredApplications.filter((application) => application.status === 'applied').length }}</span>
         Applied
       </span>
       <span class="rq-app-stat-sep">·</span>
       <span class="rq-app-stat-item">
-        <span class="rq-app-stat-n" style="color:var(--rq-purple)">{{ filteredApplications.filter((application) => application.status === 'shortlisted').length }}</span>
+        <span class="rq-app-stat-n" style="color:var(--purple)">{{ filteredApplications.filter((application) => application.status === 'shortlisted').length }}</span>
         Shortlisted
       </span>
       <span class="rq-app-stat-sep">·</span>
       <span class="rq-app-stat-item">
-        <span class="rq-app-stat-n" style="color:var(--rq-blue)">{{ filteredApplications.filter((application) => application.status === 'interview').length }}</span>
+        <span class="rq-app-stat-n" style="color:var(--blue)">{{ filteredApplications.filter((application) => application.status === 'interview').length }}</span>
         Interview
       </span>
       <span class="rq-app-stat-sep">·</span>
       <span class="rq-app-stat-item">
-        <span class="rq-app-stat-n" style="color:var(--rq-green)">{{ filteredApplications.filter((application) => application.status === 'offered').length }}</span>
+        <span class="rq-app-stat-n" style="color:var(--green)">{{ filteredApplications.filter((application) => application.status === 'offered').length }}</span>
         Offered
       </span>
     </div>

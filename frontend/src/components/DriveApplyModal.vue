@@ -574,14 +574,14 @@ export default {
   font-size: 1rem;
   line-height: 1.2;
   font-weight: 800;
-  color: var(--rq-ink);
+  color: var(--ink);
 }
 
 .rq-drive-overline {
   font-size: 0.62rem;
   letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: var(--rq-t4);
+  color: var(--t3);
   font-weight: 800;
   margin-bottom: 2px;
 }
@@ -589,7 +589,7 @@ export default {
 .rq-drive-subtitle {
   margin-top: 2px;
   font-size: 0.76rem;
-  color: var(--rq-t3);
+  color: var(--text-muted);
   font-weight: 600;
 }
 
@@ -599,7 +599,7 @@ export default {
   gap: 6px;
   padding: 8px 16px 8px;
   margin-top: 4px;
-  border-top: 1px solid var(--rq-border2);
+  border-top: 1px solid var(--border-solid);
 }
 
 .rq-drive-chip {
@@ -608,11 +608,11 @@ export default {
   gap: 5px;
   padding: 4px 10px;
   border-radius: 999px;
-  border: 1px solid var(--rq-border2);
+  border: 1px solid var(--border-solid);
   font-size: 0.7rem;
   font-weight: 600;
-  color: var(--rq-t2);
-  background: var(--rq-parch);
+  color: var(--text-strong);
+  background: var(--parch);
 }
 
 .rq-drive-chip-icon {
@@ -663,19 +663,19 @@ export default {
   font-weight: 800;
   letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: var(--rq-t4);
+  color: var(--t3);
 }
 
 .rq-modal-desc {
   font-size: 0.8rem;
   line-height: 1.65;
-  color: var(--rq-t2);
+  color: var(--text-strong);
 }
 
 .rq-eligibility-row {
-  border: 1px solid var(--rq-border2);
+  border: 1px solid var(--border-solid);
   border-radius: 8px;
-  background: var(--rq-parch);
+  background: var(--parch);
   padding: 10px;
   display: grid;
   gap: 7px;
@@ -690,7 +690,7 @@ export default {
 }
 
 .elig-pass {
-  color: var(--rq-green);
+  color: var(--green);
 }
 
 .elig-fail {
@@ -717,7 +717,7 @@ export default {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--rq-blue);
+  background: var(--blue);
   color: #fff;
   font-size: 0.62rem;
   font-weight: 800;
@@ -725,12 +725,12 @@ export default {
 
 .rq-process-label {
   font-size: 0.74rem;
-  color: var(--rq-t2);
+  color: var(--text-strong);
   font-weight: 600;
 }
 
 .rq-process-arrow {
-  color: var(--rq-t4);
+  color: var(--t3);
 }
 
 .rq-drive-modal-ft {
@@ -741,8 +741,8 @@ export default {
 
 .rq-drive-deadline {
   font-size: 0.7rem;
-  color: var(--rq-t4);
-  font-family: var(--rq-mono);
+  color: var(--t3);
+  font-family: var(--mono);
 }
 
 .rq-drive-actions {
@@ -752,12 +752,12 @@ export default {
 }
 
 .rq-btn-drive-apply.is-applied {
-  background: var(--rq-green);
+  background: var(--green);
 }
 
 .rq-btn-drive-apply.is-disabled {
-  background: var(--rq-t4);
-  border-color: var(--rq-t4);
+  background: var(--t3);
+  border-color: var(--t3);
   opacity: 0.75;
 }
 
@@ -788,19 +788,19 @@ export default {
 .rq-gate-title {
   font-size: 1.15rem;
   font-weight: 700;
-  font-family: var(--rq-serif);
-  color: var(--rq-ink);
+  font-family: var(--serif);
+  color: var(--ink);
 }
 
 .rq-gate-subtitle {
   font-size: 0.78rem;
   line-height: 1.6;
-  color: var(--rq-t3);
+  color: var(--text-muted);
 }
 
 .rq-gate-checklist {
   margin: 0 16px 14px;
-  border: 1px solid var(--rq-border2);
+  border: 1px solid var(--border-solid);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -810,7 +810,7 @@ export default {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  border-bottom: 1px solid var(--rq-border2);
+  border-bottom: 1px solid var(--border-solid);
 }
 
 .rq-gate-check-row:last-child {
@@ -824,7 +824,7 @@ export default {
 .rq-gate-check-label {
   flex: 1;
   font-size: 0.76rem;
-  color: var(--rq-t2);
+  color: var(--text-strong);
   font-weight: 600;
 }
 
@@ -854,9 +854,9 @@ export default {
   display: flex;
   align-items: center;
   gap: 10px;
-  border: 1px solid var(--rq-border2);
+  border: 1px solid var(--border-solid);
   border-radius: 8px;
-  background: var(--rq-parch);
+  background: var(--parch);
   padding: 9px 10px;
 }
 
@@ -869,7 +869,7 @@ export default {
 
 .rq-gate-context-label {
   font-size: 0.62rem;
-  color: var(--rq-t4);
+  color: var(--t3);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -877,7 +877,7 @@ export default {
 
 .rq-gate-context-name {
   font-size: 0.75rem;
-  color: var(--rq-ink);
+  color: var(--ink);
   font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
@@ -887,9 +887,9 @@ export default {
 .rq-dc {
   font-size: 0.62rem;
   font-weight: 700;
-  color: var(--rq-t2);
-  background: var(--rq-white);
-  border: 1px solid var(--rq-border2);
+  color: var(--text-strong);
+  background: var(--white);
+  border: 1px solid var(--border-solid);
   border-radius: 999px;
   padding: 2px 8px;
 }

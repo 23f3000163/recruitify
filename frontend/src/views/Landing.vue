@@ -532,7 +532,7 @@
 import Navbar from '../components/layout/Navbar.vue'
 import Footer from '../components/layout/Footer.vue'
 import HeroSection from '../components/landing/HeroSection.vue'
-import { adminApi } from '../api/api'
+import { adminApi } from '../services/api'
 
 function createEmptyPublicDashboard() {
   return {
