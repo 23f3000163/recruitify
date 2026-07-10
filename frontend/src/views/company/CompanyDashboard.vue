@@ -614,6 +614,7 @@ import Toast from '../../components/layout/Toast.vue'
 import Topbar from '../../components/company/Topbar.vue'
 import { companyApi, parseApiError } from '../../services/api'
 import { parseBooleanFlag, parseServerDate } from '../../utils/dateTime'
+import { useAuthStore } from '../../store/auth'
 import './CompanyDashboard.css'
 
 const SUMMARY_DEFAULTS = Object.freeze({
@@ -1073,9 +1074,7 @@ export default {
       this.loadNotifications({ silent: true })
     },
     handleLogout() {
-      localStorage.removeItem('token')
-      localStorage.removeItem('role')
-      localStorage.removeItem('user_id')
+      useAuthStore().logout()
       this.$router.push('/login')
     },
     handleNavClick(item) {

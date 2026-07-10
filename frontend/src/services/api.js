@@ -1,10 +1,10 @@
 import axios from 'axios'
+import { useAuthStore } from '../store/auth'
 
 const API_BASE_URL =
   (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_BASE_URL) ||
   'http://127.0.0.1:5000'
 
-const AUTH_STORAGE_KEYS = Object.freeze(['token', 'role', 'user_id'])
 let isRedirectingToLogin = false
 
 export const apiClient = axios.create({
@@ -14,17 +14,13 @@ export const apiClient = axios.create({
   }
 })
 
-function clearAuthStorage() {
-  AUTH_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key))
-}
-
 function maybeRedirectToLogin() {
   if (isRedirectingToLogin) {
     return
   }
 
   isRedirectingToLogin = true
-  clearAuthStorage()
+  useAuthStore().logout()
 
   if (window.location.pathname !== '/login') {
     window.location.assign('/login')
@@ -70,7 +66,7 @@ async function requestWithFallback(requestFns) {
 }
 
 apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token')
+  const token = useAuthStore().token
 
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
@@ -84,7 +80,7 @@ apiClient.interceptors.response.use(
   (error) => {
     const statusCode = error?.response?.status
     const requestUrl = String(error?.config?.url || '')
-    const hasToken = Boolean(localStorage.getItem('token'))
+    const hasToken = Boolean(useAuthStore().token)
     const isLoginRequest = requestUrl.includes('/auth/login')
 
     if (statusCode === 401 && hasToken && !isLoginRequest) {

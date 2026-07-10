@@ -1,11 +1,16 @@
 import { createApp } from 'vue'
+import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 import './styles/tokens.css'
 import './main.css'
 import './auth.css'
 
-createApp(App).use(router).mount('#app')
+const app = createApp(App)
+const pinia = createPinia()
+app.use(pinia)
+app.use(router)
+app.mount('#app')
 
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 	window.addEventListener('load', () => {

@@ -179,6 +179,7 @@
 
 <script>
 import { adminApi } from '../../services/api'
+import { useAuthStore } from '../../store/auth'
 import { parseBooleanFlag, parseServerDate } from '../../utils/dateTime'
 import AnalyticsPanel from '../../components/admin/AnalyticsPanel.vue'
 import AdminNotificationPanel from '../../components/admin/AdminNotificationPanel.vue'
@@ -1645,9 +1646,7 @@ export default {
       }
     },
     handleLogout() {
-      localStorage.removeItem('token')
-      localStorage.removeItem('role')
-      localStorage.removeItem('user_id')
+      useAuthStore().logout()
       this.$router.push('/login')
     },
     toast_show(message, type = 'success') {

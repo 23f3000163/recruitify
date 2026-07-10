@@ -183,6 +183,7 @@
 
 <script>
 import { authApi, studentApi } from '../../services/api'
+import { useAuthStore } from '../../store/auth'
 import DriveApplyModal from '../../components/DriveApplyModal.vue'
 import StudentApplicationModal from '../../components/student/ApplicationModal.vue'
 import StudentApplicationsPanel from '../../components/student/ApplicationsView.vue'
@@ -1876,9 +1877,7 @@ export default {
       await this.loadNotifications(1)
     },
     handleLogout() {
-      localStorage.removeItem('token')
-      localStorage.removeItem('role')
-      localStorage.removeItem('user_id')
+      useAuthStore().logout()
 
       if (this.$router && typeof this.$router.push === 'function') {
         this.$router.push('/login')

@@ -74,6 +74,7 @@
 
 <script>
 import { authApi } from '../services/api'
+import { useAuthStore } from '../store/auth'
 
 export default {
   name: 'LoginView',
@@ -116,9 +117,7 @@ export default {
           return
         }
 
-        localStorage.setItem('token', token)
-        localStorage.setItem('role', role)
-        localStorage.setItem('user_id', String(userId || ''))
+        useAuthStore().setAuth(token, role, userId)
 
         this.$router.push(redirectPath)
       } catch (error) {

@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { useAuthStore } from '../store/auth'
 
 const Landing = () => import('../views/Landing.vue')
 const Login = () => import('../views/Login.vue')
@@ -40,8 +41,9 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
-  const token = localStorage.getItem('token')
-  const role = String(localStorage.getItem('role') || '').trim().toLowerCase()
+  const authStore = useAuthStore()
+  const token = authStore.token
+  const role = String(authStore.role || '').trim().toLowerCase()
   const requiresRole = routeRequiredRole(to.path)
 
   if (!token) {
