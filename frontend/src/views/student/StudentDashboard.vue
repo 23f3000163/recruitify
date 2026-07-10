@@ -184,6 +184,7 @@
 <script>
 import { authApi, studentApi } from '../../services/api'
 import { useAuthStore } from '../../store/auth'
+import { useApi } from '../../composables/useApi'
 import DriveApplyModal from '../../components/DriveApplyModal.vue'
 import StudentApplicationModal from '../../components/student/ApplicationModal.vue'
 import StudentApplicationsPanel from '../../components/student/ApplicationsView.vue'
@@ -227,6 +228,29 @@ export default {
     DriveApplyModal,
     StudentApplicationModal
   },
+  setup() {
+    const dashboardApi = useApi(studentApi.getDashboard, {
+      fallbackMessage: 'Unable to load dashboard summary.'
+    })
+    const drivesApi = useApi(studentApi.getDrives, {
+      fallbackMessage: 'Unable to load drives.'
+    })
+    const applicationsApi = useApi(studentApi.getApplications, {
+      fallbackMessage: 'Unable to load applications.'
+    })
+
+    return {
+      isLoadingDashboard: dashboardApi.loading,
+      dashboardError: dashboardApi.error,
+      fetchDashboard: dashboardApi.execute,
+      isLoadingDrives: drivesApi.loading,
+      drivesError: drivesApi.error,
+      fetchDrives: drivesApi.execute,
+      isLoadingApplications: applicationsApi.loading,
+      applicationsError: applicationsApi.error,
+      fetchApplications: applicationsApi.execute
+    }
+  },
   data() {
     const now = new Date()
     const hour = now.getHours()
@@ -237,16 +261,10 @@ export default {
       showNotificationsPanel: false,
       searchQuery: '',
       searchFocused: false,
-      isLoadingDashboard: false,
-      isLoadingDrives: false,
-      isLoadingApplications: false,
       isLoadingNotifications: false,
       isLoadingHistory: false,
       isSavingProfile: false,
       isUploadingResume: false,
-      dashboardError: '',
-      drivesError: '',
-      applicationsError: '',
       notificationsError: '',
       historyError: '',
       profileError: '',
@@ -588,11 +606,8 @@ export default {
       }
     },
     async loadDashboard() {
-      this.isLoadingDashboard = true
-      this.dashboardError = ''
-
       try {
-        const response = await studentApi.getDashboard()
+        const response = await this.fetchDashboard()
         const payload = response?.data?.data || {}
         const summary = payload.summary || {}
 
@@ -641,13 +656,7 @@ export default {
 
         this.drivesPreview = this.buildDrivesPreview(rows)
       } catch (error) {
-        this.dashboardError =
-          error.response?.data?.error ||
-          error.response?.data?.message ||
-          'Unable to load dashboard summary.'
         this.publishActionNote(this.dashboardError, 'error')
-      } finally {
-        this.isLoadingDashboard = false
       }
     },
     buildDrivesPreview(rows) {
@@ -785,11 +794,8 @@ export default {
       return existingLabel || 'Skills -'
     },
     async loadDrives(page = 1) {
-      this.isLoadingDrives = true
-      this.drivesError = ''
-
       try {
-        const response = await studentApi.getDrives({
+        const response = await this.fetchDrives({
           page,
           limit: this.drivesPagination.limit,
           q: this.driveFilters.query,
@@ -808,12 +814,7 @@ export default {
           limit: Number(data.limit || this.drivesPagination.limit)
         }
       } catch (error) {
-        this.drivesError =
-          error.response?.data?.error ||
-          error.response?.data?.message ||
-          'Unable to load drives.'
-      } finally {
-        this.isLoadingDrives = false
+        // drivesError is already populated by useApi.
       }
     },
     async applyDriveFilters() {
@@ -858,11 +859,8 @@ export default {
       }
     },
     async loadApplications(page = 1) {
-      this.isLoadingApplications = true
-      this.applicationsError = ''
-
       try {
-        const response = await studentApi.getApplications({
+        const response = await this.fetchApplications({
           page,
           limit: this.applicationsPagination.limit,
           status: this.statusFilter,
@@ -878,12 +876,7 @@ export default {
           limit: Number(data.limit || this.applicationsPagination.limit)
         }
       } catch (error) {
-        this.applicationsError =
-          error.response?.data?.error ||
-          error.response?.data?.message ||
-          'Unable to load applications.'
-      } finally {
-        this.isLoadingApplications = false
+        // applicationsError is already populated by useApi.
       }
     },
     async applyApplicationFilters() {
