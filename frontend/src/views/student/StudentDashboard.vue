@@ -150,11 +150,16 @@
           @export-history="startHistoryExport"
         />
 
-        <StudentSectionPlaceholder
-          v-else
-          title="Section unavailable"
-          description="This section is not available in the current dashboard state."
-        />
+        <section v-else class="rq-view">
+          <article class="rq-card">
+            <header class="rq-card-hd">
+              <span class="rq-card-title">Section unavailable</span>
+            </header>
+            <div class="rq-card-body">
+              <p class="rq-placeholder-text">This section is not available in the current dashboard state.</p>
+            </div>
+          </article>
+        </section>
       </main>
 
       <DriveApplyModal
@@ -194,7 +199,6 @@ import StudentHistoryPanel from '../../components/student/HistoryView.vue'
 import StudentNotificationPanel from '../../components/student/NotificationPanel.vue'
 import StudentNotificationsPanel from '../../components/student/NotificationsView.vue'
 import StudentProfilePanel from '../../components/student/ProfileView.vue'
-import StudentSectionPlaceholder from '../../components/student/StudentSectionPlaceholder.vue'
 import StudentSidebar from '../../components/student/Sidebar.vue'
 import StudentToast from '../../components/student/Toast.vue'
 import StudentTopbar from '../../components/student/Topbar.vue'
@@ -224,7 +228,6 @@ export default {
     StudentApplicationsPanel,
     StudentNotificationsPanel,
     StudentProfilePanel,
-    StudentSectionPlaceholder,
     DriveApplyModal,
     StudentApplicationModal
   },

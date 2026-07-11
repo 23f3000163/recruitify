@@ -54,8 +54,8 @@
             </button>
           </header>
           <div class="rq-card-body">
-            <div v-if="isLoading" class="rq-list">
-              <p class="rq-empty-text">Loading dashboard highlights...</p>
+            <div v-if="isLoading" class="skeleton-list">
+              <SkeletonCard v-for="n in 3" :key="n" height="80px" />
             </div>
             <div v-else-if="drives.length" class="rq-drive-list">
               <div v-for="drive in drives.slice(0, 4)" :key="drive.id" class="rq-drive-row">
@@ -108,8 +108,8 @@
               View all
             </button>
           </header>
-          <div v-if="isLoading" class="rq-apps-empty" role="status" aria-live="polite">
-            <p class="rq-empty-text">Loading recent applications...</p>
+          <div v-if="isLoading" class="skeleton-list">
+            <SkeletonCard v-for="n in 3" :key="n" height="80px" />
           </div>
           <div v-else-if="!applications.length" class="rq-apps-empty" role="status" aria-live="polite">
             <div class="rq-apps-empty-icon" aria-hidden="true">
@@ -243,6 +243,7 @@
 
 <script>
 import { Briefcase, CircleCheck, FileText } from 'lucide-vue-next'
+import SkeletonCard from '../common/SkeletonCard.vue'
 
 const STATUS_RANK = Object.freeze({
   rejected: 0,
@@ -258,7 +259,8 @@ export default {
   components: {
     Briefcase,
     CircleCheck,
-    FileText
+    FileText,
+    SkeletonCard
   },
   props: {
     studentFirstName: {
@@ -673,3 +675,11 @@ export default {
   }
 }
 </script>
+
+<style scoped>
+.skeleton-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+</style>

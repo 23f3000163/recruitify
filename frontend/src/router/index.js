@@ -14,25 +14,20 @@ const routes = [
   { path: '/register', redirect: '/register/student' },
   { path: '/register/student', component: Register },
   { path: '/register/company', component: Register },
-  { path: '/admin', component: AdminDashboard },
-  { path: '/student', component: StudentDashboard },
-  { path: '/company', component: CompanyDashboard }
+  { path: '/admin', component: AdminDashboard, meta: { requiresAuth: true, role: 'admin' } },
+  { path: '/student', component: StudentDashboard, meta: { requiresAuth: true, role: 'student' } },
+  { path: '/company', component: CompanyDashboard, meta: { requiresAuth: true, role: 'company' } },
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'NotFound',
+    component: () => import('../views/NotFound.vue')
+  }
 ]
-
-const PUBLIC_PATHS = new Set(['/', '/login', '/register', '/register/student', '/register/company'])
 
 function roleHome(role) {
   if (role === 'admin') return '/admin'
-  if (role === 'student') return '/student'
   if (role === 'company') return '/company'
-  return '/login'
-}
-
-function routeRequiredRole(path) {
-  if (path.startsWith('/admin')) return 'admin'
-  if (path.startsWith('/student')) return 'student'
-  if (path.startsWith('/company')) return 'company'
-  return null
+  return '/student'
 }
 
 const router = createRouter({
@@ -41,31 +36,14 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
-  const authStore = useAuthStore()
-  const token = authStore.token
-  const role = String(authStore.role || '').trim().toLowerCase()
-  const requiresRole = routeRequiredRole(to.path)
-
-  if (!token) {
-    if (PUBLIC_PATHS.has(to.path)) {
-      return true
-    }
+  const auth = useAuthStore()
+  if (to.meta.requiresAuth && !auth.isAuthenticated) {
     return '/login'
   }
-
-  if (to.path === '/login' || to.path.startsWith('/register')) {
-    return roleHome(role)
+  if (to.meta.role && auth.role !== to.meta.role) {
+    if (!auth.isAuthenticated) return '/login'
+    return roleHome(auth.role)
   }
-
-  if (!requiresRole) {
-    return true
-  }
-
-  if (requiresRole !== role) {
-    return roleHome(role)
-  }
-
-  return true
 })
 
 export default router
