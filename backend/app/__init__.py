@@ -57,6 +57,8 @@ def create_app(config_object=None):
         ),
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
 
+        CLOUDINARY_URL=os.environ.get("CLOUDINARY_URL", ""),
+
         #  JWT Configuration
         JWT_SECRET_KEY=os.environ["JWT_SECRET_KEY"],
         JWT_ACCESS_TOKEN_EXPIRES=3600,  # 1 hour

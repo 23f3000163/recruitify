@@ -278,3 +278,9 @@ Unless noted otherwise, backend commands run from `backend/` and frontend comman
 | SQLite reports a locked database | Stop duplicate backend or shell processes using the file, then retry. Do not delete the database unless its data is disposable. |
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) before proposing changes.
+
+brew services stop redis
+brew services start redis
+brew services restart redis
+brew services list
+redis-cli ping
