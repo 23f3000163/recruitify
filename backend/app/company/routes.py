@@ -51,6 +51,7 @@ ALLOWED_APPLICATION_STATUSES = {
 ALLOWED_INTERVIEW_MODES = {"online", "offline", "both"}
 ALLOWED_INTERVIEW_RECORD_MODES = {"online", "offline"}
 ALLOWED_INTERVIEW_RESULTS = {"pending", "pass", "fail"}
+ALLOWED_INTERVIEW_TIME_FILTERS = {"all", "upcoming", "past"}
 ALLOWED_OFFER_STATUSES = {"offered", "accepted", "rejected"}
 ALLOWED_BRANCHES = {"CSE", "ECE", "MECH", "EE", "OTHER"}
 ALLOWED_NOTIFICATION_READ_FILTERS = {"all", "true", "false"}
@@ -924,6 +925,9 @@ def list_interviews():
 
     result_filter = (request.args.get("result") or "all").strip().lower()
     drive_id_raw = (request.args.get("drive_id") or "all").strip().lower()
+    time_filter = (request.args.get("status") or "all").strip().lower()
+    if time_filter not in ALLOWED_INTERVIEW_TIME_FILTERS:
+        return _json_error("status must be one of all, upcoming, or past", 400)
 
     base_query = (
         db.session.query(Interview, Application, Student, User, PlacementDrive)
@@ -947,8 +951,16 @@ def list_interviews():
 
         base_query = base_query.filter(Interview.drive_id == drive_id)
 
+    now = datetime.now(timezone.utc)
+    if time_filter == "upcoming":
+        base_query = base_query.filter(Interview.interview_date >= now)
+    elif time_filter == "past":
+        base_query = base_query.filter(Interview.interview_date < now)
+
     ordered_query = base_query.order_by(
-        Interview.interview_date.desc(),
+        Interview.interview_date.asc()
+        if time_filter == "upcoming"
+        else Interview.interview_date.desc(),
         Interview.interview_id.desc(),
     )
 

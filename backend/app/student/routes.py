@@ -153,6 +153,14 @@ def _current_role():
     return str(claims.get("role") or "").strip().lower()
 
 
+def _coerce_utc(value):
+    if not value:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 def _student_id_from_resume_filename(filename):
     match = RESUME_FILENAME_PATTERN.match(str(filename or "").strip())
     if not match:
@@ -1000,6 +1008,57 @@ def list_student_applications():
                     "page": page,
                     "pages": pages,
                     "limit": limit,
+                },
+            }
+        ),
+        200,
+    )
+
+
+@student_bp.get("/interviews")
+@role_required("student")
+def list_student_interviews():
+    user_id = get_current_user_id()
+    if user_id is None:
+        return _json_error("Invalid token identity", 401)
+
+    student = _student_for_user(user_id)
+    if not student:
+        return _json_error("Student profile not found", 404)
+
+    rows = (
+        db.session.query(Interview, Application, PlacementDrive, Company)
+        .join(Application, Interview.application_id == Application.application_id)
+        .join(PlacementDrive, Interview.drive_id == PlacementDrive.drive_id)
+        .join(Company, PlacementDrive.company_id == Company.company_id)
+        .filter(Application.student_id == student.student_id)
+        .order_by(Interview.interview_date.asc(), Interview.interview_id.asc())
+        .all()
+    )
+
+    now = datetime.now(timezone.utc)
+    items = []
+    for interview, application, drive, company in rows:
+        interview_date_utc = _coerce_utc(interview.interview_date)
+        payload = interview.to_dict()
+        payload.update(
+            {
+                "id": interview.interview_id,
+                "application_id": application.application_id,
+                "company_name": company.company_name,
+                "job_title": drive.job_title,
+                "is_upcoming": bool(interview_date_utc and interview_date_utc >= now),
+            }
+        )
+        items.append(payload)
+
+    return (
+        jsonify(
+            {
+                "success": True,
+                "data": {
+                    "items": items,
+                    "total": len(items),
                 },
             }
         ),
