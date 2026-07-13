@@ -1532,6 +1532,40 @@
   color: var(--text-muted);
 }
 
+.rq-student-app .rq-interview-list {
+  display: grid;
+  gap: 9px;
+}
+
+.rq-student-app .rq-interview-row {
+  border: 1px solid var(--border-solid);
+  border-radius: var(--r-sm);
+  padding: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.rq-student-app .rq-interview-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+}
+
+.rq-student-app .pill-online {
+  background: #DBEAFE;
+  color: #1E3A8A;
+  border-color: #93C5FD;
+}
+
+.rq-student-app .pill-offline {
+  background: #FEF3C7;
+  color: #92400E;
+  border-color: #FCD34D;
+}
+
 .rq-student-app .rq-deadline-list {
   display: grid;
   gap: 9px;
@@ -2671,6 +2705,15 @@
 
   .rq-student-app .rq-deadline-meta {
     text-align: left;
+  }
+
+  .rq-student-app .rq-interview-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .rq-student-app .rq-interview-meta {
+    align-items: flex-start;
   }
 
   .rq-student-app .rq-breadcrumb,

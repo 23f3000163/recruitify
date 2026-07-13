@@ -106,6 +106,8 @@ def _normalized_json_payload():
 
 
 def _resume_upload_directory():
+    # LEGACY:
+    # Used only for resumes uploaded before the Cloudinary migration.
     configured_dir = str(
         current_app.config.get("STUDENT_RESUME_UPLOAD_DIR") or ""
     ).strip()
@@ -254,6 +256,8 @@ def _can_access_student_resume(role, user_id, student):
 
 
 def _resolve_uploaded_resume_filename(student):
+    # LEGACY:
+    # Used only for resumes uploaded before the Cloudinary migration.
     if not student:
         return None
 
@@ -695,6 +699,8 @@ def get_uploaded_resume(filename):
     if not _can_access_student_resume(role, user_id, student):
         return _json_error("Forbidden: resume access denied", 403)
 
+    # New resumes are stored on Cloudinary.
+    # Redirect directly to the CDN instead of serving a local file.
     if str(student.resume_url or "").startswith("https://res.cloudinary.com"):
         return redirect(student.resume_url, code=302)
 
@@ -720,6 +726,8 @@ def get_student_resume(student_id):
     if not _can_access_student_resume(role, user_id, student):
         return _json_error("Forbidden: resume access denied", 403)
 
+    # New resumes are stored on Cloudinary.
+    # Redirect directly to the CDN instead of serving a local file.
     if str(student.resume_url or "").startswith("https://res.cloudinary.com"):
         return redirect(student.resume_url, code=302)
 

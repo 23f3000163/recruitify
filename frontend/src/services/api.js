@@ -545,6 +545,9 @@ export const studentApi = {
   getHistory(params = {}) {
     return apiClient.get('/student/history', { params })
   },
+  getStudentInterviews() {
+    return apiClient.get('/student/interviews')
+  },
   triggerApplicationsExportJob() {
     return apiClient.post('/jobs/exports/applications')
   },

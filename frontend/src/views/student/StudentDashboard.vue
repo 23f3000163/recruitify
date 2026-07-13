@@ -60,6 +60,7 @@
           :drives="dashboardDrives"
           :applications="dashboardApplications"
           :summary="summary"
+          :upcoming-interviews="upcomingInterviews"
           @switch-view="navigate"
           @apply-drive="openDriveModal"
         />
@@ -190,6 +191,7 @@
 import { authApi, studentApi } from '../../services/api'
 import { useAuthStore } from '../../store/auth'
 import { useApi } from '../../composables/useApi'
+import { parseServerDate } from '../../utils/dateTime'
 import DriveApplyModal from '../../components/DriveApplyModal.vue'
 import StudentApplicationModal from '../../components/student/ApplicationModal.vue'
 import StudentApplicationsPanel from '../../components/student/ApplicationsView.vue'
@@ -241,6 +243,9 @@ export default {
     const applicationsApi = useApi(studentApi.getApplications, {
       fallbackMessage: 'Unable to load applications.'
     })
+    const interviewsApi = useApi(studentApi.getStudentInterviews, {
+      fallbackMessage: 'Unable to load interviews.'
+    })
 
     return {
       isLoadingDashboard: dashboardApi.loading,
@@ -251,7 +256,8 @@ export default {
       fetchDrives: drivesApi.execute,
       isLoadingApplications: applicationsApi.loading,
       applicationsError: applicationsApi.error,
-      fetchApplications: applicationsApi.execute
+      fetchApplications: applicationsApi.execute,
+      fetchInterviews: interviewsApi.execute
     }
   },
   data() {
@@ -309,6 +315,7 @@ export default {
       },
       recentApplications: [],
       drivesPreview: [],
+      upcomingInterviews: [],
       navItems: [
         {
           id: 'dashboard',
@@ -576,7 +583,8 @@ export default {
         this.loadDrives(1),
         this.loadApplications(1),
         this.loadNotifications(1),
-        this.loadProfile()
+        this.loadProfile(),
+        this.loadInterviews()
       ]
 
       if (this.activeView === 'history') {
@@ -660,6 +668,26 @@ export default {
         this.drivesPreview = this.buildDrivesPreview(rows)
       } catch (error) {
         this.publishActionNote(this.dashboardError, 'error')
+      }
+    },
+    async loadInterviews() {
+      try {
+        const response = await this.fetchInterviews()
+        const items = Array.isArray(response?.data?.data?.items) ? response.data.data.items : []
+
+        this.upcomingInterviews = items
+          .filter((item) => item.is_upcoming === true)
+          .map((item) => ({
+            id: item.interview_id || item.id,
+            companyName: item.company_name || '-',
+            jobTitle: item.job_title || 'Role unavailable',
+            formattedDate: this.formatInterviewDate(item.interview_date),
+            mode: String(item.interview_mode || '').trim().toLowerCase(),
+            link: item.interview_link || '',
+            location: item.interview_location || ''
+          }))
+      } catch (error) {
+        // Non-critical dashboard section; keep the rest of the page usable.
       }
     },
     buildDrivesPreview(rows) {
@@ -1743,6 +1771,24 @@ export default {
       }
 
       return `${parsed.toLocaleString('en-IN')} LPA`
+    },
+    formatInterviewDate(value) {
+      const parsed = parseServerDate(value)
+      if (!parsed) {
+        return '-'
+      }
+
+      const datePart = parsed.toLocaleDateString('en-IN', {
+        month: 'short',
+        day: 'numeric'
+      })
+      const timePart = parsed.toLocaleTimeString('en-IN', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      })
+
+      return `${datePart} · ${timePart}`
     },
     resolveApplicationLifecycleStatus(application) {
       const rawStatus = String(application?.status || '').trim().toLowerCase()

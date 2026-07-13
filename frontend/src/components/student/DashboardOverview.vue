@@ -149,6 +149,35 @@
       </div>
 
       <div class="rq-dash-side">
+        <article v-if="upcomingInterviews.length > 0" class="rq-card">
+          <header class="rq-card-hd">
+            <span class="rq-card-title">Upcoming Interviews</span>
+            <span class="rq-pill rq-pill-blue">{{ upcomingInterviews.length }} scheduled</span>
+          </header>
+          <div class="rq-card-body">
+            <div class="rq-interview-list">
+              <div v-for="interview in upcomingInterviews" :key="interview.id" class="rq-interview-row">
+                <div>
+                  <p class="rq-list-title">{{ interview.jobTitle }}</p>
+                  <p class="rq-list-sub">{{ interview.companyName }}</p>
+                </div>
+                <div class="rq-interview-meta">
+                  <span class="rq-status-pill" :class="interviewModeClass(interview.mode)">{{ interview.mode || 'online' }}</span>
+                  <span class="rq-list-sub">{{ interview.formattedDate }}</span>
+                  <button
+                    v-if="interview.mode === 'online' && interview.link"
+                    class="rq-btn-primary"
+                    type="button"
+                    @click="openInterviewLink(interview.link)"
+                  >
+                    Join Meeting
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
         <article class="rq-card rq-progress-card">
           <header class="rq-card-hd">
             <span class="rq-card-title">Placement Progress</span>
@@ -302,6 +331,10 @@ export default {
     summary: {
       type: Object,
       default: () => ({})
+    },
+    upcomingInterviews: {
+      type: Array,
+      default: () => []
     }
   },
   emits: ['switch-view', 'apply-drive'],
@@ -671,6 +704,15 @@ export default {
       }
 
       return `${normalized.slice(0, 2).join(', ')} +${normalized.length - 2}`
+    },
+    interviewModeClass(mode) {
+      return String(mode || '').toLowerCase() === 'offline' ? 'pill-offline' : 'pill-online'
+    },
+    openInterviewLink(link) {
+      if (!link) {
+        return
+      }
+      window.open(link, '_blank', 'noopener,noreferrer')
     }
   }
 }
